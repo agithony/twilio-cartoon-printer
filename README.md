@@ -89,6 +89,9 @@ ADMIN_PHONES=+1234567890,+0987654321
 MAX_PRINTS_PER_USER=2
 MAX_CONCURRENT_GENERATION=5
 
+# Template frame (optional -- leave blank to disable)
+TEMPLATE_FILE=signal_sf.png
+
 # Legal
 TERMS_URL=https://example.com/terms
 
@@ -108,6 +111,7 @@ PROMO_EVENT_URL=https://twil.io/devweek26
 | `ADMIN_PHONES` | No | Comma-separated phone numbers in E.164 format (e.g. `+14155551234`). Admins get unlimited prints. |
 | `MAX_PRINTS_PER_USER` | No | Max free prints per phone number per event. Defaults to `2`. |
 | `MAX_CONCURRENT_GENERATION` | No | Max AI image generations running at the same time. Defaults to `3`. Increase for faster throughput, decrease if hitting OpenAI rate limits. |
+| `TEMPLATE_FILE` | No | Filename of the template frame in the `templates/` folder (e.g. `signal_sf.png`). Leave blank to disable. |
 | `TERMS_URL` | No | URL to your terms of service. Shown once in the user's first selfie confirmation. |
 | `PROMO_EVENT_NAME` | No | Name of the event to promote in SMS messages |
 | `PROMO_EVENT_DATE` | No | Date string for the promoted event |
@@ -115,9 +119,13 @@ PROMO_EVENT_URL=https://twil.io/devweek26
 
 ### 3. Template frame (optional)
 
-Place a `template.png` in the project root. This should be a PNG with transparent areas where the generated portrait shows through. The template is composited on top of the generated image using Sharp.
+Place your template PNGs in the `templates/` folder. Set `TEMPLATE_FILE` in `.env` to the filename you want to use (e.g. `signal_sf.png`). To switch templates, just change the env variable and restart.
 
-If no `template.png` is found, the app skips the frame overlay and prints the portrait as-is.
+Templates should be PNGs with **transparent areas** where the generated portrait shows through. The opaque areas form the frame border (branding, logos, CTA, etc.). The template is composited on top of the portrait at print dimensions (1500x2100).
+
+The template can be **any resolution** — it gets resized to fit the print automatically. For best results, use a 5:7 aspect ratio. Other ratios work too; the full frame design is preserved with transparent padding if the ratio doesn't match.
+
+Leave `TEMPLATE_FILE` blank to disable the frame overlay.
 
 ### 4. Find your printer name
 
@@ -175,7 +183,8 @@ twilio-cartoon-printer/
 │   ├── printer.js        Printer discovery and print commands
 │   ├── pipeline.js       generateImage (steps 1-6) and printJob (steps 7-8)
 │   └── queue.js          Concurrent generation worker, serial print worker, usage tracking
-├── template.png          Frame overlay (optional, you provide this)
+├── templates/            Frame overlays (PNGs with transparent center)
+│   └── signal_sf.png     Example: SIGNAL SF branded frame
 ├── downloads/            Generated images, organized by event name
 │   └── YourEventName/
 │       ├── 20260211_143000_input.jpg
