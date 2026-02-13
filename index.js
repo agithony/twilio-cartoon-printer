@@ -40,9 +40,19 @@ for (const dir of [DOWNLOAD_DIR, PENDING_DIR, GENERATING_DIR, READY_DIR, PRINTIN
 
 app.use(bodyParser.urlencoded({ extended: false }));
 
+// Serve generated images so Twilio can fetch them for MMS
+app.use("/images", express.static(DOWNLOAD_DIR));
+
 // ── Twilio Webhook ───────────────────────────────────────────────────────────
 
+let baseUrl = process.env.BASE_URL || "";
+
 app.post("/sms", async (req, res) => {
+    if (!baseUrl) {
+        const proto = req.headers["x-forwarded-proto"] || req.protocol || "http";
+        baseUrl = `${proto}://${req.headers.host}`;
+        console.log(`🌐 Base URL detected: ${baseUrl}`);
+    }
     const twiml = new MessagingResponse();
     const userPhone = req.body.From;
     const numMedia = parseInt(req.body.NumMedia || "0", 10);
@@ -71,6 +81,7 @@ app.post("/sms", async (req, res) => {
                 userPhone,
                 req.body.To,
                 style,
+                baseUrl,
             );
         } else {
             const used = getUsageCount(userPhone);
@@ -97,6 +108,7 @@ app.post("/sms", async (req, res) => {
                     userPhone,
                     req.body.To,
                     style,
+                    baseUrl,
                 );
             }
         }
