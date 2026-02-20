@@ -11,6 +11,7 @@ const {
     TERMS_URL,
     PROMO_INTRO,
     PROMO_RETURNING,
+    DATA_DIR,
     DOWNLOAD_DIR,
     PENDING_DIR,
     GENERATING_DIR,
@@ -29,12 +30,13 @@ const {
     processPrintQueue,
 } = require("./lib/queue");
 const { STYLES, STYLE_LIST, parseStyle } = require("./lib/styles");
+const { mountDashboard } = require("./lib/dashboard");
 
 const app = express();
 const port = 80;
 
 // Ensure directories exist
-for (const dir of [DOWNLOAD_DIR, PENDING_DIR, GENERATING_DIR, READY_DIR, PRINTING_DIR, DONE_DIR, FAILED_DIR]) {
+for (const dir of [DATA_DIR, DOWNLOAD_DIR, PENDING_DIR, GENERATING_DIR, READY_DIR, PRINTING_DIR, DONE_DIR, FAILED_DIR]) {
     if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
 }
 
@@ -140,6 +142,7 @@ app.listen(port, "0.0.0.0", () => {
     console.log(`🚀 App running on port ${port} | Event: ${EVENT_NAME}`);
     buildUsageCache();
     recoverStaleJobs();
+    mountDashboard(app);
     setInterval(processGenerationQueue, POLL_INTERVAL);
     setInterval(processPrintQueue, POLL_INTERVAL);
     console.log(`⏱️  Workers started (polling every ${POLL_INTERVAL}ms, max ${MAX_CONCURRENT_GENERATION} concurrent generations)`);

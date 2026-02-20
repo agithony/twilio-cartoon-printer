@@ -108,7 +108,7 @@ PROMO_EVENT_URL=https://twil.io/devweek26
 | `OPENAI_API_KEY` | Yes | Your OpenAI API key |
 | `PRINTER_NAME` | Yes | CUPS printer name prefix (find with `lpstat -p`). The app matches any printer starting with this name, so `EPSON_ET_8550_Series` matches `EPSON_ET_8550_Series_2`, etc. |
 | `EVENT_NAME` | Yes | Name of the current event (used for per-event print limits and download folders) |
-| `ADMIN_PHONES` | No | Comma-separated phone numbers in E.164 format (e.g. `+14155551234`). Admins get unlimited prints. |
+| `ADMIN_PHONES` | No | Comma-separated phone numbers in E.164 format (e.g. `+14155551234`). Admins get unlimited prints and are excluded from dashboard metrics. |
 | `MAX_PRINTS_PER_USER` | No | Max free prints per phone number per event. Defaults to `2`. |
 | `MAX_CONCURRENT_GENERATION` | No | Max AI image generations running at the same time. Defaults to `3`. Increase for faster throughput, decrease if hitting OpenAI rate limits. |
 | `TEMPLATE_FILE` | No | Filename of the template frame in the `templates/` folder (e.g. `signal_sf.png`). Leave blank to disable. |
@@ -150,6 +150,8 @@ You should see:
 ```
 🚀 App running on port 80 | Event: YourEventName
 📊 Usage cache built: 0 entries
+📄 Paper counter loaded: 20/20 sheets (warn at 2)
+📊 Dashboard mounted at /dashboard
 ⏱️  Workers started (polling every 3000ms, max 5 concurrent generations)
 ```
 
@@ -171,6 +173,35 @@ ngrok http 80
 
 Then use the ngrok URL (e.g. `https://abc123.ngrok.io/sms`) as your webhook.
 
+## Dashboard
+
+A real-time monitoring dashboard is available at `/dashboard` on the same port as the app. Open `http://localhost/dashboard` in your browser after starting the server.
+
+Admin phone numbers are excluded from all dashboard metrics -- they won't appear in totals, averages, top users, style breakdowns, or the outreach list.
+
+The dashboard shows:
+
+- **Stats overview** -- total prints, prints in the last 24 hours, unique users, average prints per user, current queue depth
+- **Paper counter** -- tracks remaining sheets in the printer tray with a visual progress bar. Configurable capacity and warning threshold. Alerts when paper is low or empty. Click "Reset" after reloading the tray.
+- **Queue status** -- live counts for each pipeline stage (pending, generating, ready, printing)
+- **Printer status** -- current state of the connected printer (idle, printing, disconnected, etc.)
+- **Style breakdown** -- bar chart showing how many prints of each art style
+- **Hourly activity** -- bar chart of prints per hour over the last 24 hours with hour labels and hover tooltips
+- **Top users** -- most active phone numbers (masked for privacy)
+- **Job health** -- completed vs failed counts and overall success rate
+- **SMS Outreach** -- collapsible section listing every user who has generated an image (phone numbers masked, showing country code and last 4 digits). Select individual or multiple recipients and send broadcast SMS messages directly from the dashboard. Includes a "Pick a Winner" button that randomly selects a recipient for raffle prizes or giveaways.
+
+The dashboard auto-refreshes every 3 seconds. No external dependencies -- it's a single self-contained HTML page with inline CSS and JavaScript.
+
+### Paper counter
+
+The paper counter is software-based. It decrements automatically each time a print completes. Since printers don't report exact sheet counts for photo paper trays, this tracks it for you.
+
+- Default capacity: 20 sheets, warning at 2 remaining
+- Both values are adjustable from the dashboard
+- Console logs warnings when paper is low (`⚠️`) or empty (`🚨`)
+- State persists across server restarts (saved to `data/paper.json`)
+
 ## Project Structure
 
 ```
@@ -182,7 +213,9 @@ twilio-cartoon-printer/
 │   ├── helpers.js        Image download, SMS, moderation, face detection, compositing
 │   ├── printer.js        Printer discovery and print commands
 │   ├── pipeline.js       generateImage (steps 1-6) and printJob (steps 7-8)
-│   └── queue.js          Concurrent generation worker, serial print worker, usage tracking
+│   ├── queue.js          Concurrent generation worker, serial print worker, usage tracking
+│   ├── dashboard.js      Real-time dashboard (mounted at /dashboard)
+│   └── paper.js          Paper counter with file persistence
 ├── templates/            Frame overlays (PNGs with transparent center)
 │   └── signal_sf.png     Example: SIGNAL SF branded frame
 ├── downloads/            Generated images, organized by event name
@@ -196,6 +229,8 @@ twilio-cartoon-printer/
 │   ├── printing/         Job currently being printed
 │   ├── done/             Successfully printed jobs
 │   └── failed/           Permanent failures or max retries exceeded
+├── data/                 Persistent app data
+│   └── paper.json        Paper counter state
 ├── .env                  API keys, printer config, event settings
 ├── .gitignore            Excludes downloads/, queue/, .env, node_modules/
 ├── package.json
@@ -263,7 +298,7 @@ When moving to a new event:
 
 1. Update `EVENT_NAME` in `.env` -- this resets everyone's print count and creates a new downloads subfolder.
 2. Update `PROMO_*` variables if promoting a different event.
-3. Optionally update `template.png` with new event branding.
+3. Optionally update `TEMPLATE_FILE` in `.env` with new event branding.
 4. Restart the server.
 
 Previous event data (downloads, completed jobs) is preserved on disk.
