@@ -179,6 +179,8 @@ A real-time monitoring dashboard is available at `/dashboard` on the same port a
 
 Admin phone numbers are excluded from all dashboard metrics -- they won't appear in totals, averages, top users, style breakdowns, or the outreach list.
 
+Use the **event selector** dropdown in the header to filter all metrics by a specific event, or view combined totals across all events.
+
 The dashboard shows:
 
 - **Stats overview** -- total prints, prints in the last 24 hours, unique users, average prints per user, current queue depth
@@ -188,10 +190,25 @@ The dashboard shows:
 - **Style breakdown** -- bar chart showing how many prints of each art style
 - **Hourly activity** -- bar chart of prints per hour over the last 24 hours with hour labels and hover tooltips
 - **Top users** -- most active phone numbers (masked for privacy)
-- **Job health** -- completed vs failed counts and overall success rate
+- **Job health** -- completed vs failed counts, overall success rate, and content rejection rate
+- **Failure breakdown** -- bar chart categorizing failures by reason (moderation, face detection, generation/API errors, printer errors)
+- **User geography** -- bar chart showing where users are located based on phone number country codes
 - **SMS Outreach** -- collapsible section listing every user who has generated an image (phone numbers masked, showing country code and last 4 digits). Select individual or multiple recipients and send broadcast SMS messages directly from the dashboard. Includes a "Pick a Winner" button that randomly selects a recipient for raffle prizes or giveaways.
 
 The dashboard auto-refreshes every 3 seconds. No external dependencies -- it's a single self-contained HTML page with inline CSS and JavaScript.
+
+### Event report
+
+Click **Generate Report** in the dashboard header to download a PDF summarizing key event metrics. The report includes:
+
+- AI-generated event summary (via OpenAI)
+- Key metrics (total prints, unique users, avg per user, most popular style, success rate)
+- Style breakdown table
+- Top users
+- Failure analysis with rejection rate
+- User geography (top 10 countries)
+
+The report respects the currently selected event filter. AI summaries are cached in memory so repeated downloads don't re-call the API.
 
 ### Paper counter
 
@@ -264,7 +281,7 @@ On server restart:
 
 ### Permanent failures
 
-Jobs flagged by content moderation or rejected by face detection are moved directly to `failed/` without retrying. The user's print count is refunded and they're told it didn't cost a print.
+Jobs flagged by content moderation or rejected by face detection are moved directly to `failed/` without retrying. The user's print count is refunded and they're told it didn't cost a print. Each failed job records a `failReason` field (`moderation`, `face_detection`, `generation`, `printer`) used by the dashboard's failure breakdown panel.
 
 ### Retry logic
 
