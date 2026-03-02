@@ -4,37 +4,27 @@ A photobooth-style app powered by Twilio and OpenAI. Attendees text a selfie to 
 
 ## How It Works
 
-```
-User sends selfie via SMS/MMS
-        |
-        v
-  Twilio webhook receives the message
-        |
-        v
-  Job queued to disk (survives restarts)
-        |
-        v
-  ---- Generation (up to N concurrent) ----
-  Content moderation (OpenAI)
-        |
-        v
-  Face detection -- rejects photos without a visible face
-        |
-        v
-  Image generation (gpt-5.2 + gpt-image-1.5)
-        |
-        v
-  Template frame composited (optional)
-        |
-        v
-  Resized for print (5x7 @ 300 DPI)
-        |
-        v
-  ---- Printing (one at a time) ----
-  Printed on connected printer
-        |
-        v
-  User gets an SMS that their print is ready
+```mermaid
+flowchart TB
+  U["User sends selfie via SMS/MMS"] --> T["Twilio webhook receives the message"]
+  T --> Q["Job queued to disk (survives restarts)"]
+
+  subgraph G["Generation (up to N concurrent)"]
+    M["Content moderation (OpenAI)"]
+    F["Face detection (rejects no-face photos)"]
+    I["Image generation (gpt-5.2 + gpt-image-1.5)"]
+    C["Template frame composited (optional)"]
+    R["Resized for print (5x7 @ 300 DPI)"]
+    M --> F --> I --> C --> R
+  end
+
+  Q --> M
+
+  subgraph P["Printing (one at a time)"]
+    P1["Printed on connected printer"]
+  end
+
+  R --> P1 --> S["SMS sent: your print is ready"]
 ```
 
 Users pick an art style by typing the name in the same message as their selfie:
@@ -172,6 +162,32 @@ ngrok http 80
 ```
 
 Then use the ngrok URL (e.g. `https://abc123.ngrok.io/sms`) as your webhook.
+
+## Run with Docker (local)
+
+Build the image:
+
+```sh
+docker build -t twilio-cartoon-printer .
+```
+
+Run the container and pass your `.env` file:
+
+```sh
+docker run --rm -p 8080:8080 --env-file .env twilio-cartoon-printer
+```
+
+If your `.env` doesn't set `PORT`, add it for Docker (common choice: `8080`):
+
+```sh
+PORT=8080
+```
+
+Then point Twilio to:
+
+```
+http://<your-host>:8080/sms
+```
 
 ## Dashboard
 
