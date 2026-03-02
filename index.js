@@ -33,7 +33,7 @@ const { STYLES, STYLE_LIST, parseStyle } = require("./lib/styles");
 const { mountDashboard } = require("./lib/dashboard");
 
 const app = express();
-const port = 80;
+const port = parseInt(process.env.PORT || "80", 10);
 
 // Ensure directories exist
 for (const dir of [DATA_DIR, DOWNLOAD_DIR, PENDING_DIR, GENERATING_DIR, READY_DIR, PRINTING_DIR, DONE_DIR, FAILED_DIR]) {
