@@ -1,6 +1,6 @@
-# Twilio Cartoon Printer
+# Twilio + AI Photo Generator
 
-A photobooth-style app powered by Twilio and OpenAI. Attendees text a selfie to a Twilio phone number, choose an art style, and get a printed portrait at your booth.
+A photobooth-style app powered by Twilio and OpenAI. Attendees text a selfie to a Twilio phone number, choose an art style, and get a printed portrait at your booth. All configuration is manageable at runtime through a web-based admin UI -- no server restarts needed.
 
 ## How It Works
 
@@ -113,7 +113,7 @@ PROMO_EVENT_URL=https://twil.io/devweek26
 
 ### 3. Template frame (optional)
 
-Place your template PNGs in the `templates/` folder. Set `TEMPLATE_FILE` in `.env` to the filename you want to use (e.g. `signal_sf.png`). To switch templates, just change the env variable and restart.
+Place your template PNGs in the `templates/` folder. Set `TEMPLATE_FILE` in `.env` to the filename you want to use (e.g. `signal_sf.png`). You can also change the template at runtime from the Settings panel on the home page, and upload new templates directly through the UI.
 
 Templates should be PNGs with **transparent areas** where the generated portrait shows through. The opaque areas form the frame border (branding, logos, CTA, etc.). The template is composited on top of the portrait at print dimensions (1500x2100).
 
@@ -142,6 +142,7 @@ or equivalently `sudo node index.js`. `sudo` is required when using the default 
 The home page (`http://localhost:<port>/home`) opens automatically in your default browser on startup. You should see:
 
 ```
+⚙️  Settings loaded (using .env defaults)
 🚀 App running on port 80 | Event: YourEventName
 📊 Usage cache built: 0 entries
 📄 Paper counter loaded: 20/20 sheets (warn at 2)
@@ -209,21 +210,23 @@ The app serves web pages on the same port:
 
 ### Home page
 
-The home page at `/home` is the default landing page for booth admins. It shows the event name and two action cards:
+The home page at `/home` is the admin console for booth operators. It provides two action cards:
 
 - **Open Dashboard** -- links to the admin dashboard for monitoring and management
 - **Launch Booth Display** -- opens a split-screen view (`/home/combo`) with the intro video and photo book side by side. The divider is draggable to resize each pane. An expandable "Open individually" section provides direct links to the intro video and photo book separately.
 
-The home page also shows a live **Booth Status** checklist (printer, paper, queue, total prints), a **How It Works** overview of the 5-step attendee flow, and a **Quick Reference** with available art styles and per-user print limits.
+The home page also includes a collapsible **Settings** panel where admins can configure all app settings at runtime without editing `.env` or restarting the server. See the [Runtime Settings](#runtime-settings) section below for details.
+
+A **How It Works** section shows the 5-step attendee flow.
 
 ### Get Started video
 
 The intro video at `/home/video` is a fullscreen looping video player designed to run on a booth display monitor to attract attendees and show them how the photobooth works.
 
-- Place your video file in the `assets/` folder
+- Place your video file in the `assets/` folder (or upload via the Settings panel)
 - Set `VIDEO_FILE` in `.env` to the filename (defaults to `get-started.mp4`)
 - The video autoplays on loop with a floating Pause/Play button and Fullscreen button
-- To switch videos, change `VIDEO_FILE` in `.env` and restart
+- To switch videos, change the setting from the Settings panel on `/home` or update `.env`
 
 ### Booth display
 
@@ -254,25 +257,25 @@ Admin phone numbers are excluded from all metrics -- they won't appear in totals
 
 Use the **event selector** dropdown in the header to filter all metrics by a specific event, or view combined totals across all events.
 
-The admin dashboard shows:
+The admin dashboard shows (in order):
 
 - **Stats overview** -- total prints, prints in the last 24 hours, unique users, average prints per user, current queue depth
-- **Paper counter** -- tracks remaining sheets in the printer tray with a visual progress bar. Configurable capacity and warning threshold. Alerts when paper is low or empty. Click "Reset" after reloading the tray.
-- **Queue status** -- live counts for each pipeline stage (pending, generating, ready, printing)
-- **Printer status** -- current state of the connected printer (idle, printing, disconnected, etc.)
+- **Generate Report** -- button to download a PDF event report (see below)
 - **Style breakdown** -- bar chart showing how many prints of each art style
 - **Hourly activity** -- bar chart of prints per hour over the last 24 hours with hour labels and hover tooltips
 - **Top users** -- most active phone numbers (masked for privacy)
 - **Job health** -- completed vs failed counts, overall success rate, and content rejection rate
 - **Failure breakdown** -- bar chart categorizing failures by reason (moderation, face detection, generation/API errors, printer errors)
 - **User geography** -- bar chart showing where users are located based on phone number country codes
+- **Queue status** -- live counts for each pipeline stage (pending, generating, ready, printing) and printer status
+- **Paper counter** -- tracks remaining sheets in the printer tray with a visual progress bar. Configurable capacity and warning threshold. Alerts when paper is low or empty. Click "Reset" after reloading the tray.
 - **SMS Outreach** -- collapsible section listing every user who has generated an image (phone numbers masked, showing country code and last 4 digits). Select individual or multiple recipients and send broadcast SMS messages directly from the dashboard. Includes a "Pick a Winner" button that randomly selects a recipient for raffle prizes or giveaways.
 
 The dashboard auto-refreshes every 3 seconds. No external dependencies -- it's a single self-contained HTML page with inline CSS and JavaScript.
 
 ### Event report
 
-Click **Generate Report** in the dashboard header to download a PDF summarizing key event metrics. The report includes:
+Click **Generate Report** on the dashboard to download a PDF summarizing key event metrics. The report includes:
 
 - AI-generated event summary (via OpenAI)
 - Key metrics (total prints, unique users, avg per user, most popular style, success rate)
@@ -298,14 +301,15 @@ The paper counter is software-based. It decrements automatically each time a pri
 twilio-cartoon-printer/
 ├── index.js              Express app, Twilio webhook, server startup
 ├── lib/
-│   ├── config.js         Shared constants, paths, API clients
+│   ├── config.js         Static constants, paths, API clients
+│   ├── settings.js       Runtime mutable settings (persists to data/settings.json)
 │   ├── styles.js         Art style definitions and prompts
 │   ├── helpers.js        Image download, SMS, moderation, face detection, compositing
 │   ├── printer.js        Printer discovery and print commands
 │   ├── pipeline.js       generateImage (steps 1-6) and printJob (steps 7-8)
 │   ├── queue.js          Concurrent generation worker, serial print worker, usage tracking
 │   ├── dashboard.js      Admin dashboard (mounted at /dashboard)
-│   ├── home.js           Home page, intro video, booth display (mounted at /home)
+│   ├── home.js           Home page, settings panel, intro video, booth display (mounted at /home)
 │   ├── photogallery.js   Photo book (mounted at /photogallery)
 │   └── paper.js          Paper counter with file persistence
 ├── assets/               Video and media files for the home page
@@ -324,7 +328,8 @@ twilio-cartoon-printer/
 │   ├── done/             Successfully printed jobs
 │   └── failed/           Permanent failures or max retries exceeded
 ├── data/                 Persistent app data
-│   └── paper.json        Paper counter state
+│   ├── paper.json        Paper counter state
+│   └── settings.json     Runtime settings overrides
 ├── .env                  API keys, printer config, event settings
 ├── .gitignore            Excludes downloads/, queue/, .env, node_modules/
 ├── package.json
@@ -366,7 +371,11 @@ Failed jobs retry up to 3 times. Each pipeline step is skipped on retry if its o
 
 ## Adding or Changing Styles
 
-Art styles are defined in `lib/styles.js`. Each style has a keyword, display name, and an LLM prompt. To add a new style, add an entry to the `STYLES` object:
+Art styles can be managed in two ways:
+
+**From the Settings panel** (no code changes): Open the Settings panel on `/home`, scroll to the Art Styles section. You can toggle built-in styles on/off, view their prompts, and add custom styles with a name and prompt. Custom styles are stored in `data/settings.json`.
+
+**In code**: Built-in styles are defined in `lib/styles.js`. Each style has a keyword, display name, and an LLM prompt. To add a new built-in style, add an entry to the `STYLES` object:
 
 ```js
 "oil-painting": {
@@ -375,24 +384,52 @@ Art styles are defined in `lib/styles.js`. Each style has a keyword, display nam
 },
 ```
 
-The style will automatically appear in SMS messages and be available for users to select. Style matching is fuzzy -- it handles extra spaces, hyphens, and case differences.
+Styles automatically appear in SMS messages and are available for users to select. Style matching is fuzzy -- it handles extra spaces, hyphens, and case differences.
 
 ## Promotional Messages
 
-The app can append a promotional message to SMS confirmations. Promo messages escalate based on user interaction:
+The app can append a promotional message to SMS confirmations. Two separate messages can be configured, one for first-time users and one for returning users:
 
-- **First selfie** -- Soft intro: *"P.S. Join us at SIGNAL San Francisco..."*
-- **Returning user** -- Nudge: *"Have you registered for SIGNAL San Francisco yet?..."*
+- **First selfie (Intro)** -- Appended to the first confirmation SMS for a new user
+- **Returning user** -- Appended to subsequent confirmation SMS messages
 
-To disable promos, leave `PROMO_EVENT_NAME` and `PROMO_EVENT_URL` blank in `.env`.
+Promo messages can be edited from the Settings panel on the home page as free-form text. The `.env` variables `PROMO_EVENT_NAME`, `PROMO_EVENT_DATE`, and `PROMO_EVENT_URL` are used to compute default promo text if no override is set. Leave the promo text fields blank to disable.
+
+## Runtime Settings
+
+The Settings panel on the home page (`/home`) lets admins change all app configuration at runtime without editing `.env` or restarting the server. Changes take effect immediately and are persisted to `data/settings.json`.
+
+Available settings:
+
+| Setting | Description |
+|---|---|
+| Event Name | Creates a new downloads folder and resets print counts |
+| Max Prints Per User | Per-phone print limit for the current event |
+| Max Concurrent Generation | How many AI images generate in parallel |
+| Printer | Select from connected printers (with refresh button) |
+| Template Frame | Select from `templates/` folder or upload new ones |
+| Video File | Select from `assets/` folder or upload new ones |
+| Art Styles | Toggle built-in styles on/off, view prompts, add custom styles |
+| Admin Phones | Add/remove admin phone numbers |
+| Terms URL | Link to terms of service shown in SMS |
+| Promo Messages | Full-text promotional messages for intro and returning users |
+
+Settings are stored as overrides on top of `.env` defaults. Click "Reset to Defaults" to revert all overrides.
+
+The settings API is also available programmatically:
+
+- `GET /dashboard/api/settings` -- current settings
+- `POST /dashboard/api/settings` -- update settings
+- `POST /dashboard/api/settings/reset` -- revert to `.env` defaults
+- `GET /dashboard/api/settings/files` -- list available templates, videos, printers
+- `POST /dashboard/api/settings/upload?type=template&filename=foo.png` -- upload a file
 
 ## Switching Events
 
-When moving to a new event:
+When moving to a new event, change the Event Name in the Settings panel on `/home`. This automatically:
 
-1. Update `EVENT_NAME` in `.env` -- this resets everyone's print count and creates a new downloads subfolder.
-2. Update `PROMO_*` variables if promoting a different event.
-3. Optionally update `TEMPLATE_FILE` in `.env` with new event branding.
-4. Restart the server.
+1. Creates a new downloads subfolder for the event
+2. Resets everyone's print count
+3. Takes effect immediately -- no restart needed
 
-Previous event data (downloads, completed jobs) is preserved on disk.
+You can also update the promo messages and template frame from the same panel. Previous event data (downloads, completed jobs) is preserved on disk.
