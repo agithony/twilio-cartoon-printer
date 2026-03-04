@@ -1,1 +1,10 @@
-{}
+{
+  "enablePrinting": false,
+  "brandPrompt": "Subject should be wearing LA Kings hockey gear",
+  "customStyles": {
+    "oil-painting": {
+      "name": "Oil painting",
+      "prompt": "Transform this photo into an artistic oil style painting. Brush strokes and pastel colors."
+    }
+  }
+}
