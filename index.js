@@ -29,6 +29,7 @@ const { mountDashboard } = require("./lib/dashboard");
 const { mountHome } = require("./lib/home");
 const { mountPhotoGallery } = require("./lib/photogallery");
 const { mountOutreach } = require("./lib/outreach");
+const leads = require("./lib/leads");
 
 const app = express();
 const port = parseInt(process.env.PORT || "80", 10);
@@ -59,6 +60,76 @@ app.post("/sms", async (req, res) => {
     const userPhone = req.body.From;
     const numMedia = parseInt(req.body.NumMedia || "0", 10);
 
+    // ── Lead capture interception ──────────────────────────────────────────
+    const leadMode = settings.get("leadCaptureMode");
+    const appPhone = req.body.To;
+
+    if (leadMode !== "disabled" && !isAdmin(userPhone)) {
+        const eventName = settings.get("eventName");
+
+        // Handle active survey responses
+        if (leads.isActive(userPhone)) {
+            const result = await leads.processResponse(userPhone, req.body.Body || "");
+
+            if (result.status === "completed" && result.pendingImage) {
+                // "Before" mode done -- enqueue the held-back image
+                const pi = result.pendingImage;
+                const activeStyles = settings.getActiveStyles();
+                const style = pi.style || parseStyle(pi.body, activeStyles);
+                const styleName = activeStyles[style].name;
+
+                // Quota check (deferred from when survey started)
+                const used = getUsageCount(userPhone);
+                const maxPrints = settings.get("maxPrints");
+                const remaining = maxPrints - used;
+
+                if (remaining > 0) {
+                    const printingEnabled = settings.get("enablePrinting");
+                    const pickupMsg = printingEnabled
+                        ? " Head to the Twilio booth to pick it up in a few."
+                        : " We'll text it to you shortly.";
+                    const afterThis = remaining - 1;
+                    const unit = printingEnabled ? "print" : "portrait";
+                    const countMsg = afterThis === 0
+                        ? ` This is your last free ${unit} -- make it count!`
+                        : ` You have ${afterThis} free ${unit}${afterThis === 1 ? "" : "s"} left.`;
+                    const { sendSms } = require("./lib/helpers");
+                    await sendSms(userPhone, appPhone,
+                        `Your ${styleName} portrait is in the works!${pickupMsg}${countMsg}`);
+                    enqueueJob(pi.imageUrl, pi.messageSid, userPhone, appPhone, style, baseUrl);
+                } else {
+                    const units = (settings.get("enablePrinting") ? "prints" : "portraits");
+                    const { sendSms } = require("./lib/helpers");
+                    await sendSms(userPhone, appPhone,
+                        `You've already used your ${maxPrints} free ${units} for ${eventName}. Thanks for stopping by!`);
+                }
+            }
+
+            return res.type("text/xml").send(twiml.toString());
+        }
+
+        // "Before" mode: intercept if lead not yet captured
+        if (leadMode === "before" && !leads.isCompleted(userPhone, eventName)) {
+            if (numMedia > 1) {
+                twiml.message("One at a time! Send a single selfie and we'll work our magic.");
+            } else if (numMedia === 1) {
+                const activeStyles = settings.getActiveStyles();
+                const style = parseStyle(req.body.Body, activeStyles);
+                await leads.startSurvey(userPhone, appPhone, eventName, "before", {
+                    imageUrl: req.body.MediaUrl0,
+                    messageSid: req.body.MessageSid,
+                    body: req.body.Body,
+                    style,
+                    baseUrl,
+                });
+            } else {
+                await leads.startSurvey(userPhone, appPhone, eventName, "before", null);
+            }
+            return res.type("text/xml").send(twiml.toString());
+        }
+    }
+
+    // ── Normal flow ─────────────────────────────────────────────────────────
     const activeStyles = settings.getActiveStyles();
     const activeStyleList = settings.getActiveStyleList();
     const styleChoices = activeStyleList.map((k) => activeStyles[k].name).join(", ");
@@ -162,6 +233,7 @@ app.listen(port, "0.0.0.0", () => {
     const dlDir = settings.getDownloadDir();
     if (!fs.existsSync(dlDir)) fs.mkdirSync(dlDir, { recursive: true });
     buildUsageCache();
+    leads.load();
     settings.onEventNameChange(() => buildUsageCache());
     recoverStaleJobs();
     mountHome(app);

@@ -6,5 +6,6 @@
       "name": "Oil painting",
       "prompt": "Transform this photo into an artistic oil style painting. Brush strokes and pastel colors."
     }
-  }
+  },
+  "leadCaptureMode": "before"
 }
