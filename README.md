@@ -257,6 +257,7 @@ The photo book at `/photogallery` presents AI-generated portraits as an open boo
 - Play/Pause, keyboard arrows, and clickable thumbnails for manual navigation
 - Fullscreen support with responsive sizing
 - Warm parchment-toned pages with subtle paper texture
+- **Event filter** -- dropdown to filter portraits by event, or view all events combined. Works in both the standalone photo book and the booth display combo view.
 - Live portrait counter with animated bump when new images arrive
 - Polls for new images every 5 seconds
 
