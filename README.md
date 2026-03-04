@@ -203,6 +203,7 @@ The app serves web pages on the same port:
 | `/home` | Home page (opens automatically on startup) |
 | `/home/video` | Get Started video player (fullscreen, looping) |
 | `/gallery` | Image gallery of AI-generated portraits |
+| `/photogallery` | Photo book gallery with page-turn animations |
 | `/dashboard` | Admin dashboard with real-time monitoring |
 
 ### Home page
@@ -237,6 +238,22 @@ The gallery at `/gallery` is a fullscreen image showcase designed to run on a bo
 - Fullscreen button for true fullscreen display
 - Dark background optimized for display monitors
 - Polls for new images every 5 seconds -- new portraits appear automatically
+
+### Photo book gallery
+
+The photo book at `/photogallery` is an alternative gallery that presents AI-generated portraits as an open book with two pages side by side. Designed for a more tactile, physical feel on booth displays.
+
+- Open book layout with left and right pages showing different portraits
+- Stacked page layers underneath for a realistic book thickness effect
+- Page-turn animation when navigating between spreads
+- Per-page "View Original" buttons to flip individual pages and reveal the original selfie
+- Page numbers on each page (highest to lowest, newest to oldest)
+- White photo frame mat around each image with decorative corner mounts
+- Auto-rotates through spreads every 10 seconds
+- Play/Pause, keyboard arrows, and clickable thumbnails for manual navigation
+- Fullscreen support with responsive sizing
+- Warm parchment-toned pages with subtle paper texture
+- Polls for new images every 5 seconds
 
 ## Admin Dashboard
 
@@ -299,6 +316,7 @@ twilio-cartoon-printer/
 │   ├── dashboard.js      Admin dashboard (mounted at /dashboard)
 │   ├── home.js           Home page (mounted at /home)
 │   ├── gallery.js        Image gallery (mounted at /gallery)
+│   ├── photogallery.js   Photo book gallery (mounted at /photogallery)
 │   └── paper.js          Paper counter with file persistence
 ├── assets/               Video and media files for the home page
 │   └── get-started.mp4   Attract loop video (gitignored)
