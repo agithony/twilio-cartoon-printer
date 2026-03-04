@@ -28,6 +28,7 @@ const { parseStyle } = require("./lib/styles");
 const { mountDashboard } = require("./lib/dashboard");
 const { mountHome } = require("./lib/home");
 const { mountPhotoGallery } = require("./lib/photogallery");
+const { mountOutreach } = require("./lib/outreach");
 
 const app = express();
 const port = parseInt(process.env.PORT || "80", 10);
@@ -157,6 +158,7 @@ app.listen(port, "0.0.0.0", () => {
     mountHome(app);
     mountPhotoGallery(app);
     mountDashboard(app);
+    mountOutreach(app);
     setInterval(processGenerationQueue, POLL_INTERVAL);
     setInterval(processPrintQueue, POLL_INTERVAL);
     console.log(`⏱️  Workers started (polling every ${POLL_INTERVAL}ms, max ${settings.get("maxConcurrentGeneration")} concurrent generations)`);

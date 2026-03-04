@@ -149,6 +149,7 @@ The home page (`http://localhost:<port>/home`) opens automatically in your defau
 🏠 Home page mounted at /home
 📖 Photo book mounted at /photogallery
 📊 Dashboard mounted at /dashboard
+📨 SMS Outreach mounted at /outreach
 ⏱️  Workers started (polling every 3000ms, max 5 concurrent generations)
 ```
 
@@ -207,17 +208,19 @@ The app serves web pages on the same port:
 | `/home/combo` | Booth display -- split-screen with intro video and photo book |
 | `/photogallery` | Photo book with realistic page-turn animations |
 | `/dashboard` | Admin dashboard with real-time monitoring |
+| `/outreach` | SMS Outreach -- broadcast messages, raffles, attendee engagement |
 
 ### Home page
 
-The home page at `/home` is the admin console for booth operators. It provides two action cards:
+The home page at `/home` is the admin console for booth operators. It provides three action cards:
 
-- **Open Dashboard** -- links to the admin dashboard for monitoring and management
 - **Launch Booth Display** -- opens a split-screen view (`/home/combo`) with the intro video and photo book side by side. The divider is draggable to resize each pane. An expandable "Open individually" section provides direct links to the intro video and photo book separately.
+- **Open Dashboard** -- links to the admin dashboard for monitoring and management
+- **SMS Outreach** -- links to the dedicated outreach page for broadcast messaging, raffles, and attendee engagement
 
 The home page also includes a collapsible **Settings** panel where admins can configure all app settings at runtime without editing `.env` or restarting the server. See the [Runtime Settings](#runtime-settings) section below for details.
 
-A **How It Works** section shows the 5-step attendee flow.
+A **How It Works** section shows the 6-step flow from setup through attendee engagement.
 
 ### Get Started video
 
@@ -269,7 +272,6 @@ The admin dashboard shows (in order):
 - **User geography** -- bar chart showing where users are located based on phone number country codes
 - **Queue status** -- live counts for each pipeline stage (pending, generating, ready, printing) and printer status
 - **Paper counter** -- tracks remaining sheets in the printer tray with a visual progress bar. Configurable capacity and warning threshold. Alerts when paper is low or empty. Click "Reset" after reloading the tray.
-- **SMS Outreach** -- collapsible section listing every user who has generated an image (phone numbers masked, showing country code and last 4 digits). Select individual or multiple recipients and send broadcast SMS messages directly from the dashboard. Includes a "Pick a Winner" button that randomly selects a recipient for raffle prizes or giveaways.
 
 The dashboard auto-refreshes every 3 seconds. No external dependencies -- it's a single self-contained HTML page with inline CSS and JavaScript.
 
@@ -295,6 +297,21 @@ The paper counter is software-based. It decrements automatically each time a pri
 - Console logs warnings when paper is low (`⚠️`) or empty (`🚨`)
 - State persists across server restarts (saved to `data/paper.json`)
 
+## SMS Outreach
+
+The SMS Outreach page at `/outreach` is a dedicated tool for engaging attendees after they've used the photobooth. It's accessible from the home page and provides a focused workflow separate from the monitoring-oriented dashboard.
+
+Features:
+
+- **User directory** -- lists every attendee who has generated an image, with masked phone numbers, print counts, art styles used, and time since last activity
+- **Event filtering** -- dropdown to filter users by event, matching the dashboard's event selector
+- **Broadcast messaging** -- select individual users or "Select All", compose a message, and send SMS to all selected recipients at once
+- **Raffle system** -- "Draw Winner" button with an animated random selection that highlights users in sequence before landing on a winner. Winners are automatically persisted to `data/raffle.json` and marked with a trophy icon in the user list
+- **Raffle history** -- scrollable list of past raffle winners with timestamps, persisted across server restarts
+- **Stat cards** -- at-a-glance counts for total recipients, currently selected, and raffle winners drawn
+
+The page uses a two-column layout on desktop (user list on the left, actions on the right) and stacks to a single column on mobile. It auto-refreshes the user list every 10 seconds.
+
 ## Project Structure
 
 ```
@@ -310,6 +327,7 @@ twilio-cartoon-printer/
 │   ├── queue.js          Concurrent generation worker, serial print worker, usage tracking
 │   ├── dashboard.js      Admin dashboard (mounted at /dashboard)
 │   ├── home.js           Home page, settings panel, intro video, booth display (mounted at /home)
+│   ├── outreach.js       SMS Outreach -- broadcast messaging, raffles (mounted at /outreach)
 │   ├── photogallery.js   Photo book (mounted at /photogallery)
 │   └── paper.js          Paper counter with file persistence
 ├── assets/               Video and media files for the home page
@@ -329,6 +347,7 @@ twilio-cartoon-printer/
 │   └── failed/           Permanent failures or max retries exceeded
 ├── data/                 Persistent app data
 │   ├── paper.json        Paper counter state
+│   ├── raffle.json       Raffle winner history
 │   └── settings.json     Runtime settings overrides
 ├── .env                  API keys, printer config, event settings
 ├── .gitignore            Excludes downloads/, queue/, .env, node_modules/
