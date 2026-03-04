@@ -88,6 +88,12 @@ VIDEO_FILE=get-started.mp4
 # Legal
 TERMS_URL=https://example.com/terms
 
+# Delivery mode (optional -- set to "false" to disable printing)
+ENABLE_PRINTING=true
+
+# Brand prompt (optional -- appended to every art style prompt)
+BRAND_PROMPT=
+
 # Promotional message (optional -- leave blank to disable)
 PROMO_EVENT_NAME=SIGNAL San Francisco
 PROMO_EVENT_DATE=May 6-7, 2026
@@ -107,6 +113,8 @@ PROMO_EVENT_URL=https://twil.io/devweek26
 | `TEMPLATE_FILE` | No | Filename of the template frame in the `templates/` folder (e.g. `signal_sf.png`). Leave blank to disable. |
 | `VIDEO_FILE` | No | Filename of the Get Started video in the `assets/` folder (e.g. `get-started.mp4`). Defaults to `get-started.mp4`. |
 | `TERMS_URL` | No | URL to your terms of service. Shown once in the user's first selfie confirmation. |
+| `ENABLE_PRINTING` | No | Set to `false` to disable printing and run digital-only (MMS delivery). Defaults to `true`. |
+| `BRAND_PROMPT` | No | Global branding prompt appended to every art style (e.g. clothing, logos). Leave blank to disable. |
 | `PROMO_EVENT_NAME` | No | Name of the event to promote in SMS messages |
 | `PROMO_EVENT_DATE` | No | Date string for the promoted event |
 | `PROMO_EVENT_URL` | No | Registration URL for the promoted event |
@@ -392,7 +400,7 @@ Failed jobs retry up to 3 times. Each pipeline step is skipped on retry if its o
 
 Art styles can be managed in two ways:
 
-**From the Settings panel** (no code changes): Open the Settings panel on `/home`, scroll to the Art Styles section. You can toggle built-in styles on/off, view their prompts, and add custom styles with a name and prompt. Custom styles are stored in `data/settings.json`.
+**From the Settings panel** (no code changes): Open the Settings panel on `/home`, scroll to the Art & Branding section. You can toggle built-in styles on/off, view their prompts, and add custom styles with a name and prompt. Custom styles are stored in `data/settings.json`.
 
 **In code**: Built-in styles are defined in `lib/styles.js`. Each style has a keyword, display name, and an LLM prompt. To add a new built-in style, add an entry to the `STYLES` object:
 
@@ -405,6 +413,23 @@ Art styles can be managed in two ways:
 
 Styles automatically appear in SMS messages and are available for users to select. Style matching is fuzzy -- it handles extra spaces, hyphens, and case differences.
 
+## Brand Prompt
+
+The brand prompt is a global modifier appended to every art style's AI prompt. Use it for event-specific branding that should appear across all styles -- clothing, logos, visual themes, etc.
+
+For example, setting the brand prompt to "The subject should be wearing a bright red Twilio t-shirt with the Twilio logo clearly visible" will apply that branding to cartoon, watercolor, anime, and every other style.
+
+Configure it from the Settings panel under Art & Branding. Leave blank to disable. Can also be set via the `BRAND_PROMPT` environment variable.
+
+## Delivery Mode
+
+The app supports two delivery modes, configurable from the Settings panel under Booth & Delivery:
+
+- **Print + Digital** (default) -- Portraits are printed at the booth and sent to the user via MMS after printing completes. Requires a connected printer.
+- **Digital Only** -- Portraits are sent via MMS immediately after AI generation. No printer required. Use this for demos, remote events, or setups without a physical printer.
+
+Can also be set via the `ENABLE_PRINTING` environment variable (`true` or `false`).
+
 ## Promotional Messages
 
 The app can append a promotional message to SMS confirmations. Two separate messages can be configured, one for first-time users and one for returning users:
@@ -412,26 +437,21 @@ The app can append a promotional message to SMS confirmations. Two separate mess
 - **First selfie (Intro)** -- Appended to the first confirmation SMS for a new user
 - **Returning user** -- Appended to subsequent confirmation SMS messages
 
-Promo messages can be edited from the Settings panel on the home page as free-form text. The `.env` variables `PROMO_EVENT_NAME`, `PROMO_EVENT_DATE`, and `PROMO_EVENT_URL` are used to compute default promo text if no override is set. Leave the promo text fields blank to disable.
+Promo messages can be edited from the Settings panel on the home page under Messaging. The `.env` variables `PROMO_EVENT_NAME`, `PROMO_EVENT_DATE`, and `PROMO_EVENT_URL` are used to compute default promo text if no override is set. Leave the promo text fields blank to disable.
 
 ## Runtime Settings
 
 The Settings panel on the home page (`/home`) lets admins change all app configuration at runtime without editing `.env` or restarting the server. Changes take effect immediately and are persisted to `data/settings.json`.
 
-Available settings:
+The settings panel is organized into four sections:
 
-| Setting | Description |
-|---|---|
-| Event Name | Creates a new downloads folder and resets print counts |
-| Max Prints Per User | Per-phone print limit for the current event |
-| Max Concurrent Generation | How many AI images generate in parallel |
-| Printer | Select from connected printers (with refresh button) |
-| Template Frame | Select from `templates/` folder or upload new ones |
-| Video File | Select from `assets/` folder or upload new ones |
-| Art Styles | Toggle built-in styles on/off, view prompts, add custom styles |
-| Admin Phones | Add/remove admin phone numbers |
-| Terms URL | Link to terms of service shown in SMS |
-| Promo Messages | Full-text promotional messages for intro and returning users |
+**Event** -- Event Name, Max Prints Per User, Max Concurrent Generations
+
+**Art & Branding** -- Brand Prompt (global branding applied to all styles), art style toggles, custom style creation
+
+**Booth & Delivery** -- Delivery Mode (Print + Digital or Digital Only), Printer selection, Template Frame, Intro Video
+
+**Messaging** -- Admin Phone Numbers, Terms URL, First-Time and Returning User promo messages
 
 Settings are stored as overrides on top of `.env` defaults. Click "Reset to Defaults" to revert all overrides.
 
