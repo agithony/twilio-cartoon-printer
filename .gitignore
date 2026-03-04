@@ -1,4 +1,7 @@
 node_modules/
 downloads/
 queue/
+assets/*.mp4
+assets/*.mov
+assets/*.webm
 .env

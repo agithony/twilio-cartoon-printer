@@ -82,6 +82,9 @@ MAX_CONCURRENT_GENERATION=5
 # Template frame (optional -- leave blank to disable)
 TEMPLATE_FILE=signal_sf.png
 
+# Get Started video (optional -- filename in assets/ folder)
+VIDEO_FILE=get-started.mp4
+
 # Legal
 TERMS_URL=https://example.com/terms
 
@@ -102,6 +105,7 @@ PROMO_EVENT_URL=https://twil.io/devweek26
 | `MAX_PRINTS_PER_USER` | No | Max free prints per phone number per event. Defaults to `2`. |
 | `MAX_CONCURRENT_GENERATION` | No | Max AI image generations running at the same time. Defaults to `3`. Increase for faster throughput, decrease if hitting OpenAI rate limits. |
 | `TEMPLATE_FILE` | No | Filename of the template frame in the `templates/` folder (e.g. `signal_sf.png`). Leave blank to disable. |
+| `VIDEO_FILE` | No | Filename of the Get Started video in the `assets/` folder (e.g. `get-started.mp4`). Defaults to `get-started.mp4`. |
 | `TERMS_URL` | No | URL to your terms of service. Shown once in the user's first selfie confirmation. |
 | `PROMO_EVENT_NAME` | No | Name of the event to promote in SMS messages |
 | `PROMO_EVENT_DATE` | No | Date string for the promoted event |
@@ -192,22 +196,57 @@ http://<your-host>:8080/sms
 
 ## Web UI
 
-The app serves two web pages on the same port:
+The app serves web pages on the same port:
 
 | Route | Description |
 |---|---|
 | `/home` | Home page (opens automatically on startup) |
-| `/dashboard` | Real-time monitoring dashboard |
+| `/home/video` | Get Started video player (fullscreen, looping) |
+| `/gallery` | Image gallery of AI-generated portraits |
+| `/dashboard` | Admin dashboard with real-time monitoring |
 
-## Dashboard
+### Home page
 
-The monitoring dashboard is available at `http://localhost:<port>/dashboard`.
+The home page at `/home` is the default landing page for booth admins. It shows the event name and three action cards:
 
-Admin phone numbers are excluded from all dashboard metrics -- they won't appear in totals, averages, top users, style breakdowns, or the outreach list.
+- **Open Dashboard** -- links to the admin dashboard for monitoring and management
+- **Launch Booth Display** -- opens the intro video in a new browser tab so you can display it on a booth monitor while continuing to work in another tab
+- **View Gallery** -- opens the image gallery in a new tab for displaying on a second screen
+
+The home page also shows a live **Booth Status** checklist (printer, paper, queue, total prints), a **How It Works** overview of the 5-step attendee flow, and a **Quick Reference** with available art styles and per-user print limits.
+
+### Get Started video
+
+The "Get Started" button opens `/home/video` in a new tab. This is a fullscreen looping video player designed to run on a booth display monitor to attract attendees and show them how the photobooth works.
+
+- Place your video file in the `assets/` folder
+- Set `VIDEO_FILE` in `.env` to the filename (defaults to `get-started.mp4`)
+- The video autoplays on loop with native playback controls (pause, scrub, skip)
+- Click anywhere outside the controls to go fullscreen
+- To switch videos, change `VIDEO_FILE` in `.env` and restart
+
+### Image gallery
+
+The gallery at `/gallery` is a fullscreen image showcase designed to run on a booth display monitor. It shows all AI-generated portraits from the current event in a rotating slideshow.
+
+- Auto-rotates through images every 10 seconds (on by default)
+- Play/Pause button to control auto-rotation
+- Left/right arrow overlays and keyboard arrows to navigate manually
+- Clickable thumbnail strip along the bottom to jump to any image
+- Live portrait counter that updates in real time as new images are generated
+- Fullscreen button for true fullscreen display
+- Dark background optimized for display monitors
+- Polls for new images every 5 seconds -- new portraits appear automatically
+
+## Admin Dashboard
+
+The admin dashboard is available at `http://localhost:<port>/dashboard`.
+
+Admin phone numbers are excluded from all metrics -- they won't appear in totals, averages, top users, style breakdowns, or the outreach list.
 
 Use the **event selector** dropdown in the header to filter all metrics by a specific event, or view combined totals across all events.
 
-The dashboard shows:
+The admin dashboard shows:
 
 - **Stats overview** -- total prints, prints in the last 24 hours, unique users, average prints per user, current queue depth
 - **Paper counter** -- tracks remaining sheets in the printer tray with a visual progress bar. Configurable capacity and warning threshold. Alerts when paper is low or empty. Click "Reset" after reloading the tray.
@@ -257,9 +296,12 @@ twilio-cartoon-printer/
 │   ├── printer.js        Printer discovery and print commands
 │   ├── pipeline.js       generateImage (steps 1-6) and printJob (steps 7-8)
 │   ├── queue.js          Concurrent generation worker, serial print worker, usage tracking
-│   ├── dashboard.js      Real-time dashboard (mounted at /dashboard)
+│   ├── dashboard.js      Admin dashboard (mounted at /dashboard)
 │   ├── home.js           Home page (mounted at /home)
+│   ├── gallery.js        Image gallery (mounted at /gallery)
 │   └── paper.js          Paper counter with file persistence
+├── assets/               Video and media files for the home page
+│   └── get-started.mp4   Attract loop video (gitignored)
 ├── templates/            Frame overlays (PNGs with transparent center)
 │   └── signal_sf.png     Example: SIGNAL SF branded frame
 ├── downloads/            Generated images, organized by event name
