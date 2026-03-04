@@ -130,12 +130,12 @@ Print settings (page size, resolution, borderless options) are configured in `li
 ### 5. Start the server
 
 ```sh
-sudo node index.js
+sudo pnpm start
 ```
 
-`sudo` is required because the app listens on port 80 (needed for Twilio webhooks over HTTP).
+or equivalently `sudo node index.js`. `sudo` is required because the app listens on port 80 (needed for Twilio webhooks over HTTP).
 
-You should see:
+The dashboard (`http://localhost/dashboard`) opens automatically in your default browser on startup. You should see:
 
 ```
 🚀 App running on port 80 | Event: YourEventName

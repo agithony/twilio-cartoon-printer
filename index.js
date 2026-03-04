@@ -1,5 +1,6 @@
 require("dotenv").config();
 const fs = require("fs");
+const { exec } = require("child_process");
 const express = require("express");
 const bodyParser = require("body-parser");
 const { MessagingResponse } = require("twilio").twiml;
@@ -146,4 +147,11 @@ app.listen(port, "0.0.0.0", () => {
     setInterval(processGenerationQueue, POLL_INTERVAL);
     setInterval(processPrintQueue, POLL_INTERVAL);
     console.log(`⏱️  Workers started (polling every ${POLL_INTERVAL}ms, max ${MAX_CONCURRENT_GENERATION} concurrent generations)`);
+
+    // Auto-open dashboard in the default browser
+    const url = `http://localhost${port === 80 ? "" : ":" + port}/dashboard`;
+    const openCmd = process.platform === "darwin" ? "open" : process.platform === "win32" ? "start" : "xdg-open";
+    exec(`${openCmd} ${url}`, (err) => {
+        if (err) console.log(`📊 Dashboard available at ${url}`);
+    });
 });
