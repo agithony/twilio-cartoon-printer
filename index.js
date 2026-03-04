@@ -6,14 +6,7 @@ const bodyParser = require("body-parser");
 const { MessagingResponse } = require("twilio").twiml;
 const {
     POLL_INTERVAL,
-    MAX_CONCURRENT_GENERATION,
-    MAX_PRINTS,
-    EVENT_NAME,
-    TERMS_URL,
-    PROMO_INTRO,
-    PROMO_RETURNING,
     DATA_DIR,
-    DOWNLOAD_DIR,
     PENDING_DIR,
     GENERATING_DIR,
     READY_DIR,
@@ -21,6 +14,7 @@ const {
     DONE_DIR,
     FAILED_DIR,
 } = require("./lib/config");
+const settings = require("./lib/settings");
 const {
     buildUsageCache,
     isAdmin,
@@ -30,7 +24,7 @@ const {
     processGenerationQueue,
     processPrintQueue,
 } = require("./lib/queue");
-const { STYLES, STYLE_LIST, parseStyle } = require("./lib/styles");
+const { parseStyle } = require("./lib/styles");
 const { mountDashboard } = require("./lib/dashboard");
 const { mountHome } = require("./lib/home");
 const { mountPhotoGallery } = require("./lib/photogallery");
@@ -39,14 +33,16 @@ const app = express();
 const port = parseInt(process.env.PORT || "80", 10);
 
 // Ensure directories exist
-for (const dir of [DATA_DIR, DOWNLOAD_DIR, PENDING_DIR, GENERATING_DIR, READY_DIR, PRINTING_DIR, DONE_DIR, FAILED_DIR]) {
+for (const dir of [DATA_DIR, PENDING_DIR, GENERATING_DIR, READY_DIR, PRINTING_DIR, DONE_DIR, FAILED_DIR]) {
     if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
 }
 
 app.use(bodyParser.urlencoded({ extended: false }));
 
-// Serve generated images so Twilio can fetch them for MMS
-app.use("/images", express.static(DOWNLOAD_DIR));
+// Serve generated images — resolves download dir dynamically per request
+app.use("/images", (req, res, next) => {
+    express.static(settings.getDownloadDir())(req, res, next);
+});
 
 // ── Twilio Webhook ───────────────────────────────────────────────────────────
 
@@ -62,21 +58,24 @@ app.post("/sms", async (req, res) => {
     const userPhone = req.body.From;
     const numMedia = parseInt(req.body.NumMedia || "0", 10);
 
-    const styleChoices = STYLE_LIST.map((k) => STYLES[k].name).join(", ");
+    const activeStyles = settings.getActiveStyles();
+    const activeStyleList = settings.getActiveStyleList();
+    const styleChoices = activeStyleList.map((k) => activeStyles[k].name).join(", ");
 
     if (numMedia > 1) {
         twiml.message(
             "One at a time! Send a single selfie and we'll work our magic.",
         );
     } else if (numMedia === 1) {
-        const style = parseStyle(req.body.Body);
-        const styleName = STYLES[style].name;
+        const style = parseStyle(req.body.Body, activeStyles);
+        const styleName = activeStyles[style].name;
         console.log(`📩 Image received from ${userPhone} (style: ${styleName})`);
 
         if (isAdmin(userPhone)) {
             const isFirst = getUsageCount(userPhone) === 0;
-            const promo = isFirst ? PROMO_INTRO : PROMO_RETURNING;
-            const terms = isFirst && TERMS_URL ? `\n\nBy sending a photo, you agree to our terms: ${TERMS_URL}` : "";
+            const promo = isFirst ? settings.getPromoIntro() : settings.getPromoReturning();
+            const termsUrl = settings.get("termsUrl");
+            const terms = isFirst && termsUrl ? `\n\nBy sending a photo, you agree to our terms: ${termsUrl}` : "";
             twiml.message(
                 `Your ${styleName} portrait is in the works! Head to the Twilio booth to pick it up in a few.${terms}${promo}`,
             );
@@ -90,16 +89,19 @@ app.post("/sms", async (req, res) => {
             );
         } else {
             const used = getUsageCount(userPhone);
-            const remaining = MAX_PRINTS - used;
+            const maxPrints = settings.get("maxPrints");
+            const remaining = maxPrints - used;
+            const eventName = settings.get("eventName");
 
             if (remaining <= 0) {
                 twiml.message(
-                    `You've already used your ${MAX_PRINTS} free prints for ${EVENT_NAME}. Thanks for stopping by the Twilio booth!`,
+                    `You've already used your ${maxPrints} free prints for ${eventName}. Thanks for stopping by the Twilio booth!`,
                 );
             } else {
                 const isFirst = used === 0;
-                const promo = isFirst ? PROMO_INTRO : PROMO_RETURNING;
-                const terms = isFirst && TERMS_URL ? `\n\nBy sending a photo, you agree to our terms: ${TERMS_URL}` : "";
+                const promo = isFirst ? settings.getPromoIntro() : settings.getPromoReturning();
+                const termsUrl = settings.get("termsUrl");
+                const terms = isFirst && termsUrl ? `\n\nBy sending a photo, you agree to our terms: ${termsUrl}` : "";
                 const afterThis = remaining - 1;
                 const countMsg = afterThis === 0
                     ? ` This is your last free print -- make it count!`
@@ -124,14 +126,16 @@ app.post("/sms", async (req, res) => {
             );
         } else {
             const used = getUsageCount(userPhone);
-            const remaining = MAX_PRINTS - used;
+            const maxPrints = settings.get("maxPrints");
+            const remaining = maxPrints - used;
+            const eventName = settings.get("eventName");
             if (remaining <= 0) {
                 twiml.message(
-                    `You've already used your ${MAX_PRINTS} free prints for ${EVENT_NAME}. Thanks for stopping by the Twilio booth!`,
+                    `You've already used your ${maxPrints} free prints for ${eventName}. Thanks for stopping by the Twilio booth!`,
                 );
             } else {
                 twiml.message(
-                    `Send us a selfie and we'll turn it into art! Pick a style by typing its name with your photo: ${styleChoices}. You have ${remaining} free print${remaining === 1 ? "" : "s"} at ${EVENT_NAME}.`,
+                    `Send us a selfie and we'll turn it into art! Pick a style by typing its name with your photo: ${styleChoices}. You have ${remaining} free print${remaining === 1 ? "" : "s"} at ${eventName}.`,
                 );
             }
         }
@@ -142,15 +146,20 @@ app.post("/sms", async (req, res) => {
 // ── Start ────────────────────────────────────────────────────────────────────
 
 app.listen(port, "0.0.0.0", () => {
-    console.log(`🚀 App running on port ${port} | Event: ${EVENT_NAME}`);
+    console.log(`🚀 App running on port ${port} | Event: ${settings.get("eventName")}`);
+    settings.load();
+    // Ensure download dir for current event exists
+    const dlDir = settings.getDownloadDir();
+    if (!fs.existsSync(dlDir)) fs.mkdirSync(dlDir, { recursive: true });
     buildUsageCache();
+    settings.onEventNameChange(() => buildUsageCache());
     recoverStaleJobs();
     mountHome(app);
     mountPhotoGallery(app);
     mountDashboard(app);
     setInterval(processGenerationQueue, POLL_INTERVAL);
     setInterval(processPrintQueue, POLL_INTERVAL);
-    console.log(`⏱️  Workers started (polling every ${POLL_INTERVAL}ms, max ${MAX_CONCURRENT_GENERATION} concurrent generations)`);
+    console.log(`⏱️  Workers started (polling every ${POLL_INTERVAL}ms, max ${settings.get("maxConcurrentGeneration")} concurrent generations)`);
 
     // Auto-open home page in the default browser
     const host = `http://localhost${port === 80 ? "" : ":" + port}`;
