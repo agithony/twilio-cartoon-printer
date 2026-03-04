@@ -72,13 +72,20 @@ app.post("/sms", async (req, res) => {
         const styleName = activeStyles[style].name;
         console.log(`📩 Image received from ${userPhone} (style: ${styleName})`);
 
+        const printingEnabled = settings.get("enablePrinting");
+        const pickupMsg = printingEnabled
+            ? " Head to the Twilio booth to pick it up in a few."
+            : " We'll text it to you shortly.";
+        const unit = printingEnabled ? "print" : "portrait";
+        const units = printingEnabled ? "prints" : "portraits";
+
         if (isAdmin(userPhone)) {
             const isFirst = getUsageCount(userPhone) === 0;
             const promo = isFirst ? settings.getPromoIntro() : settings.getPromoReturning();
             const termsUrl = settings.get("termsUrl");
             const terms = isFirst && termsUrl ? `\n\nBy sending a photo, you agree to our terms: ${termsUrl}` : "";
             twiml.message(
-                `Your ${styleName} portrait is in the works! Head to the Twilio booth to pick it up in a few.${terms}${promo}`,
+                `Your ${styleName} portrait is in the works!${pickupMsg}${terms}${promo}`,
             );
             enqueueJob(
                 req.body.MediaUrl0,
@@ -96,7 +103,7 @@ app.post("/sms", async (req, res) => {
 
             if (remaining <= 0) {
                 twiml.message(
-                    `You've already used your ${maxPrints} free prints for ${eventName}. Thanks for stopping by the Twilio booth!`,
+                    `You've already used your ${maxPrints} free ${units} for ${eventName}. Thanks for stopping by!`,
                 );
             } else {
                 const isFirst = used === 0;
@@ -105,10 +112,10 @@ app.post("/sms", async (req, res) => {
                 const terms = isFirst && termsUrl ? `\n\nBy sending a photo, you agree to our terms: ${termsUrl}` : "";
                 const afterThis = remaining - 1;
                 const countMsg = afterThis === 0
-                    ? ` This is your last free print -- make it count!`
-                    : ` You have ${afterThis} free print${afterThis === 1 ? "" : "s"} left.`;
+                    ? ` This is your last free ${unit} -- make it count!`
+                    : ` You have ${afterThis} free ${unit}${afterThis === 1 ? "" : "s"} left.`;
                 twiml.message(
-                    `Your ${styleName} portrait is in the works! Head to the Twilio booth to pick it up in a few.${countMsg}${terms}${promo}`,
+                    `Your ${styleName} portrait is in the works!${pickupMsg}${countMsg}${terms}${promo}`,
                 );
                 enqueueJob(
                     req.body.MediaUrl0,
@@ -121,6 +128,8 @@ app.post("/sms", async (req, res) => {
             }
         }
     } else {
+        const printingEnabled = settings.get("enablePrinting");
+        const unit = printingEnabled ? "print" : "portrait";
         if (isAdmin(userPhone)) {
             twiml.message(
                 `Send us a selfie and we'll turn it into art! Pick a style by typing its name with your photo: ${styleChoices}.`,
@@ -132,11 +141,11 @@ app.post("/sms", async (req, res) => {
             const eventName = settings.get("eventName");
             if (remaining <= 0) {
                 twiml.message(
-                    `You've already used your ${maxPrints} free prints for ${eventName}. Thanks for stopping by the Twilio booth!`,
+                    `You've already used your ${maxPrints} free ${unit}s for ${eventName}. Thanks for stopping by!`,
                 );
             } else {
                 twiml.message(
-                    `Send us a selfie and we'll turn it into art! Pick a style by typing its name with your photo: ${styleChoices}. You have ${remaining} free print${remaining === 1 ? "" : "s"} at ${eventName}.`,
+                    `Send us a selfie and we'll turn it into art! Pick a style by typing its name with your photo: ${styleChoices}. You have ${remaining} free ${unit}${remaining === 1 ? "" : "s"} at ${eventName}.`,
                 );
             }
         }
