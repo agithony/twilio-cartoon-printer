@@ -33,7 +33,6 @@ const {
 const { STYLES, STYLE_LIST, parseStyle } = require("./lib/styles");
 const { mountDashboard } = require("./lib/dashboard");
 const { mountHome } = require("./lib/home");
-const { mountGallery } = require("./lib/gallery");
 const { mountPhotoGallery } = require("./lib/photogallery");
 
 const app = express();
@@ -147,7 +146,6 @@ app.listen(port, "0.0.0.0", () => {
     buildUsageCache();
     recoverStaleJobs();
     mountHome(app);
-    mountGallery(app);
     mountPhotoGallery(app);
     mountDashboard(app);
     setInterval(processGenerationQueue, POLL_INTERVAL);

@@ -146,6 +146,7 @@ The home page (`http://localhost:<port>/home`) opens automatically in your defau
 📊 Usage cache built: 0 entries
 📄 Paper counter loaded: 20/20 sheets (warn at 2)
 🏠 Home page mounted at /home
+📖 Photo book mounted at /photogallery
 📊 Dashboard mounted at /dashboard
 ⏱️  Workers started (polling every 3000ms, max 5 concurrent generations)
 ```
@@ -202,57 +203,47 @@ The app serves web pages on the same port:
 |---|---|
 | `/home` | Home page (opens automatically on startup) |
 | `/home/video` | Get Started video player (fullscreen, looping) |
-| `/gallery` | Image gallery of AI-generated portraits |
-| `/photogallery` | Photo book gallery with page-turn animations |
+| `/home/combo` | Booth display -- split-screen with intro video and photo book |
+| `/photogallery` | Photo book with realistic page-turn animations |
 | `/dashboard` | Admin dashboard with real-time monitoring |
 
 ### Home page
 
-The home page at `/home` is the default landing page for booth admins. It shows the event name and three action cards:
+The home page at `/home` is the default landing page for booth admins. It shows the event name and two action cards:
 
 - **Open Dashboard** -- links to the admin dashboard for monitoring and management
-- **Launch Booth Display** -- opens the intro video in a new browser tab so you can display it on a booth monitor while continuing to work in another tab
-- **View Gallery** -- opens the image gallery in a new tab for displaying on a second screen
+- **Launch Booth Display** -- opens a split-screen view (`/home/combo`) with the intro video and photo book side by side. The divider is draggable to resize each pane. An expandable "Open individually" section provides direct links to the intro video and photo book separately.
 
 The home page also shows a live **Booth Status** checklist (printer, paper, queue, total prints), a **How It Works** overview of the 5-step attendee flow, and a **Quick Reference** with available art styles and per-user print limits.
 
 ### Get Started video
 
-The "Get Started" button opens `/home/video` in a new tab. This is a fullscreen looping video player designed to run on a booth display monitor to attract attendees and show them how the photobooth works.
+The intro video at `/home/video` is a fullscreen looping video player designed to run on a booth display monitor to attract attendees and show them how the photobooth works.
 
 - Place your video file in the `assets/` folder
 - Set `VIDEO_FILE` in `.env` to the filename (defaults to `get-started.mp4`)
-- The video autoplays on loop with native playback controls (pause, scrub, skip)
-- Click anywhere outside the controls to go fullscreen
+- The video autoplays on loop with a floating Pause/Play button and Fullscreen button
 - To switch videos, change `VIDEO_FILE` in `.env` and restart
 
-### Image gallery
+### Booth display
 
-The gallery at `/gallery` is a fullscreen image showcase designed to run on a booth display monitor. It shows all AI-generated portraits from the current event in a rotating slideshow.
+The booth display at `/home/combo` is a split-screen view combining the intro video and photo book side by side on a single monitor. The divider between panes is draggable to resize each side.
 
-- Auto-rotates through images every 10 seconds (on by default)
-- Play/Pause button to control auto-rotation
-- Left/right arrow overlays and keyboard arrows to navigate manually
-- Clickable thumbnail strip along the bottom to jump to any image
-- Live portrait counter that updates in real time as new images are generated
-- Fullscreen button for true fullscreen display
-- Dark background optimized for display monitors
-- Polls for new images every 5 seconds -- new portraits appear automatically
+### Photo book
 
-### Photo book gallery
-
-The photo book at `/photogallery` is an alternative gallery that presents AI-generated portraits as an open book with two pages side by side. Designed for a more tactile, physical feel on booth displays.
+The photo book at `/photogallery` presents AI-generated portraits as an open book with two pages side by side. Uses the [turn.js](https://github.com/nickmilo/turn.js) library for realistic page-turn animations. Designed for a tactile, physical feel on booth displays.
 
 - Open book layout with left and right pages showing different portraits
-- Stacked page layers underneath for a realistic book thickness effect
-- Page-turn animation when navigating between spreads
-- Per-page "View Original" buttons to flip individual pages and reveal the original selfie
+- Realistic page-turn animations powered by turn.js (drag corners or use arrows)
+- Stacked page layers and book cover for a realistic book depth effect
+- Per-page "View Original" buttons to reveal the original selfie
 - Page numbers on each page (highest to lowest, newest to oldest)
 - White photo frame mat around each image with decorative corner mounts
 - Auto-rotates through spreads every 10 seconds
 - Play/Pause, keyboard arrows, and clickable thumbnails for manual navigation
 - Fullscreen support with responsive sizing
 - Warm parchment-toned pages with subtle paper texture
+- Live portrait counter with animated bump when new images arrive
 - Polls for new images every 5 seconds
 
 ## Admin Dashboard
@@ -314,9 +305,8 @@ twilio-cartoon-printer/
 │   ├── pipeline.js       generateImage (steps 1-6) and printJob (steps 7-8)
 │   ├── queue.js          Concurrent generation worker, serial print worker, usage tracking
 │   ├── dashboard.js      Admin dashboard (mounted at /dashboard)
-│   ├── home.js           Home page (mounted at /home)
-│   ├── gallery.js        Image gallery (mounted at /gallery)
-│   ├── photogallery.js   Photo book gallery (mounted at /photogallery)
+│   ├── home.js           Home page, intro video, booth display (mounted at /home)
+│   ├── photogallery.js   Photo book (mounted at /photogallery)
 │   └── paper.js          Paper counter with file persistence
 ├── assets/               Video and media files for the home page
 │   └── get-started.mp4   Attract loop video (gitignored)
