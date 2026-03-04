@@ -32,6 +32,7 @@ const {
 } = require("./lib/queue");
 const { STYLES, STYLE_LIST, parseStyle } = require("./lib/styles");
 const { mountDashboard } = require("./lib/dashboard");
+const { mountHome } = require("./lib/home");
 
 const app = express();
 const port = parseInt(process.env.PORT || "80", 10);
@@ -143,15 +144,16 @@ app.listen(port, "0.0.0.0", () => {
     console.log(`🚀 App running on port ${port} | Event: ${EVENT_NAME}`);
     buildUsageCache();
     recoverStaleJobs();
+    mountHome(app);
     mountDashboard(app);
     setInterval(processGenerationQueue, POLL_INTERVAL);
     setInterval(processPrintQueue, POLL_INTERVAL);
     console.log(`⏱️  Workers started (polling every ${POLL_INTERVAL}ms, max ${MAX_CONCURRENT_GENERATION} concurrent generations)`);
 
-    // Auto-open dashboard in the default browser
-    const url = `http://localhost${port === 80 ? "" : ":" + port}/dashboard`;
+    // Auto-open home page in the default browser
+    const host = `http://localhost${port === 80 ? "" : ":" + port}`;
     const openCmd = process.platform === "darwin" ? "open" : process.platform === "win32" ? "start" : "xdg-open";
-    exec(`${openCmd} ${url}`, (err) => {
-        if (err) console.log(`📊 Dashboard available at ${url}`);
+    exec(`${openCmd} ${host}/home`, (err) => {
+        if (err) console.log(`🏠 Home available at ${host}/home`);
     });
 });

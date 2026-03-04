@@ -133,14 +133,15 @@ Print settings (page size, resolution, borderless options) are configured in `li
 sudo pnpm start
 ```
 
-or equivalently `sudo node index.js`. `sudo` is required because the app listens on port 80 (needed for Twilio webhooks over HTTP).
+or equivalently `sudo node index.js`. `sudo` is required when using the default port 80 (needed for Twilio webhooks over HTTP). Set `PORT` in your `.env` to use a different port (e.g. `PORT=8080`).
 
-The dashboard (`http://localhost/dashboard`) opens automatically in your default browser on startup. You should see:
+The home page (`http://localhost:<port>/home`) opens automatically in your default browser on startup. You should see:
 
 ```
 🚀 App running on port 80 | Event: YourEventName
 📊 Usage cache built: 0 entries
 📄 Paper counter loaded: 20/20 sheets (warn at 2)
+🏠 Home page mounted at /home
 📊 Dashboard mounted at /dashboard
 ⏱️  Workers started (polling every 3000ms, max 5 concurrent generations)
 ```
@@ -189,9 +190,18 @@ Then point Twilio to:
 http://<your-host>:8080/sms
 ```
 
+## Web UI
+
+The app serves two web pages on the same port:
+
+| Route | Description |
+|---|---|
+| `/home` | Home page (opens automatically on startup) |
+| `/dashboard` | Real-time monitoring dashboard |
+
 ## Dashboard
 
-A real-time monitoring dashboard is available at `/dashboard` on the same port as the app. Open `http://localhost/dashboard` in your browser after starting the server.
+The monitoring dashboard is available at `http://localhost:<port>/dashboard`.
 
 Admin phone numbers are excluded from all dashboard metrics -- they won't appear in totals, averages, top users, style breakdowns, or the outreach list.
 
@@ -248,6 +258,7 @@ twilio-cartoon-printer/
 │   ├── pipeline.js       generateImage (steps 1-6) and printJob (steps 7-8)
 │   ├── queue.js          Concurrent generation worker, serial print worker, usage tracking
 │   ├── dashboard.js      Real-time dashboard (mounted at /dashboard)
+│   ├── home.js           Home page (mounted at /home)
 │   └── paper.js          Paper counter with file persistence
 ├── templates/            Frame overlays (PNGs with transparent center)
 │   └── signal_sf.png     Example: SIGNAL SF branded frame
