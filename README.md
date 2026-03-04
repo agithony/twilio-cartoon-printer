@@ -46,7 +46,7 @@ If no style is specified, it defaults to cartoon.
 - **pnpm** -- install with `npm install -g pnpm` ([docs](https://pnpm.io/installation))
 - **Twilio account** with a phone number that has SMS/MMS enabled
 - **OpenAI API key** with access to gpt-5.2 and gpt-image-1.5
-- **Printer** configured on the system and accessible via `lp` (macOS/Linux CUPS)
+- **Printer** -- Epson EcoTank ET-8550 recommended. Connected via USB, WiFi, or Bonjour and registered in CUPS (macOS/Linux). See [Printer setup](#4-printer-setup) for details.
 
 ## Quick Start
 
@@ -129,13 +129,32 @@ The template can be **any resolution** — it gets resized to fit the print auto
 
 Leave `TEMPLATE_FILE` blank to disable the frame overlay.
 
-### 4. Find your printer name
+### 4. Printer setup
+
+#### Compatible printers
+
+The app is built and tested with the **Epson EcoTank ET-8550** wide-format photo printer. The print command options (page size, margins, resolution) in `lib/printer.js` are Epson-specific. Other Epson EcoTank models that support 5x7 borderless photo printing should also work.
+
+Using a non-Epson printer (Canon, HP, Brother, etc.) requires changing the `-o` flags in the `lp` command in `lib/printer.js` to match that printer's supported options.
+
+#### Connection methods
+
+The app prints through **CUPS** (Common Unix Printing System), which is built into macOS and Linux. Any printer that appears in CUPS works, regardless of how it's connected:
+
+- **USB** -- direct connection, most reliable
+- **WiFi / Network** -- printer and server on the same network
+- **Bonjour / AirPrint** -- automatic discovery on local networks (common for macOS)
+- **IPP** (Internet Printing Protocol) -- standard network printing
+
+All connection methods behave identically from the app's perspective. The `lp` command sends jobs to the CUPS daemon, which handles the connection details. A WiFi-connected Epson ET-8550 works the same as a USB-connected one.
+
+#### Find your printer name
 
 ```sh
 lpstat -p
 ```
 
-Copy the printer name (e.g. `EPSON_ET_8550_Series`) into `PRINTER_NAME` in your `.env`. The app will match any printer starting with that name and prefer a healthy one over a disconnected/disabled one.
+Copy the printer name (e.g. `EPSON_ET_8550_Series`) into `PRINTER_NAME` in your `.env`. The app matches any printer starting with that prefix. If multiple printers match, it picks a healthy one over a disconnected or disabled one.
 
 Print settings (page size, resolution, borderless options) are configured in `lib/printer.js`. The defaults are tuned for an Epson ET-8550 on 5x7 photo paper with no margins.
 
