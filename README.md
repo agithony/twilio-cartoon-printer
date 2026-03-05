@@ -12,10 +12,11 @@ flowchart TB
   subgraph G["Generation (up to N concurrent)"]
     M["Content moderation (OpenAI)"]
     F["Face detection (rejects no-face photos)"]
+    A["Scene analysis (counts subjects & pets)"]
     I["Image generation (gpt-5.2 + gpt-image-1.5)"]
     C["Template frame composited (optional)"]
     R["Resized for print (5x7 @ 300 DPI)"]
-    M --> F --> I --> C --> R
+    M --> F --> A --> I --> C --> R
   end
 
   Q --> M

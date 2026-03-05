@@ -5,3 +5,5 @@ assets/*.mp4
 assets/*.mov
 assets/*.webm
 .env
+data/leads.json
+.DS_Store

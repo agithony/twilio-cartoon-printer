@@ -228,9 +228,9 @@ Styles automatically appear in SMS messages and are available for users to selec
 
 ## Brand Prompt
 
-The brand prompt is a global modifier appended to every art style's AI prompt. Use it for event-specific branding that should appear across all styles -- clothing, logos, visual themes, etc.
+The brand prompt is a global modifier appended to every art style's AI prompt. Use it for event-specific branding that should appear across all styles -- clothing, logos, visual themes, etc. The brand prompt is automatically applied to all subjects when a photo contains multiple people or pets.
 
-For example, setting the brand prompt to "The subject should be wearing a bright red Twilio t-shirt with the Twilio logo clearly visible" will apply that branding to cartoon, watercolor, anime, and every other style.
+For example, setting the brand prompt to "wearing a bright red Twilio t-shirt with the Twilio logo clearly visible" will dress every person in the photo in that shirt across cartoon, watercolor, anime, and every other style.
 
 Configure it from the Settings panel under Art & Branding. Leave blank to disable. Can also be set via the `BRAND_PROMPT` environment variable.
 
@@ -345,7 +345,7 @@ downloads/YourEventName/20260211_143000_output.png
 
 The pipeline is split into two independent workers:
 
-- **Generation worker** -- Processes up to `MAX_CONCURRENT_GENERATION` jobs at the same time. Each job goes through download, moderation, face detection, AI generation, compositing, and print prep. Multiple images generate in parallel so users don't wait in a long single-threaded queue.
+- **Generation worker** -- Processes up to `MAX_CONCURRENT_GENERATION` jobs at the same time. Each job goes through download, moderation, face detection, scene analysis, AI generation, compositing, and print prep. The scene analysis step describes the subjects in the photo (number of people, positions, pets) so the generation model includes everyone. Multiple images generate in parallel so users don't wait in a long single-threaded queue.
 - **Print worker** -- Processes one job at a time from the `ready/` queue. Sends the image to the printer and notifies the user via SMS when their print is ready.
 
 Each job tracks timestamps for every state transition (`pendingAt`, `generatingAt`, `readyAt`, `printingAt`, `completedAt`) which are used by the dashboard to compute average generation/print times and detect stuck jobs.
@@ -404,12 +404,12 @@ twilio-cartoon-printer/
 │   ├── done/             Successfully printed jobs
 │   └── failed/           Permanent failures or max retries exceeded
 ├── data/                 Persistent app data
-│   ├── leads.json        Captured leads (keyed by phone:event)
+│   ├── leads.json        Captured leads — keyed by phone:event (gitignored)
 │   ├── paper.json        Paper counter state
 │   ├── raffle.json       Raffle winner history
 │   └── settings.json     Runtime settings overrides
 ├── .env                  API keys, printer config, event settings
-├── .gitignore            Excludes downloads/, queue/, .env, node_modules/
+├── .gitignore            Excludes downloads/, queue/, .env, node_modules/, data/leads.json
 ├── package.json
 └── pnpm-lock.yaml
 ```
