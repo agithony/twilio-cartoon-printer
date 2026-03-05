@@ -313,11 +313,11 @@ The admin dashboard shows (in order):
 - **Style breakdown** -- bar chart showing how many prints of each art style
 - **Hourly activity** -- bar chart of prints per hour over the last 24 hours with hour labels and hover tooltips
 - **Top users** -- most active phone numbers (masked for privacy)
-- **Job health** -- completed vs failed counts, overall success rate, and content rejection rate
-- **Failure breakdown** -- bar chart categorizing failures by reason (moderation, face detection, generation/API errors, printer errors)
+- **Job health** -- completed vs failed counts, overall success rate, content rejection rate, and average generation/print times
+- **Failure breakdown** -- bar chart categorizing failures by reason (moderation, face detection, generation/API errors, printer errors, crash recovery)
 - **User geography** -- bar chart showing where users are located based on phone number country codes
-- **Queue status** -- live counts for each pipeline stage (pending, generating, ready, printing) and printer status
-- **Paper counter** -- tracks remaining sheets in the printer tray with a visual progress bar. Configurable capacity and warning threshold. Alerts when paper is low or empty. Click "Reset" after reloading the tray.
+- **Queue status** -- live counts for each pipeline stage (pending, generating, ready, printing) and printer status. Stuck job detection alerts when a job has been generating for over 5 minutes or printing for over 10 minutes.
+- **Paper counter** -- estimated remaining sheets based on prints sent, with a visual progress bar. Configurable capacity and warning threshold. Alerts when paper is low or empty. Click "Reset" after reloading the tray.
 
 The dashboard auto-refreshes every 3 seconds. No external dependencies -- it's a single self-contained HTML page with inline CSS and JavaScript.
 
@@ -326,7 +326,7 @@ The dashboard auto-refreshes every 3 seconds. No external dependencies -- it's a
 Click **Generate Report** on the dashboard to download a PDF summarizing key event metrics. The report includes:
 
 - AI-generated event summary (via OpenAI)
-- Key metrics (total prints, unique users, avg per user, most popular style, success rate)
+- Key metrics (total prints, unique users, avg per user, most popular style, success rate, avg generation/print times)
 - Style breakdown table
 - Top users
 - Failure analysis with rejection rate
@@ -336,12 +336,13 @@ The report respects the currently selected event filter. AI summaries are cached
 
 ### Paper counter
 
-The paper counter is software-based. It decrements automatically each time a print completes. Since printers don't report exact sheet counts for photo paper trays, this tracks it for you.
+The paper counter is a software estimate -- it decrements automatically each time a print completes. Most consumer/prosumer printers (including the Epson ET-8550) don't expose paper tray level via CUPS or any standard API, so this counter tracks it for you based on prints sent.
 
 - Default capacity: 20 sheets, warning at 2 remaining
 - Both values are adjustable from the dashboard
 - Console logs warnings when paper is low (`⚠️`) or empty (`🚨`)
 - State persists across server restarts (saved to `data/paper.json`)
+- Press "Reset" after reloading the paper tray to reset the count
 
 ## Lead Capture
 
@@ -459,7 +460,7 @@ On server restart:
 
 ### Permanent failures
 
-Jobs flagged by content moderation or rejected by face detection are moved directly to `failed/` without retrying. The user's print count is refunded and they're told it didn't cost a print. Each failed job records a `failReason` field (`moderation`, `face_detection`, `generation`, `printer`) used by the dashboard's failure breakdown panel.
+Jobs flagged by content moderation or rejected by face detection are moved directly to `failed/` without retrying. The user's print count is refunded and they're told it didn't cost a print. Each failed job records a `failReason` field (`moderation`, `face_detection`, `generation`, `printer`, `max_retries`) used by the dashboard's failure breakdown panel.
 
 ### Retry logic
 
