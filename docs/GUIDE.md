@@ -236,7 +236,7 @@ Configure it from the Settings panel under Art & Branding. Leave blank to disabl
 
 ## Delivery Mode
 
-The app supports two delivery modes, configurable from the Settings panel under Booth & Delivery:
+The app supports two delivery modes, configurable from the Settings panel under Delivery & Printing:
 
 - **Print + Digital** (default) -- Portraits are printed at the booth and sent to the user via MMS after printing completes. Requires a connected printer.
 - **Digital Only** -- Portraits are sent via MMS immediately after AI generation. No printer required. Use this for demos, remote events, or setups without a physical printer.
@@ -258,9 +258,8 @@ The app can collect attendee contact information via a short SMS survey. When en
 
 ### Modes
 
-Configure Lead Capture Mode from the Settings panel on `/home`:
+Configure Lead Capture from the Settings panel on `/home`. Toggle it on to enable, then choose the timing:
 
-- **Disabled** (default) -- No survey, normal flow
 - **Before** -- Survey runs when a user first texts the app. If they sent a selfie, it's held and auto-enqueued after survey completion. If they texted without an image, they're prompted to send a selfie after finishing. On completion the user receives a brief thank-you and proceeds to the normal portrait flow.
 - **After** -- Normal flow proceeds (selfie, generation, printing). When the portrait is ready, the completion MMS is held back and the survey starts. After completion, the held portrait is delivered.
 
@@ -292,23 +291,25 @@ The app can send a promotional message as a standalone SMS after each portrait i
 
 The promo is sent after every portrait completion (including repeat users). Admins are excluded. If the promo message field is empty, no promo is sent.
 
-Configure the message from the Settings panel on the home page under Messaging. Set `PROMO_MESSAGE` in `.env` to configure a default, or leave blank to disable.
+Configure the message from the Settings panel on the home page under Promotional. Set `PROMO_MESSAGE` in `.env` to configure a default, or leave blank to disable.
 
 ## Runtime Settings
 
 The Settings panel on the home page (`/home`) lets admins change all app configuration at runtime without editing `.env` or restarting the server. Changes take effect immediately and are persisted to `data/settings.json`.
 
-The settings panel is organized into five sections:
+The settings panel is organized into six sections:
 
-**Event** -- Event Name, Max Prints Per User, Max Concurrent Generations
-
-**Lead Capture** -- Lead Capture Mode (Disabled, Before, or After). See [Lead Capture](#lead-capture) for details.
+**Event** -- Event Name (combo-box with existing events or type a new name), Max Prints Per User, Max Concurrent Generations, Admin Phone Numbers
 
 **Art & Branding** -- Default Style selector, Brand Prompt (global branding applied to all styles), art style toggles with editable prompts (and reset for built-ins), custom style creation with editable names and prompts
 
-**Booth & Delivery** -- Delivery Mode (Print + Digital or Digital Only), Printer selection, Print Size (4x6, 5x7, 8x10), Print Quality (Standard, High, Max), Custom Print Flags, Template Frame, Intro Video. Print settings are only visible when Print + Digital mode is selected and take effect on the next print job.
+**Delivery & Printing** -- Delivery Mode (Print + Digital or Digital Only), Printer selection, Print Size (4x6, 5x7, 8x10), Print Quality (Standard, High, Max), Custom Print Flags. Print settings are only visible when Print + Digital mode is selected and take effect on the next print job.
 
-**Messaging** -- Admin Phone Numbers, Terms URL (displayed on booth screens), Promotional Message (standalone SMS sent after each portrait delivery)
+**Booth Display** -- Template Frame, Intro Video, Terms URL (displayed on booth screens)
+
+**Lead Capture** -- Enable/disable toggle. When enabled, choose timing: Before Portrait or After Portrait. See [Lead Capture](#lead-capture) for details.
+
+**Promotional** -- Promotional Message (standalone SMS sent after each portrait delivery)
 
 Settings are stored as overrides on top of `.env` defaults. Click "Reset to Defaults" to revert all overrides.
 
@@ -317,12 +318,12 @@ The settings API is also available programmatically:
 - `GET /dashboard/api/settings` -- current settings
 - `POST /dashboard/api/settings` -- update settings
 - `POST /dashboard/api/settings/reset` -- revert to `.env` defaults
-- `GET /dashboard/api/settings/files` -- list available templates, videos, printers
+- `GET /dashboard/api/settings/files` -- list available templates, videos, printers, and known events
 - `POST /dashboard/api/settings/upload?type=template&filename=foo.png` -- upload a file
 
 ## Switching Events
 
-When moving to a new event, change the Event Name in the Settings panel on `/home`. This automatically:
+When moving to a new event, change the Event Name in the Settings panel on `/home`. The Event Name field is a combo-box -- click the arrow to select a previous event, or type a new name to create one. This automatically:
 
 1. Creates a new downloads subfolder for the event
 2. Resets everyone's print count
