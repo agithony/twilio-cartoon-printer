@@ -71,9 +71,7 @@ BRAND_PROMPT=
 PRINT_SIZE=5x7
 PRINT_QUALITY=high
 CUSTOM_PRINT_FLAGS=
-PROMO_EVENT_NAME=SIGNAL San Francisco
-PROMO_EVENT_DATE=May 6-7, 2026
-PROMO_EVENT_URL=https://twil.io/devweek26
+PROMO_MESSAGE=
 ```
 
 See [docs/GUIDE.md](docs/GUIDE.md#environment-variables) for a full description of each variable.

@@ -52,9 +52,10 @@ This document covers all features and configuration in depth. For quick setup, s
 | `PRINT_SIZE` | No | Print paper size. Options: `4x6`, `5x7`, `8x10`. Defaults to `5x7`. Controls both image pixel dimensions and the PageSize flag sent to the printer. |
 | `PRINT_QUALITY` | No | Print resolution. Options: `standard` (360 DPI), `high` (720 DPI), `max` (1440 DPI). Defaults to `high`. |
 | `CUSTOM_PRINT_FLAGS` | No | Additional raw flags appended to the `lp` command. For non-Epson printers or advanced CUPS options (e.g. `-o MediaType=Glossy`). |
-| `PROMO_EVENT_NAME` | No | Name of the event to promote in SMS messages |
-| `PROMO_EVENT_DATE` | No | Date string for the promoted event |
-| `PROMO_EVENT_URL` | No | Registration URL for the promoted event |
+| `PROMO_MESSAGE` | No | Promotional message sent as a standalone SMS after each portrait delivery. Leave blank to disable. |
+| `PROMO_EVENT_NAME` | No | (Legacy) Name of the event to promote -- used to compute default promo text for backward compatibility |
+| `PROMO_EVENT_DATE` | No | (Legacy) Date string for the promoted event |
+| `PROMO_EVENT_URL` | No | (Legacy) Registration URL for the promoted event |
 
 ## Template Frames
 
@@ -290,12 +291,11 @@ The page uses a two-column layout on desktop (user list on the left, actions on 
 
 ## Promotional Messages
 
-The app can append a promotional message to SMS confirmations. Two separate messages can be configured, one for first-time users and one for returning users:
+The app can send a promotional message as a standalone SMS after each portrait is delivered. The promo is always the last message in the conversation for each portrait -- it arrives a few seconds after the completion MMS, separate from all status messages.
 
-- **First selfie (Intro)** -- Appended to the first confirmation SMS for a new user
-- **Returning user** -- Appended to subsequent confirmation SMS messages
+The promo is sent after every portrait completion (including repeat users). Admins are excluded. If the promo message field is empty, no promo is sent.
 
-Promo messages can be edited from the Settings panel on the home page under Messaging. The `.env` variables `PROMO_EVENT_NAME`, `PROMO_EVENT_DATE`, and `PROMO_EVENT_URL` are used to compute default promo text if no override is set. Leave the promo text fields blank to disable.
+Configure the message from the Settings panel on the home page under Messaging. Set `PROMO_MESSAGE` in `.env` to configure a default, or leave blank to disable.
 
 ## Runtime Settings
 
@@ -311,7 +311,7 @@ The settings panel is organized into five sections:
 
 **Booth & Delivery** -- Delivery Mode (Print + Digital or Digital Only), Printer selection, Print Size (4x6, 5x7, 8x10), Print Quality (Standard, High, Max), Custom Print Flags, Template Frame, Intro Video. Print settings are only visible when Print + Digital mode is selected and take effect on the next print job.
 
-**Messaging** -- Admin Phone Numbers, Terms URL, First-Time and Returning User promo messages
+**Messaging** -- Admin Phone Numbers, Terms URL, Promotional Message (standalone SMS sent after each portrait delivery)
 
 Settings are stored as overrides on top of `.env` defaults. Click "Reset to Defaults" to revert all overrides.
 

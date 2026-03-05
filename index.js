@@ -69,6 +69,11 @@ app.post("/sms", async (req, res) => {
     const leadMode = settings.get("leadCaptureMode");
     const eventName = settings.get("eventName");
 
+    // Testing mode: admins experience the full regular-user flow (intro, promo,
+    // status messages, lead capture) but with unlimited quota.
+    const testingMode = eventName.toLowerCase() === "testing";
+    const treatAsAdmin = isAdmin(userPhone) && !testingMode;
+
     // Helper: confirm and enqueue a job with the chosen style
     async function confirmAndEnqueue(style, imageUrl, messageSid, useTwiml) {
         const styleName = activeStyles[style].name;
@@ -81,24 +86,24 @@ app.post("/sms", async (req, res) => {
         const unit = printingEnabled ? "print" : "portrait";
         const units = printingEnabled ? "prints" : "portraits";
 
-        if (isAdmin(userPhone)) {
+        if (treatAsAdmin) {
             const isFirst = getUsageCount(userPhone) === 0;
-            const promo = isFirst ? settings.getPromoIntro() : settings.getPromoReturning();
             const termsUrl = settings.get("termsUrl");
             const terms = isFirst && termsUrl ? `\n\nBy sending a photo, you agree to our terms: ${termsUrl}` : "";
             if (useTwiml) {
-                twiml.message(`Your ${styleName} portrait is in the works!${pickupMsg}${terms}${promo}`);
+                twiml.message(`Your ${styleName} portrait is in the works!${pickupMsg}${terms}`);
             } else {
                 const { sendSms } = require("./lib/helpers");
-                await sendSms(userPhone, appPhone, `Your ${styleName} portrait is in the works!${pickupMsg}${terms}${promo}`);
+                await sendSms(userPhone, appPhone, `Your ${styleName} portrait is in the works!${pickupMsg}${terms}`);
             }
             enqueueJob(imageUrl, messageSid, userPhone, appPhone, style, baseUrl);
         } else {
             const used = getUsageCount(userPhone);
             const maxPrints = settings.get("maxPrints");
             const remaining = maxPrints - used;
+            const unlimited = isAdmin(userPhone) && testingMode;
 
-            if (remaining <= 0) {
+            if (remaining <= 0 && !unlimited) {
                 if (useTwiml) {
                     twiml.message(`You've already used your ${maxPrints} free ${units} for ${eventName}. Thanks for stopping by!`);
                 } else {
@@ -109,18 +114,17 @@ app.post("/sms", async (req, res) => {
             }
 
             const isFirst = used === 0;
-            const promo = isFirst ? settings.getPromoIntro() : settings.getPromoReturning();
             const termsUrl = settings.get("termsUrl");
             const terms = isFirst && termsUrl ? `\n\nBy sending a photo, you agree to our terms: ${termsUrl}` : "";
-            const afterThis = remaining - 1;
-            const countMsg = afterThis === 0
-                ? ` This is your last free ${unit} -- make it count!`
-                : ` You have ${afterThis} free ${unit}${afterThis === 1 ? "" : "s"} left.`;
+            const afterThis = unlimited ? null : remaining - 1;
+            const countMsg = afterThis === null || afterThis <= 0
+                ? ""
+                : ` You have ${afterThis} ${unit}${afterThis === 1 ? "" : "s"} remaining.`;
             if (useTwiml) {
-                twiml.message(`Your ${styleName} portrait is in the works!${pickupMsg}${countMsg}${terms}${promo}`);
+                twiml.message(`Your ${styleName} portrait is in the works!${pickupMsg}${countMsg}${terms}`);
             } else {
                 const { sendSms } = require("./lib/helpers");
-                await sendSms(userPhone, appPhone, `Your ${styleName} portrait is in the works!${pickupMsg}${countMsg}${terms}${promo}`);
+                await sendSms(userPhone, appPhone, `Your ${styleName} portrait is in the works!${pickupMsg}${countMsg}${terms}`);
             }
             enqueueJob(imageUrl, messageSid, userPhone, appPhone, style, baseUrl);
         }
@@ -133,7 +137,7 @@ app.post("/sms", async (req, res) => {
     }
 
     // ── 1. Lead capture active survey ───────────────────────────────────────
-    if (leadMode !== "disabled" && !isAdmin(userPhone) && leads.isActive(userPhone)) {
+    if (leadMode !== "disabled" && !treatAsAdmin && leads.isActive(userPhone)) {
         const result = await leads.processResponse(userPhone, body);
 
         if (result.status === "completed" && result.pendingImage) {
@@ -162,7 +166,7 @@ app.post("/sms", async (req, res) => {
             styleMenu.clearPending(userPhone);
 
             // Check if lead capture "before" is needed
-            if (leadMode === "before" && !isAdmin(userPhone) && !leads.isCompleted(userPhone, eventName)) {
+            if (leadMode === "before" && !treatAsAdmin && !leads.isCompleted(userPhone, eventName)) {
                 await leads.startSurvey(userPhone, appPhone, eventName, "before", {
                     imageUrl: pending.imageUrl,
                     messageSid: pending.messageSid,
@@ -180,7 +184,7 @@ app.post("/sms", async (req, res) => {
     }
 
     // ── 3. Lead capture "before" intercept ──────────────────────────────────
-    if (leadMode === "before" && !isAdmin(userPhone) && !leads.isCompleted(userPhone, eventName)) {
+    if (leadMode === "before" && !treatAsAdmin && !leads.isCompleted(userPhone, eventName)) {
         if (numMedia > 1) {
             twiml.message("One at a time! Send a single selfie and we'll work our magic.");
         } else if (numMedia === 1) {
@@ -206,6 +210,19 @@ app.post("/sms", async (req, res) => {
     if (numMedia > 1) {
         twiml.message("One at a time! Send a single selfie and we'll work our magic.");
     } else if (numMedia === 1) {
+        // Check quota before showing style menu or enqueuing
+        if (!treatAsAdmin) {
+            const used = getUsageCount(userPhone);
+            const maxPrints = settings.get("maxPrints");
+            const unlimited = isAdmin(userPhone) && testingMode;
+            const printingEnabled = settings.get("enablePrinting");
+            const units = printingEnabled ? "prints" : "portraits";
+            if (used >= maxPrints && !unlimited) {
+                twiml.message(`You've already used your ${maxPrints} free ${units} for ${eventName}. Thanks for stopping by!`);
+                return res.type("text/xml").send(twiml.toString());
+            }
+        }
+
         const explicitStyle = detectStyle(body, activeStyles);
         if (explicitStyle) {
             await confirmAndEnqueue(explicitStyle, req.body.MediaUrl0, req.body.MessageSid, true);
@@ -221,7 +238,7 @@ app.post("/sms", async (req, res) => {
         const conversational = body && body.trim().length > 2
             && !/^(hi|hey|hello|yo|sup|ok|yes|no|thanks|ty|thx|k|lol|hit send to start!?)$/i.test(body.trim());
 
-        if (isAdmin(userPhone)) {
+        if (treatAsAdmin) {
             if (conversational) {
                 const { generateSmartReply } = require("./lib/helpers");
                 const reply = await generateSmartReply(body, { eventName, styleChoices, remaining: null, unit });
@@ -250,8 +267,11 @@ app.post("/sms", async (req, res) => {
                         return res.type("text/xml").send(twiml.toString());
                     }
                 }
+                const countNote = used === 0
+                    ? ` You get ${maxPrints} free ${unit}${maxPrints === 1 ? "" : "s"} at ${eventName}.`
+                    : ` You have ${remaining} ${unit}${remaining === 1 ? "" : "s"} remaining.`;
                 twiml.message(
-                    `Send us a selfie and we'll turn it into art! You'll get to pick your style after. You have ${remaining} free ${unit}${remaining === 1 ? "" : "s"} at ${eventName}.`,
+                    `Send us a selfie and we'll turn it into art! You'll get to pick your style after.${countNote}`,
                 );
             }
         }
