@@ -46,7 +46,7 @@ This document covers all features and configuration in depth. For quick setup, s
 | `MAX_CONCURRENT_GENERATION` | No | Max AI image generations running at the same time. Defaults to `3`. Increase for faster throughput, decrease if hitting OpenAI rate limits. |
 | `TEMPLATE_FILE` | No | Filename of the template frame in the `templates/` folder (e.g. `signal_sf.png`). Leave blank to disable. |
 | `VIDEO_FILE` | No | Filename of the Get Started video in the `assets/` folder (e.g. `get-started.mp4`). Defaults to `get-started.mp4`. |
-| `TERMS_URL` | No | URL to your terms of service. Shown once in the user's first selfie confirmation. |
+| `TERMS_URL` | No | URL to your terms of service. Displayed on booth screens (video, combo, photo gallery). |
 | `ENABLE_PRINTING` | No | Set to `false` to disable printing and run digital-only (MMS delivery). Defaults to `true`. |
 | `BRAND_PROMPT` | No | Global branding prompt appended to every art style (e.g. clothing, logos). Leave blank to disable. |
 | `PRINT_SIZE` | No | Print paper size. Options: `4x6`, `5x7`, `8x10`. Defaults to `5x7`. Controls both image pixel dimensions and the PageSize flag sent to the printer. |
@@ -261,8 +261,8 @@ The app can collect attendee contact information via a short SMS survey. When en
 Configure Lead Capture Mode from the Settings panel on `/home`:
 
 - **Disabled** (default) -- No survey, normal flow
-- **Before** -- Survey runs when a user first texts the app. If they sent a selfie, it's held and auto-enqueued after survey completion. If they texted without an image, they're prompted to send a selfie after finishing.
-- **After** -- Normal flow proceeds (selfie, generation, printing). When the portrait is ready, the completion MMS is held back and the survey starts. After completion, the held MMS is delivered along with a confirmation summary.
+- **Before** -- Survey runs when a user first texts the app. If they sent a selfie, it's held and auto-enqueued after survey completion. If they texted without an image, they're prompted to send a selfie after finishing. On completion the user receives a brief thank-you and proceeds to the normal portrait flow.
+- **After** -- Normal flow proceeds (selfie, generation, printing). When the portrait is ready, the completion MMS is held back and the survey starts. After completion, the held portrait is delivered.
 
 The survey only runs once per user per event. Admin phone numbers always skip the survey. Leads persist to `data/leads.json` and survive server restarts. In-memory survey state (active conversations) is lost on restart, but the user's next message will restart the survey if their lead hasn't been saved yet.
 
@@ -308,7 +308,7 @@ The settings panel is organized into five sections:
 
 **Booth & Delivery** -- Delivery Mode (Print + Digital or Digital Only), Printer selection, Print Size (4x6, 5x7, 8x10), Print Quality (Standard, High, Max), Custom Print Flags, Template Frame, Intro Video. Print settings are only visible when Print + Digital mode is selected and take effect on the next print job.
 
-**Messaging** -- Admin Phone Numbers, Terms URL, Promotional Message (standalone SMS sent after each portrait delivery)
+**Messaging** -- Admin Phone Numbers, Terms URL (displayed on booth screens), Promotional Message (standalone SMS sent after each portrait delivery)
 
 Settings are stored as overrides on top of `.env` defaults. Click "Reset to Defaults" to revert all overrides.
 

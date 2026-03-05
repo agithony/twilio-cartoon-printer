@@ -80,9 +80,10 @@ app.post("/sms", async (req, res) => {
         console.log(`📩 Enqueuing portrait for ${userPhone} (style: ${styleName})`);
 
         const printingEnabled = settings.get("enablePrinting");
+        const twilioBlurb = `\n\nFun fact: this experience is powered by Twilio! Your photo is received via text, transformed by AI, and delivered back to you — all through Twilio's APIs.`;
         const pickupMsg = printingEnabled
-            ? " It may take a minute or two — we'll text you when it's ready for pickup at the Twilio booth."
-            : " It may take a minute or two — we'll text it to you as soon as it's done.";
+            ? ` It may take a minute or two — we'll text you when it's ready for pickup at the Twilio booth.${twilioBlurb}`
+            : ` It may take a minute or two — we'll text it to you as soon as it's done.${twilioBlurb}`;
         const unit = printingEnabled ? "print" : "portrait";
         const units = printingEnabled ? "prints" : "portraits";
 
@@ -113,7 +114,7 @@ app.post("/sms", async (req, res) => {
             const afterThis = unlimited ? null : remaining - 1;
             const countMsg = afterThis === null || afterThis <= 0
                 ? ""
-                : ` You have ${afterThis} ${unit}${afterThis === 1 ? "" : "s"} remaining.`;
+                : ` By the way, you have ${afterThis} ${unit}${afterThis === 1 ? "" : "s"} remaining.`;
             if (useTwiml) {
                 twiml.message(`Your ${styleName} portrait is in the works!${pickupMsg}${countMsg}`);
             } else {
@@ -263,7 +264,7 @@ app.post("/sms", async (req, res) => {
                 }
                 const countNote = used === 0
                     ? ` You get ${maxPrints} free ${unit}${maxPrints === 1 ? "" : "s"} at ${eventName}.`
-                    : ` You have ${remaining} ${unit}${remaining === 1 ? "" : "s"} remaining.`;
+                    : ` By the way, you have ${remaining} ${unit}${remaining === 1 ? "" : "s"} remaining.`;
                 twiml.message(
                     `Send us a selfie and we'll turn it into art! You'll get to pick your style after.${countNote}`,
                 );
