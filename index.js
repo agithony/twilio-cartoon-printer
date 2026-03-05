@@ -25,7 +25,8 @@ const {
     processGenerationQueue,
     processPrintQueue,
 } = require("./lib/queue");
-const { parseStyle } = require("./lib/styles");
+const { parseStyle, detectStyle } = require("./lib/styles");
+const styleMenu = require("./lib/style-menu");
 const { mountDashboard } = require("./lib/dashboard");
 const { mountHome } = require("./lib/home");
 const { mountPhotoGallery } = require("./lib/photogallery");
@@ -59,90 +60,19 @@ app.post("/sms", async (req, res) => {
     }
     const twiml = new MessagingResponse();
     const userPhone = req.body.From;
-    const numMedia = parseInt(req.body.NumMedia || "0", 10);
-
-    // ── Lead capture interception ──────────────────────────────────────────
-    const leadMode = settings.get("leadCaptureMode");
     const appPhone = req.body.To;
+    const numMedia = parseInt(req.body.NumMedia || "0", 10);
+    const body = req.body.Body || "";
 
-    if (leadMode !== "disabled" && !isAdmin(userPhone)) {
-        const eventName = settings.get("eventName");
-
-        // Handle active survey responses
-        if (leads.isActive(userPhone)) {
-            const result = await leads.processResponse(userPhone, req.body.Body || "");
-
-            if (result.status === "completed" && result.pendingImage) {
-                // "Before" mode done -- enqueue the held-back image
-                const pi = result.pendingImage;
-                const activeStyles = settings.getActiveStyles();
-                const style = pi.style || parseStyle(pi.body, activeStyles, settings.get("defaultStyle"));
-                const styleName = activeStyles[style].name;
-
-                // Quota check (deferred from when survey started)
-                const used = getUsageCount(userPhone);
-                const maxPrints = settings.get("maxPrints");
-                const remaining = maxPrints - used;
-
-                if (remaining > 0) {
-                    const printingEnabled = settings.get("enablePrinting");
-                    const pickupMsg = printingEnabled
-                        ? " Head to the Twilio booth to pick it up in a few."
-                        : " We'll text it to you shortly.";
-                    const afterThis = remaining - 1;
-                    const unit = printingEnabled ? "print" : "portrait";
-                    const countMsg = afterThis === 0
-                        ? ` This is your last free ${unit} -- make it count!`
-                        : ` You have ${afterThis} free ${unit}${afterThis === 1 ? "" : "s"} left.`;
-                    const { sendSms } = require("./lib/helpers");
-                    await sendSms(userPhone, appPhone,
-                        `Your ${styleName} portrait is in the works!${pickupMsg}${countMsg}`);
-                    enqueueJob(pi.imageUrl, pi.messageSid, userPhone, appPhone, style, baseUrl);
-                } else {
-                    const units = (settings.get("enablePrinting") ? "prints" : "portraits");
-                    const { sendSms } = require("./lib/helpers");
-                    await sendSms(userPhone, appPhone,
-                        `You've already used your ${maxPrints} free ${units} for ${eventName}. Thanks for stopping by!`);
-                }
-            }
-
-            return res.type("text/xml").send(twiml.toString());
-        }
-
-        // "Before" mode: intercept if lead not yet captured
-        if (leadMode === "before" && !leads.isCompleted(userPhone, eventName)) {
-            if (numMedia > 1) {
-                twiml.message("One at a time! Send a single selfie and we'll work our magic.");
-            } else if (numMedia === 1) {
-                const activeStyles = settings.getActiveStyles();
-                const style = parseStyle(req.body.Body, activeStyles, settings.get("defaultStyle"));
-                await leads.startSurvey(userPhone, appPhone, eventName, "before", {
-                    imageUrl: req.body.MediaUrl0,
-                    messageSid: req.body.MessageSid,
-                    body: req.body.Body,
-                    style,
-                    baseUrl,
-                });
-            } else {
-                await leads.startSurvey(userPhone, appPhone, eventName, "before", null);
-            }
-            return res.type("text/xml").send(twiml.toString());
-        }
-    }
-
-    // ── Normal flow ─────────────────────────────────────────────────────────
     const activeStyles = settings.getActiveStyles();
     const activeStyleList = settings.getActiveStyleList();
-    const styleChoices = activeStyleList.map((k) => activeStyles[k].name).join(", ");
+    const leadMode = settings.get("leadCaptureMode");
+    const eventName = settings.get("eventName");
 
-    if (numMedia > 1) {
-        twiml.message(
-            "One at a time! Send a single selfie and we'll work our magic.",
-        );
-    } else if (numMedia === 1) {
-        const style = parseStyle(req.body.Body, activeStyles, settings.get("defaultStyle"));
+    // Helper: confirm and enqueue a job with the chosen style
+    async function confirmAndEnqueue(style, imageUrl, messageSid, useTwiml) {
         const styleName = activeStyles[style].name;
-        console.log(`📩 Image received from ${userPhone} (style: ${styleName})`);
+        console.log(`📩 Enqueuing portrait for ${userPhone} (style: ${styleName})`);
 
         const printingEnabled = settings.get("enablePrinting");
         const pickupMsg = printingEnabled
@@ -156,68 +86,172 @@ app.post("/sms", async (req, res) => {
             const promo = isFirst ? settings.getPromoIntro() : settings.getPromoReturning();
             const termsUrl = settings.get("termsUrl");
             const terms = isFirst && termsUrl ? `\n\nBy sending a photo, you agree to our terms: ${termsUrl}` : "";
-            twiml.message(
-                `Your ${styleName} portrait is in the works!${pickupMsg}${terms}${promo}`,
-            );
-            enqueueJob(
-                req.body.MediaUrl0,
-                req.body.MessageSid,
-                userPhone,
-                req.body.To,
-                style,
-                baseUrl,
-            );
+            if (useTwiml) {
+                twiml.message(`Your ${styleName} portrait is in the works!${pickupMsg}${terms}${promo}`);
+            } else {
+                const { sendSms } = require("./lib/helpers");
+                await sendSms(userPhone, appPhone, `Your ${styleName} portrait is in the works!${pickupMsg}${terms}${promo}`);
+            }
+            enqueueJob(imageUrl, messageSid, userPhone, appPhone, style, baseUrl);
         } else {
             const used = getUsageCount(userPhone);
             const maxPrints = settings.get("maxPrints");
             const remaining = maxPrints - used;
-            const eventName = settings.get("eventName");
 
             if (remaining <= 0) {
-                twiml.message(
-                    `You've already used your ${maxPrints} free ${units} for ${eventName}. Thanks for stopping by!`,
-                );
-            } else {
-                const isFirst = used === 0;
-                const promo = isFirst ? settings.getPromoIntro() : settings.getPromoReturning();
-                const termsUrl = settings.get("termsUrl");
-                const terms = isFirst && termsUrl ? `\n\nBy sending a photo, you agree to our terms: ${termsUrl}` : "";
-                const afterThis = remaining - 1;
-                const countMsg = afterThis === 0
-                    ? ` This is your last free ${unit} -- make it count!`
-                    : ` You have ${afterThis} free ${unit}${afterThis === 1 ? "" : "s"} left.`;
-                twiml.message(
-                    `Your ${styleName} portrait is in the works!${pickupMsg}${countMsg}${terms}${promo}`,
-                );
-                enqueueJob(
-                    req.body.MediaUrl0,
-                    req.body.MessageSid,
-                    userPhone,
-                    req.body.To,
-                    style,
-                    baseUrl,
-                );
+                if (useTwiml) {
+                    twiml.message(`You've already used your ${maxPrints} free ${units} for ${eventName}. Thanks for stopping by!`);
+                } else {
+                    const { sendSms } = require("./lib/helpers");
+                    await sendSms(userPhone, appPhone, `You've already used your ${maxPrints} free ${units} for ${eventName}. Thanks for stopping by!`);
+                }
+                return;
             }
+
+            const isFirst = used === 0;
+            const promo = isFirst ? settings.getPromoIntro() : settings.getPromoReturning();
+            const termsUrl = settings.get("termsUrl");
+            const terms = isFirst && termsUrl ? `\n\nBy sending a photo, you agree to our terms: ${termsUrl}` : "";
+            const afterThis = remaining - 1;
+            const countMsg = afterThis === 0
+                ? ` This is your last free ${unit} -- make it count!`
+                : ` You have ${afterThis} free ${unit}${afterThis === 1 ? "" : "s"} left.`;
+            if (useTwiml) {
+                twiml.message(`Your ${styleName} portrait is in the works!${pickupMsg}${countMsg}${terms}${promo}`);
+            } else {
+                const { sendSms } = require("./lib/helpers");
+                await sendSms(userPhone, appPhone, `Your ${styleName} portrait is in the works!${pickupMsg}${countMsg}${terms}${promo}`);
+            }
+            enqueueJob(imageUrl, messageSid, userPhone, appPhone, style, baseUrl);
+        }
+    }
+
+    // Helper: show style menu and hold the image
+    function showMenuAndHold(imageUrl, messageSid) {
+        styleMenu.setPending(userPhone, { imageUrl, messageSid, body, appPhone, baseUrl });
+        twiml.message(styleMenu.buildMenu(activeStyles, activeStyleList));
+    }
+
+    // ── 1. Lead capture active survey ───────────────────────────────────────
+    if (leadMode !== "disabled" && !isAdmin(userPhone) && leads.isActive(userPhone)) {
+        const result = await leads.processResponse(userPhone, body);
+
+        if (result.status === "completed" && result.pendingImage) {
+            const pi = result.pendingImage;
+            const style = pi.style || parseStyle(pi.body, activeStyles, settings.get("defaultStyle"));
+            await confirmAndEnqueue(style, pi.imageUrl, pi.messageSid, false);
+        }
+
+        return res.type("text/xml").send(twiml.toString());
+    }
+
+    // ── 2. Style menu pending ───────────────────────────────────────────────
+    if (styleMenu.hasPending(userPhone)) {
+        if (numMedia >= 1) {
+            // New selfie replaces old pending — clear and fall through
+            styleMenu.clearPending(userPhone);
+        } else {
+            // Text reply — try to match a style
+            const matched = styleMenu.matchReply(body, activeStyles, activeStyleList);
+            if (!matched) {
+                twiml.message(styleMenu.buildRetryMenu(activeStyles, activeStyleList));
+                return res.type("text/xml").send(twiml.toString());
+            }
+
+            const pending = styleMenu.getPending(userPhone);
+            styleMenu.clearPending(userPhone);
+
+            // Check if lead capture "before" is needed
+            if (leadMode === "before" && !isAdmin(userPhone) && !leads.isCompleted(userPhone, eventName)) {
+                await leads.startSurvey(userPhone, appPhone, eventName, "before", {
+                    imageUrl: pending.imageUrl,
+                    messageSid: pending.messageSid,
+                    body: pending.body,
+                    style: matched,
+                    baseUrl,
+                });
+                return res.type("text/xml").send(twiml.toString());
+            }
+
+            // Normal enqueue
+            await confirmAndEnqueue(matched, pending.imageUrl, pending.messageSid, false);
+            return res.type("text/xml").send(twiml.toString());
+        }
+    }
+
+    // ── 3. Lead capture "before" intercept ──────────────────────────────────
+    if (leadMode === "before" && !isAdmin(userPhone) && !leads.isCompleted(userPhone, eventName)) {
+        if (numMedia > 1) {
+            twiml.message("One at a time! Send a single selfie and we'll work our magic.");
+        } else if (numMedia === 1) {
+            const explicitStyle = detectStyle(body, activeStyles);
+            if (explicitStyle) {
+                await leads.startSurvey(userPhone, appPhone, eventName, "before", {
+                    imageUrl: req.body.MediaUrl0,
+                    messageSid: req.body.MessageSid,
+                    body,
+                    style: explicitStyle,
+                    baseUrl,
+                });
+            } else {
+                showMenuAndHold(req.body.MediaUrl0, req.body.MessageSid);
+            }
+        } else {
+            await leads.startSurvey(userPhone, appPhone, eventName, "before", null);
+        }
+        return res.type("text/xml").send(twiml.toString());
+    }
+
+    // ── 4. Normal flow ──────────────────────────────────────────────────────
+    if (numMedia > 1) {
+        twiml.message("One at a time! Send a single selfie and we'll work our magic.");
+    } else if (numMedia === 1) {
+        const explicitStyle = detectStyle(body, activeStyles);
+        if (explicitStyle) {
+            await confirmAndEnqueue(explicitStyle, req.body.MediaUrl0, req.body.MessageSid, true);
+        } else {
+            showMenuAndHold(req.body.MediaUrl0, req.body.MessageSid);
         }
     } else {
         const printingEnabled = settings.get("enablePrinting");
         const unit = printingEnabled ? "print" : "portrait";
+        const styleChoices = activeStyleList.map((k) => activeStyles[k].name).join(", ");
+
+        // Check if this looks like a real question/conversation vs a simple greeting
+        const conversational = body && body.trim().length > 2
+            && !/^(hi|hey|hello|yo|sup|ok|yes|no|thanks|ty|thx|k|lol|hit send to start!?)$/i.test(body.trim());
+
         if (isAdmin(userPhone)) {
+            if (conversational) {
+                const { generateSmartReply } = require("./lib/helpers");
+                const reply = await generateSmartReply(body, { eventName, styleChoices, remaining: null, unit });
+                if (reply) {
+                    twiml.message(reply);
+                    return res.type("text/xml").send(twiml.toString());
+                }
+            }
             twiml.message(
-                `Send us a selfie and we'll turn it into art! Pick a style by typing its name with your photo: ${styleChoices}.`,
+                `Send us a selfie and we'll turn it into art! You'll get to pick your style after.`,
             );
         } else {
             const used = getUsageCount(userPhone);
             const maxPrints = settings.get("maxPrints");
             const remaining = maxPrints - used;
-            const eventName = settings.get("eventName");
             if (remaining <= 0) {
                 twiml.message(
                     `You've already used your ${maxPrints} free ${unit}s for ${eventName}. Thanks for stopping by!`,
                 );
             } else {
+                if (conversational) {
+                    const { generateSmartReply } = require("./lib/helpers");
+                    const reply = await generateSmartReply(body, { eventName, styleChoices, remaining, unit });
+                    if (reply) {
+                        twiml.message(reply);
+                        return res.type("text/xml").send(twiml.toString());
+                    }
+                }
                 twiml.message(
-                    `Send us a selfie and we'll turn it into art! Pick a style by typing its name with your photo: ${styleChoices}. You have ${remaining} free ${unit}${remaining === 1 ? "" : "s"} at ${eventName}.`,
+                    `Send us a selfie and we'll turn it into art! You'll get to pick your style after. You have ${remaining} free ${unit}${remaining === 1 ? "" : "s"} at ${eventName}.`,
                 );
             }
         }

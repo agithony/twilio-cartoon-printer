@@ -27,18 +27,26 @@ flowchart TB
   R --> P1 --> S["SMS sent: your print is ready"]
 ```
 
-Users pick an art style by typing the name in the same message as their selfie:
+After sending a selfie, users receive a numbered style menu:
 
-| Style | Description |
-|---|---|
-| **cartoon** | 3D animated film style |
-| **pop art** | Bold Warhol/Lichtenstein style |
-| **watercolor** | Soft watercolor painting |
-| **anime** | Japanese anime illustration |
-| **sketch** | Graphite pencil drawing |
-| **pixel art** | Retro 16-bit video game style |
+```
+Great selfie! Pick your art style:
+
+1. cartoon
+2. pop art
+3. watercolor
+4. anime
+5. sketch
+6. pixel art
+
+Reply with a number or style name.
+```
+
+Users can reply with a number (`3`) or type the style name (`watercolor`). If a user includes a recognized style name in the caption when sending their selfie, the menu is skipped and generation starts immediately.
 
 If no style is specified, the default style is used (cartoon by default, configurable from the Settings panel).
+
+The bot also responds conversationally when users send text-only messages with questions or unusual input (e.g. "what is twilio?", "how does this work?"). Common short messages like "hi" get a fast static response, while longer or more interesting messages get a dynamic AI-generated reply (via gpt-4o-mini) that answers the question and directs the user to send a selfie.
 
 ## Prerequisites
 
@@ -296,7 +304,7 @@ The admin dashboard is available at `http://localhost:<port>/dashboard`.
 
 Admin phone numbers are excluded from all metrics -- they won't appear in totals, averages, top users, style breakdowns, or the outreach list.
 
-Use the **event selector** dropdown in the header to filter all metrics by a specific event, or view combined totals across all events.
+Use the **event selector** dropdown in the header to filter all metrics by a specific event, or view combined totals across all events. Events are discovered from both job history and the `downloads/` directory, so any event with a folder or completed jobs appears in the dropdown.
 
 The admin dashboard shows (in order):
 
@@ -387,7 +395,8 @@ twilio-cartoon-printer/
 │   ├── config.js         Static constants, paths, API clients
 │   ├── settings.js       Runtime mutable settings (persists to data/settings.json)
 │   ├── styles.js         Art style definitions and prompts
-│   ├── helpers.js        Image download, SMS, moderation, face detection, compositing
+│   ├── helpers.js        Image download, SMS, moderation, face detection, compositing, AI smart replies
+│   ├── style-menu.js     Style selection menu after selfie (numbered list, pending state)
 │   ├── printer.js        Printer discovery and print commands
 │   ├── pipeline.js       generateImage (steps 1-6) and printJob (steps 7-8)
 │   ├── queue.js          Concurrent generation worker, serial print worker, usage tracking
