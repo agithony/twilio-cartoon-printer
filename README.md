@@ -91,6 +91,11 @@ TERMS_URL=https://example.com/terms
 # Delivery mode (optional -- set to "false" to disable printing)
 ENABLE_PRINTING=true
 
+# Print settings (optional -- all configurable from Settings panel at runtime)
+PRINT_SIZE=5x7
+PRINT_QUALITY=high
+CUSTOM_PRINT_FLAGS=
+
 # Brand prompt (optional -- appended to every art style prompt)
 BRAND_PROMPT=
 
@@ -115,6 +120,9 @@ PROMO_EVENT_URL=https://twil.io/devweek26
 | `TERMS_URL` | No | URL to your terms of service. Shown once in the user's first selfie confirmation. |
 | `ENABLE_PRINTING` | No | Set to `false` to disable printing and run digital-only (MMS delivery). Defaults to `true`. |
 | `BRAND_PROMPT` | No | Global branding prompt appended to every art style (e.g. clothing, logos). Leave blank to disable. |
+| `PRINT_SIZE` | No | Print paper size. Options: `4x6`, `5x7`, `8x10`. Defaults to `5x7`. Controls both image pixel dimensions and the PageSize flag sent to the printer. |
+| `PRINT_QUALITY` | No | Print resolution. Options: `standard` (360 DPI), `high` (720 DPI), `max` (1440 DPI). Defaults to `high`. |
+| `CUSTOM_PRINT_FLAGS` | No | Additional raw flags appended to the `lp` command. For non-Epson printers or advanced CUPS options (e.g. `-o MediaType=Glossy`). |
 | `PROMO_EVENT_NAME` | No | Name of the event to promote in SMS messages |
 | `PROMO_EVENT_DATE` | No | Date string for the promoted event |
 | `PROMO_EVENT_URL` | No | Registration URL for the promoted event |
@@ -503,7 +511,7 @@ The settings panel is organized into five sections:
 
 **Art & Branding** -- Default Style selector, Brand Prompt (global branding applied to all styles), art style toggles with editable prompts (and reset for built-ins), custom style creation with editable names and prompts
 
-**Booth & Delivery** -- Delivery Mode (Print + Digital or Digital Only), Printer selection, Template Frame, Intro Video
+**Booth & Delivery** -- Delivery Mode (Print + Digital or Digital Only), Printer selection, Print Size (4x6, 5x7, 8x10), Print Quality (Standard, High, Max), Custom Print Flags, Template Frame, Intro Video. Print settings are only visible when Print + Digital mode is selected and take effect on the next print job.
 
 **Messaging** -- Admin Phone Numbers, Terms URL, First-Time and Returning User promo messages
 
