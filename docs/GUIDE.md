@@ -144,9 +144,9 @@ The photo book at `/photogallery` presents AI-generated portraits as an open boo
 
 The admin dashboard is available at `/dashboard`.
 
-Admin phone numbers are excluded from all metrics -- they won't appear in totals, averages, top users, style breakdowns, or the outreach list.
-
 Use the **event selector** dropdown in the header to filter all metrics by a specific event, or view combined totals across all events. Events are discovered from both job history and the `downloads/` directory, so any event with a folder or completed jobs appears in the dropdown.
+
+The **Exclude admin** checkbox in the header filters out admin phone numbers from all metrics -- totals, averages, top users, style breakdowns, and geography. Uncheck it to include admin activity (useful during testing). PDF reports always exclude admin activity.
 
 The dashboard shows:
 
