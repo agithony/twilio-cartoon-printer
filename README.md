@@ -31,14 +31,14 @@ Users pick an art style by typing the name in the same message as their selfie:
 
 | Style | Description |
 |---|---|
-| **cartoon** (default) | 3D animated film style |
+| **cartoon** | 3D animated film style |
 | **pop art** | Bold Warhol/Lichtenstein style |
 | **watercolor** | Soft watercolor painting |
 | **anime** | Japanese anime illustration |
 | **sketch** | Graphite pencil drawing |
 | **pixel art** | Retro 16-bit video game style |
 
-If no style is specified, it defaults to cartoon.
+If no style is specified, the default style is used (cartoon by default, configurable from the Settings panel).
 
 ## Prerequisites
 
@@ -450,7 +450,7 @@ Failed jobs retry up to 3 times. Each pipeline step is skipped on retry if its o
 
 Art styles can be managed in two ways:
 
-**From the Settings panel** (no code changes): Open the Settings panel on `/home`, scroll to the Art & Branding section. You can toggle built-in styles on/off, view their prompts, and add custom styles with a name and prompt. Custom styles are stored in `data/settings.json`.
+**From the Settings panel** (no code changes): Open the Settings panel on `/home`, scroll to the Art & Branding section. You can toggle built-in styles on/off, edit their prompts (with a reset button to revert to the original), add custom styles with a name and prompt, and edit custom style names and prompts after creation. You can also choose which style is used as the default when a user doesn't specify one. All customizations are stored in `data/settings.json`.
 
 **In code**: Built-in styles are defined in `lib/styles.js`. Each style has a keyword, display name, and an LLM prompt. To add a new built-in style, add an entry to the `STYLES` object:
 
@@ -499,7 +499,7 @@ The settings panel is organized into five sections:
 
 **Lead Capture** -- Lead Capture Mode (Disabled, Before, or After). See [Lead Capture](#lead-capture) for details.
 
-**Art & Branding** -- Brand Prompt (global branding applied to all styles), art style toggles, custom style creation
+**Art & Branding** -- Default Style selector, Brand Prompt (global branding applied to all styles), art style toggles with editable prompts (and reset for built-ins), custom style creation with editable names and prompts
 
 **Booth & Delivery** -- Delivery Mode (Print + Digital or Digital Only), Printer selection, Template Frame, Intro Video
 

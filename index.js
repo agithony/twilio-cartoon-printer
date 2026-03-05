@@ -76,7 +76,7 @@ app.post("/sms", async (req, res) => {
                 // "Before" mode done -- enqueue the held-back image
                 const pi = result.pendingImage;
                 const activeStyles = settings.getActiveStyles();
-                const style = pi.style || parseStyle(pi.body, activeStyles);
+                const style = pi.style || parseStyle(pi.body, activeStyles, settings.get("defaultStyle"));
                 const styleName = activeStyles[style].name;
 
                 // Quota check (deferred from when survey started)
@@ -115,7 +115,7 @@ app.post("/sms", async (req, res) => {
                 twiml.message("One at a time! Send a single selfie and we'll work our magic.");
             } else if (numMedia === 1) {
                 const activeStyles = settings.getActiveStyles();
-                const style = parseStyle(req.body.Body, activeStyles);
+                const style = parseStyle(req.body.Body, activeStyles, settings.get("defaultStyle"));
                 await leads.startSurvey(userPhone, appPhone, eventName, "before", {
                     imageUrl: req.body.MediaUrl0,
                     messageSid: req.body.MessageSid,
@@ -140,7 +140,7 @@ app.post("/sms", async (req, res) => {
             "One at a time! Send a single selfie and we'll work our magic.",
         );
     } else if (numMedia === 1) {
-        const style = parseStyle(req.body.Body, activeStyles);
+        const style = parseStyle(req.body.Body, activeStyles, settings.get("defaultStyle"));
         const styleName = activeStyles[style].name;
         console.log(`📩 Image received from ${userPhone} (style: ${styleName})`);
 
