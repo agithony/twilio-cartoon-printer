@@ -81,20 +81,17 @@ app.post("/sms", async (req, res) => {
 
         const printingEnabled = settings.get("enablePrinting");
         const pickupMsg = printingEnabled
-            ? " Head to the Twilio booth to pick it up in a few."
-            : " We'll text it to you shortly.";
+            ? " It may take a minute or two — we'll text you when it's ready for pickup at the Twilio booth."
+            : " It may take a minute or two — we'll text it to you as soon as it's done.";
         const unit = printingEnabled ? "print" : "portrait";
         const units = printingEnabled ? "prints" : "portraits";
 
         if (treatAsAdmin) {
-            const isFirst = getUsageCount(userPhone) === 0;
-            const termsUrl = settings.get("termsUrl");
-            const terms = isFirst && termsUrl ? `\n\nBy sending a photo, you agree to our terms: ${termsUrl}` : "";
             if (useTwiml) {
-                twiml.message(`Your ${styleName} portrait is in the works!${pickupMsg}${terms}`);
+                twiml.message(`Your ${styleName} portrait is in the works!${pickupMsg}`);
             } else {
                 const { sendSms } = require("./lib/helpers");
-                await sendSms(userPhone, appPhone, `Your ${styleName} portrait is in the works!${pickupMsg}${terms}`);
+                await sendSms(userPhone, appPhone, `Your ${styleName} portrait is in the works!${pickupMsg}`);
             }
             enqueueJob(imageUrl, messageSid, userPhone, appPhone, style, baseUrl);
         } else {
@@ -113,18 +110,15 @@ app.post("/sms", async (req, res) => {
                 return;
             }
 
-            const isFirst = used === 0;
-            const termsUrl = settings.get("termsUrl");
-            const terms = isFirst && termsUrl ? `\n\nBy sending a photo, you agree to our terms: ${termsUrl}` : "";
             const afterThis = unlimited ? null : remaining - 1;
             const countMsg = afterThis === null || afterThis <= 0
                 ? ""
                 : ` You have ${afterThis} ${unit}${afterThis === 1 ? "" : "s"} remaining.`;
             if (useTwiml) {
-                twiml.message(`Your ${styleName} portrait is in the works!${pickupMsg}${countMsg}${terms}`);
+                twiml.message(`Your ${styleName} portrait is in the works!${pickupMsg}${countMsg}`);
             } else {
                 const { sendSms } = require("./lib/helpers");
-                await sendSms(userPhone, appPhone, `Your ${styleName} portrait is in the works!${pickupMsg}${countMsg}${terms}`);
+                await sendSms(userPhone, appPhone, `Your ${styleName} portrait is in the works!${pickupMsg}${countMsg}`);
             }
             enqueueJob(imageUrl, messageSid, userPhone, appPhone, style, baseUrl);
         }

@@ -53,9 +53,6 @@ This document covers all features and configuration in depth. For quick setup, s
 | `PRINT_QUALITY` | No | Print resolution. Options: `standard` (360 DPI), `high` (720 DPI), `max` (1440 DPI). Defaults to `high`. |
 | `CUSTOM_PRINT_FLAGS` | No | Additional raw flags appended to the `lp` command. For non-Epson printers or advanced CUPS options (e.g. `-o MediaType=Glossy`). |
 | `PROMO_MESSAGE` | No | Promotional message sent as a standalone SMS after each portrait delivery. Leave blank to disable. |
-| `PROMO_EVENT_NAME` | No | (Legacy) Name of the event to promote -- used to compute default promo text for backward compatibility |
-| `PROMO_EVENT_DATE` | No | (Legacy) Date string for the promoted event |
-| `PROMO_EVENT_URL` | No | (Legacy) Registration URL for the promoted event |
 
 ## Template Frames
 
