@@ -34,7 +34,7 @@ const { mountOutreach } = require("./lib/outreach");
 const leads = require("./lib/leads");
 
 const app = express();
-const port = parseInt(process.env.PORT || "80", 10);
+const port = parseInt(process.env.PORT || "3000", 10);
 
 // Ensure directories exist
 for (const dir of [DATA_DIR, PENDING_DIR, GENERATING_DIR, READY_DIR, PRINTING_DIR, DONE_DIR, FAILED_DIR]) {
@@ -42,6 +42,8 @@ for (const dir of [DATA_DIR, PENDING_DIR, GENERATING_DIR, READY_DIR, PRINTING_DI
 }
 
 app.use(bodyParser.urlencoded({ extended: false }));
+
+app.get("/", (req, res) => res.redirect("/home"));
 
 // Serve generated images — resolves download dir dynamically per request
 app.use("/images", (req, res, next) => {
@@ -295,9 +297,9 @@ app.listen(port, "0.0.0.0", () => {
     console.log(`⏱️  Workers started (polling every ${POLL_INTERVAL}ms, max ${settings.get("maxConcurrentGeneration")} concurrent generations)`);
 
     // Auto-open home page in the default browser
-    const host = `http://localhost${port === 80 ? "" : ":" + port}`;
+    const host = `http://localhost:${port}`;
     const openCmd = process.platform === "darwin" ? "open" : process.platform === "win32" ? "start" : "xdg-open";
-    exec(`${openCmd} ${host}/home`, (err) => {
-        if (err) console.log(`🏠 Home available at ${host}/home`);
+    exec(`${openCmd} ${host}`, (err) => {
+        if (err) console.log(`🏠 Home available at ${host}`);
     });
 });

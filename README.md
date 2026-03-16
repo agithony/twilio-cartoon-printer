@@ -84,10 +84,10 @@ Find your printer name with `lpstat -p` and set `PRINTER_NAME` in `.env`. The ap
 ### 4. Start the server
 
 ```sh
-sudo pnpm start
+pnpm start
 ```
 
-`sudo` is required for the default port 80. Set `PORT` in `.env` to use a different port. The home page opens automatically at `http://localhost/home`.
+The server starts on port 3000 by default. Set `PORT` in `.env` to use a different port. The home page opens automatically at `http://localhost:3000`.
 
 ### 5. Connect Twilio
 
@@ -97,7 +97,7 @@ Point your Twilio phone number's **Messaging webhook** (POST) to:
 http://your-server-ip/sms
 ```
 
-Use [ngrok](https://ngrok.com) if your server isn't publicly accessible: `ngrok http 80`.
+Use [ngrok](https://ngrok.com) if your server isn't publicly accessible: `ngrok http 3000`.
 
 ## Docker
 
