@@ -44,6 +44,7 @@ for (const dir of [DATA_DIR, PENDING_DIR, GENERATING_DIR, READY_DIR, PRINTING_DI
 app.use(bodyParser.urlencoded({ extended: false }));
 
 app.get("/", (req, res) => res.redirect("/home"));
+app.use("/assets", express.static(path.join(__dirname, "assets")));
 
 // Serve generated images — resolves download dir dynamically per request
 app.use("/images", (req, res, next) => {
