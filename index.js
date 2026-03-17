@@ -293,7 +293,13 @@ app.listen(port, "0.0.0.0", () => {
     mountPhotoGallery(app);
     mountDashboard(app);
     mountOutreach(app);
-    setInterval(processGenerationQueue, POLL_INTERVAL);
+    let genPollRunning = false;
+    setInterval(async () => {
+        if (genPollRunning) return;
+        genPollRunning = true;
+        try { await processGenerationQueue(); }
+        finally { genPollRunning = false; }
+    }, POLL_INTERVAL);
     let printPollRunning = false;
     setInterval(async () => {
         if (printPollRunning) return;
