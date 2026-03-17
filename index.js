@@ -294,7 +294,13 @@ app.listen(port, "0.0.0.0", () => {
     mountDashboard(app);
     mountOutreach(app);
     setInterval(processGenerationQueue, POLL_INTERVAL);
-    setInterval(processPrintQueue, POLL_INTERVAL);
+    let printPollRunning = false;
+    setInterval(async () => {
+        if (printPollRunning) return;
+        printPollRunning = true;
+        try { await processPrintQueue(); }
+        finally { printPollRunning = false; }
+    }, POLL_INTERVAL);
     console.log(`⏱️  Workers started (polling every ${POLL_INTERVAL}ms, max ${settings.get("maxConcurrentGeneration")} concurrent generations)`);
 
     // Auto-open home page in the default browser
