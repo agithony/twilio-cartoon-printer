@@ -1,6 +1,5 @@
 {
   "enablePrinting": false,
-  "brandPrompt": "Subject should be wearing LA Kings hockey gear",
   "customStyles": {
     "oil-painting": {
       "name": "oil painting",
@@ -13,5 +12,49 @@
   },
   "leadCaptureMode": "before",
   "defaultStyle": "joseim",
-  "promoMessage": "Join us at Twilio SIGNAL on May 6-7 in SF, register here: https://twil.io/SIGNAL26"
+  "promoMessage": "Join us at Twilio SIGNAL on May 6-7 in SF, register here: https://twil.io/SIGNAL26",
+  "eventName": "LAKingsApril2026",
+  "maxConcurrentGeneration": 15,
+  "activePrinters": [
+    "_10_21_3_92"
+  ],
+  "brandReferenceFiles": [
+    "LAK_UnifromSheet_Third_Jersey_Update.jpg"
+  ],
+  "templateFile": "frame_-_overlay_-_low_center.png",
+  "disabledStyles": [
+    "cartoon",
+    "pop-art",
+    "watercolor",
+    "anime",
+    "sketch",
+    "pixel-art",
+    "oil-painting"
+  ],
+  "enableFrameBorder": false,
+  "messages": {
+    "welcome": "Send us a selfie and we'll turn it into art! You'll get to pick your style after.",
+    "welcomeCount": "You get {maxPrints} free {unit}(s) at {eventName}.",
+    "remainingCount": "By the way, you have {remaining} {unit}(s) remaining.",
+    "quotaExceeded": "You've already used your {maxPrints} free {units} for {eventName}. Thanks for stopping by!",
+    "multiplePhotos": "One at a time! Send a single selfie and we'll work our magic.",
+    "enqueued": "{confirmLabel} is in the works!",
+    "pickupPrint": "It may take a minute or two -- we'll text you when it's ready for pickup at the Twilio booth.",
+    "pickupDigital": "It may take a minute or two -- we'll text it to you as soon as it's done.",
+    "twilioBlurb": "Fun fact: this experience is powered by Twilio! Your photo is received via text, transformed by AI, and delivered back to you -- all through Twilio's APIs.",
+    "deliveryDigital": "Here's your {styleName} portrait!",
+    "deliveryPrint": "Your {styleName} portrait has been sent to the printer! Head to the Twilio booth to pick it up.",
+    "lastPortrait": "That was your last one -- thanks for visiting!",
+    "styleMenuIntro": "Great selfie! Pick your art style:",
+    "styleMenuFooter": "Reply with a number or style name.",
+    "styleMenuRetry": "That one isn't on the menu! Reply with a number or style name:",
+    "moderationFail": "That photo didn't work -- try sending a different selfie. Don't worry, it didn't use up a print!",
+    "noFace": "We need to see your face for the portrait! Send a selfie with your face visible. Don't worry, that one didn't count.",
+    "leadIntroBefore": "Before we create your portrait, we just need a few quick details -- it'll only take a minute!",
+    "leadIntroAfter": "While your portrait is being prepared, we just have a few quick questions -- it'll only take a minute!",
+    "leadComplete": "Thanks, {firstName}!",
+    "leadCompleteWithCta": "Thanks, {firstName}! Now send us a selfie and we'll turn it into art.",
+    "npsPrompt": "Thanks for visiting! How would you rate your portrait experience? Reply with a number 1-5 (5 = loved it)",
+    "npsThanks": "Thanks for the feedback! We appreciate it."
+  }
 }
