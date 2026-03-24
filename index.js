@@ -39,6 +39,16 @@ const nps = require("./lib/nps");
 const app = express();
 const port = parseInt(process.env.PORT || "3000", 10);
 
+// Storage diagnostics
+const dataMount = process.env.DATA_MOUNT || "";
+if (dataMount) {
+    const mountExists = fs.existsSync(dataMount);
+    const dataSymlink = fs.lstatSync(path.join(__dirname, "data")).isSymbolicLink() ? "symlink" : "local";
+    console.log(`💾 Storage: DATA_MOUNT=${dataMount} (${mountExists ? "mounted" : "NOT FOUND"}), data/ is ${dataSymlink}`);
+} else {
+    console.log("💾 Storage: No DATA_MOUNT set — using local/ephemeral storage");
+}
+
 // Ensure directories exist
 const BRAND_REFS_DIR = path.join(__dirname, "brand-references");
 for (const dir of [DATA_DIR, PENDING_DIR, GENERATING_DIR, READY_DIR, PRINTING_DIR, DONE_DIR, FAILED_DIR, BRAND_REFS_DIR, settings.EVENTS_DIR]) {
