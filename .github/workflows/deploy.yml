@@ -123,11 +123,6 @@ jobs:
 
       - name: Create or update Container App
         run: |
-          # Render YAML template with actual values
-          export APP_NAME="${{ env.APP_NAME }}"
-          export CONTAINER_IMAGE="${{ steps.acr-creds.outputs.server }}/${{ env.IMAGE_TAG }}"
-          envsubst < .github/containerapp.yaml > /tmp/containerapp.yaml
-
           if az containerapp show --name ${{ env.APP_NAME }} --resource-group ${{ env.RESOURCE_GROUP }} 2>/dev/null; then
             echo "Updating existing container app..."
             az containerapp update \
@@ -149,10 +144,24 @@ jobs:
               --name ${{ env.APP_NAME }} \
               --resource-group ${{ env.RESOURCE_GROUP }} \
               --environment ${{ env.ENV_NAME }} \
-              --yaml /tmp/containerapp.yaml \
+              --image ${{ steps.acr-creds.outputs.server }}/${{ env.IMAGE_TAG }} \
+              --target-port 8080 \
+              --ingress external \
+              --cpu 1.0 --memory 2Gi \
+              --min-replicas 1 --max-replicas 1 \
               --registry-server ${{ steps.acr-creds.outputs.server }} \
               --registry-username ${{ steps.acr-creds.outputs.username }} \
               --registry-password "${{ steps.acr-creds.outputs.password }}" \
+              --output none
+
+            echo "Adding volume mount..."
+            export APP_NAME="${{ env.APP_NAME }}"
+            export CONTAINER_IMAGE="${{ steps.acr-creds.outputs.server }}/${{ env.IMAGE_TAG }}"
+            envsubst < .github/containerapp.yaml > /tmp/containerapp.yaml
+            az containerapp update \
+              --name ${{ env.APP_NAME }} \
+              --resource-group ${{ env.RESOURCE_GROUP }} \
+              --yaml /tmp/containerapp.yaml \
               --output none
           fi
 
