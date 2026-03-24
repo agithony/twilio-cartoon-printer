@@ -1,0 +1,226 @@
+name: Deploy to Azure Container Apps
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch: # Allow manual trigger from GitHub UI
+
+env:
+  RESOURCE_GROUP: rg-twilio-cartoon-printer
+  APP_NAME: twilio-cartoon-printer
+  LOCATION: centralus
+  ACR_NAME: twiliocartoonprinter
+  ENV_NAME: cae-twilio-cartoon-printer
+  STORAGE_ACCOUNT: twiliocartoonprinter
+  FILE_SHARE: twilioprinterdata
+  IMAGE_TAG: cartoon-printer:${{ github.sha }}
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Login to Azure
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      # --- Infrastructure (idempotent — safe to run every time) ---
+
+      - name: Ensure resource group exists
+        run: |
+          az group create \
+            --name ${{ env.RESOURCE_GROUP }} \
+            --location ${{ env.LOCATION }} \
+            --output none
+
+      - name: Ensure Container Registry exists
+        run: |
+          az acr show --name ${{ env.ACR_NAME }} --resource-group ${{ env.RESOURCE_GROUP }} 2>/dev/null || \
+          az acr create \
+            --name ${{ env.ACR_NAME }} \
+            --resource-group ${{ env.RESOURCE_GROUP }} \
+            --sku Basic \
+            --admin-enabled true \
+            --output none
+
+      - name: Ensure Storage Account exists
+        run: |
+          az storage account show --name ${{ env.STORAGE_ACCOUNT }} --resource-group ${{ env.RESOURCE_GROUP }} 2>/dev/null || \
+          az storage account create \
+            --name ${{ env.STORAGE_ACCOUNT }} \
+            --resource-group ${{ env.RESOURCE_GROUP }} \
+            --location ${{ env.LOCATION }} \
+            --sku Standard_LRS \
+            --output none
+
+      - name: Ensure File Share exists
+        run: |
+          STORAGE_KEY=$(az storage account keys list \
+            --resource-group ${{ env.RESOURCE_GROUP }} \
+            --account-name ${{ env.STORAGE_ACCOUNT }} \
+            --query '[0].value' -o tsv)
+          az storage share create \
+            --name ${{ env.FILE_SHARE }} \
+            --account-name ${{ env.STORAGE_ACCOUNT }} \
+            --account-key "$STORAGE_KEY" \
+            --quota 10 \
+            --output none 2>/dev/null || true
+
+      - name: Ensure Container Apps Environment exists
+        run: |
+          az containerapp env show --name ${{ env.ENV_NAME }} --resource-group ${{ env.RESOURCE_GROUP }} 2>/dev/null || \
+          az containerapp env create \
+            --name ${{ env.ENV_NAME }} \
+            --resource-group ${{ env.RESOURCE_GROUP }} \
+            --location ${{ env.LOCATION }} \
+            --output none
+
+      - name: Configure Azure Files storage mount
+        run: |
+          STORAGE_KEY=$(az storage account keys list \
+            --resource-group ${{ env.RESOURCE_GROUP }} \
+            --account-name ${{ env.STORAGE_ACCOUNT }} \
+            --query '[0].value' -o tsv)
+          az containerapp env storage set \
+            --name ${{ env.ENV_NAME }} \
+            --resource-group ${{ env.RESOURCE_GROUP }} \
+            --storage-name appdata \
+            --azure-file-account-name ${{ env.STORAGE_ACCOUNT }} \
+            --azure-file-account-key "$STORAGE_KEY" \
+            --azure-file-share-name ${{ env.FILE_SHARE }} \
+            --access-mode ReadWrite \
+            --output none
+
+      # --- Build ---
+
+      - name: Build and push image to ACR
+        run: |
+          az acr build \
+            --registry ${{ env.ACR_NAME }} \
+            --image ${{ env.IMAGE_TAG }} \
+            --image cartoon-printer:latest \
+            .
+
+      # --- Deploy ---
+
+      - name: Get ACR credentials
+        id: acr-creds
+        run: |
+          echo "server=${{ env.ACR_NAME }}.azurecr.io" >> $GITHUB_OUTPUT
+          echo "username=$(az acr credential show --name ${{ env.ACR_NAME }} --query username -o tsv)" >> $GITHUB_OUTPUT
+          echo "password=$(az acr credential show --name ${{ env.ACR_NAME }} --query 'passwords[0].value' -o tsv)" >> $GITHUB_OUTPUT
+
+      - name: Get Storage Key
+        id: storage-key
+        run: |
+          echo "key=$(az storage account keys list \
+            --resource-group ${{ env.RESOURCE_GROUP }} \
+            --account-name ${{ env.STORAGE_ACCOUNT }} \
+            --query '[0].value' -o tsv)" >> $GITHUB_OUTPUT
+
+      - name: Create or update Container App
+        run: |
+          # Write YAML with volume mount configuration
+          cat > /tmp/containerapp.yaml <<'YAMLEOF'
+          properties:
+            configuration:
+              ingress:
+                external: true
+                targetPort: 8080
+            template:
+              containers:
+                - name: ${{ env.APP_NAME }}
+                  image: ${{ steps.acr-creds.outputs.server }}/${{ env.IMAGE_TAG }}
+                  resources:
+                    cpu: 1.0
+                    memory: 2Gi
+                  volumeMounts:
+                    - volumeName: appdata
+                      mountPath: /app/appdata
+              scale:
+                minReplicas: 1
+                maxReplicas: 1
+              volumes:
+                - name: appdata
+                  storageName: appdata
+                  storageType: AzureFile
+          YAMLEOF
+
+          if az containerapp show --name ${{ env.APP_NAME }} --resource-group ${{ env.RESOURCE_GROUP }} 2>/dev/null; then
+            echo "Updating existing container app..."
+            az containerapp update \
+              --name ${{ env.APP_NAME }} \
+              --resource-group ${{ env.RESOURCE_GROUP }} \
+              --image ${{ steps.acr-creds.outputs.server }}/${{ env.IMAGE_TAG }} \
+              --output none
+
+            az containerapp registry set \
+              --name ${{ env.APP_NAME }} \
+              --resource-group ${{ env.RESOURCE_GROUP }} \
+              --server ${{ steps.acr-creds.outputs.server }} \
+              --username ${{ steps.acr-creds.outputs.username }} \
+              --password "${{ steps.acr-creds.outputs.password }}" \
+              --output none
+          else
+            echo "Creating new container app..."
+            az containerapp create \
+              --name ${{ env.APP_NAME }} \
+              --resource-group ${{ env.RESOURCE_GROUP }} \
+              --environment ${{ env.ENV_NAME }} \
+              --yaml /tmp/containerapp.yaml \
+              --registry-server ${{ steps.acr-creds.outputs.server }} \
+              --registry-username ${{ steps.acr-creds.outputs.username }} \
+              --registry-password "${{ steps.acr-creds.outputs.password }}" \
+              --output none
+          fi
+
+      - name: Set secrets and env vars
+        run: |
+          FQDN=$(az containerapp show \
+            --name ${{ env.APP_NAME }} \
+            --resource-group ${{ env.RESOURCE_GROUP }} \
+            --query properties.configuration.ingress.fqdn -o tsv)
+
+          az containerapp secret set \
+            --name ${{ env.APP_NAME }} \
+            --resource-group ${{ env.RESOURCE_GROUP }} \
+            --secrets \
+              "twilio-sid=${{ secrets.TWILIO_ACCOUNT_SID }}" \
+              "twilio-token=${{ secrets.TWILIO_AUTH_TOKEN }}" \
+              "openai-key=${{ secrets.OPENAI_API_KEY }}" \
+            --output none
+
+          az containerapp update \
+            --name ${{ env.APP_NAME }} \
+            --resource-group ${{ env.RESOURCE_GROUP }} \
+            --set-env-vars \
+              PORT=8080 \
+              NODE_ENV=production \
+              ENABLE_PRINTING=false \
+              DATA_MOUNT=/app/appdata \
+              "BASE_URL=https://${FQDN}" \
+              TWILIO_ACCOUNT_SID=secretref:twilio-sid \
+              TWILIO_AUTH_TOKEN=secretref:twilio-token \
+              OPENAI_API_KEY=secretref:openai-key \
+            --min-replicas 1 \
+            --max-replicas 1 \
+            --output none
+
+      - name: Print app URL
+        run: |
+          FQDN=$(az containerapp show \
+            --name ${{ env.APP_NAME }} \
+            --resource-group ${{ env.RESOURCE_GROUP }} \
+            --query properties.configuration.ingress.fqdn -o tsv)
+          echo ""
+          echo "=========================================="
+          echo "  Deployment complete!"
+          echo "=========================================="
+          echo "  App URL:        https://${FQDN}"
+          echo "  Admin Console:  https://${FQDN}/home"
+          echo "  Dashboard:      https://${FQDN}/dashboard"
+          echo "  Twilio Webhook: https://${FQDN}/sms"
+          echo "=========================================="

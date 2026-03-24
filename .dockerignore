@@ -2,6 +2,7 @@ node_modules
 downloads
 queue
 data
+brand-references
 .git
 .env
 npm-debug.log

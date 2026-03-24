@@ -46,6 +46,7 @@ for (const dir of [DATA_DIR, PENDING_DIR, GENERATING_DIR, READY_DIR, PRINTING_DI
 
 app.use(bodyParser.urlencoded({ extended: false }));
 
+app.get("/healthz", (req, res) => res.send("ok"));
 app.get("/", (req, res) => res.redirect("/home"));
 app.use("/assets", express.static(path.join(__dirname, "assets")));
 
@@ -388,10 +389,14 @@ app.listen(port, "0.0.0.0", () => {
     }, POLL_INTERVAL);
     console.log(`⏱️  Workers started (polling every ${POLL_INTERVAL}ms, max ${settings.get("maxConcurrentGeneration")} concurrent generations)`);
 
-    // Auto-open home page in the default browser
+    // Auto-open home page in the default browser (skip in production/Docker)
     const host = `http://localhost:${port}`;
-    const openCmd = process.platform === "darwin" ? "open" : process.platform === "win32" ? "start" : "xdg-open";
-    exec(`${openCmd} ${host}`, (err) => {
-        if (err) console.log(`🏠 Home available at ${host}`);
-    });
+    if (process.env.NODE_ENV !== "production") {
+        const openCmd = process.platform === "darwin" ? "open" : process.platform === "win32" ? "start" : "xdg-open";
+        exec(`${openCmd} ${host}`, (err) => {
+            if (err) console.log(`🏠 Home available at ${host}`);
+        });
+    } else {
+        console.log(`🏠 Home available at ${host}`);
+    }
 });

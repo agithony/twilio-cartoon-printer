@@ -3,11 +3,10 @@ FROM node:20-bullseye-slim
 WORKDIR /app
 
 ENV NODE_ENV=production
+ENV PORT=8080
 
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends \
-        ca-certificates \
-        cups-client \
+    && apt-get install -y --no-install-recommends ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
 COPY package.json pnpm-lock.yaml ./
@@ -18,6 +17,9 @@ RUN corepack enable \
 
 COPY . .
 
-EXPOSE 80
+COPY scripts/start.sh /app/start.sh
+RUN chmod +x /app/start.sh
 
-CMD ["node", "index.js"]
+EXPOSE 8080
+
+CMD ["/app/start.sh"]
