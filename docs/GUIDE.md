@@ -21,6 +21,10 @@ This document covers all features and configuration in depth. For quick setup, s
 - [Delivery Mode](#delivery-mode)
 - [Lead Capture](#lead-capture)
 - [Outreach](#outreach)
+- [Configurable SMS Messages](#configurable-sms-messages)
+- [NPS Survey](#nps-survey)
+- [Social Sharing](#social-sharing)
+- [BRB Screen](#brb-screen)
 - [Promotional Messages](#promotional-messages)
 - [Runtime Settings](#runtime-settings)
 - [Switching Events](#switching-events)
@@ -115,12 +119,12 @@ The intro video at `/home/video` is a fullscreen looping video player designed t
 
 - Place your video file in the `assets/` folder (or upload via the Settings panel)
 - Set `VIDEO_FILE` in `.env` to the filename (defaults to `get-started.mp4`)
-- The video autoplays on loop with a floating Pause/Play button and Fullscreen button
+- The video autoplays on loop with floating BRB, Pause/Play, and Fullscreen buttons
 - To switch videos, change the setting from the Settings panel on `/home` or update `.env`
 
 ### Booth Display
 
-The booth display at `/home/combo` is a split-screen view combining the intro video and photo book side by side on a single monitor. The divider between panes is draggable to resize each side.
+The booth display at `/home/combo` is a split-screen view combining the intro video and photo book side by side on a single monitor. The divider between panes is draggable to resize each side. A BRB button in the bottom-right shows the break overlay.
 
 ### Photo Book
 
@@ -171,6 +175,7 @@ Click **Generate Report** on the dashboard to download a PDF summarizing key eve
 - Key metrics (total prints, unique users, avg per user, most popular style, success rate, avg generation/print times)
 - Style breakdown table
 - Top users
+- NPS score (average, response count, 1-5 distribution)
 - Failure analysis with rejection rate
 - User geography (top 10 countries)
 
@@ -245,16 +250,16 @@ Can also be set via the `ENABLE_PRINTING` environment variable (`true` or `false
 
 ## Lead Capture
 
-The app can collect attendee contact information via a short SMS survey. When enabled, each user completes a one-time survey (per event) that captures:
+The app can collect attendee contact information via a short SMS survey. When enabled, each user completes a one-time survey (per event). Each field can be individually toggled on/off with custom prompts and error messages from the Settings panel:
 
-| # | Field | Validation |
-|---|-------|------------|
-| 1 | First name | Non-empty |
-| 2 | Last name | Non-empty |
-| 3 | Country code | 2-3 letter code (e.g. US, UK, CA) |
-| 4 | Business email | Valid email, personal domains rejected (Gmail, Yahoo, Hotmail, etc.) |
-| 5 | Company | Non-empty |
-| 6 | Job title | Non-empty |
+| # | Field | Validation | Default Prompt |
+|---|-------|------------|----------------|
+| 1 | First name | Non-empty | "What's your first name?" |
+| 2 | Last name | Non-empty | "And your last name?" |
+| 3 | Country code | 2-3 letter code | "What country are you from? (2-letter code...)" |
+| 4 | Business email | Valid email, personal domains rejected | "What's your business email?" |
+| 5 | Company | Non-empty | "What company do you work for?" |
+| 6 | Job title | Non-empty | "Last one -- what's your job title?" |
 
 ### Modes
 
@@ -285,6 +290,69 @@ Features:
 
 The page uses a two-column layout on desktop (user list on the left, actions on the right) and stacks to a single column on mobile. It auto-refreshes the user list every 10 seconds.
 
+## Configurable SMS Messages
+
+Every SMS message the app sends to users is configurable from the Settings panel. Messages are organized into categories:
+
+- **Welcome & Onboarding** -- welcome text, quota counts, multiple photo warning
+- **Style Selection** -- menu intro, footer, retry on invalid input
+- **Processing & Delivery** -- enqueue confirmation, pickup instructions, delivery text, last portrait notice, Twilio blurb
+- **Error Responses** -- moderation failure, no face detected
+- **Lead Capture** -- intro (before/after), completion, CTA
+- **NPS** -- prompt and thank you
+
+Messages support `{variable}` interpolation for dynamic values. Available variables depend on the message:
+
+| Variable | Available in | Description |
+|---|---|---|
+| `{firstName}` | Lead capture completion messages | User's first name from survey |
+| `{eventName}` | Welcome count, quota exceeded | Current event name |
+| `{maxPrints}` | Welcome count, quota exceeded | Max prints per user |
+| `{remaining}` | Remaining count | Prints/portraits left |
+| `{unit}` | Welcome count, remaining count | "print"/"prints" or "portrait"/"portraits" (auto-pluralized) |
+| `{units}` | Quota exceeded | Plural unit name |
+| `{confirmLabel}` | Enqueued | "Your portrait" or "Your {style} portrait" |
+| `{styleName}` | Delivery messages | Name of the art style used |
+
+Lead capture survey fields (first name, last name, country, email, company, job title) can each be toggled on/off with custom prompts and error messages.
+
+All message customizations are stored in `data/settings.json` and take effect immediately.
+
+## NPS Survey
+
+The app can send a Net Promoter Score survey after a user's final portrait (when their quota is exhausted). When enabled, the app waits a configurable delay (default 30 seconds) after the last delivery, then texts the user asking for a 1-5 rating.
+
+Configure from the Settings panel under NPS Survey:
+
+- **Enable/Disable** toggle
+- **Delay** -- seconds to wait after delivery before sending the prompt (default 30)
+- **Prompt and Thank You messages** -- editable in the SMS Messages section
+
+NPS data is visible in:
+
+- **Dashboard** -- NPS Score panel with average rating, response count, and 1-5 distribution bar chart
+- **PDF Reports** -- NPS section with average, count, and distribution
+
+Scores persist to `data/nps.json` across restarts. Admin phone numbers are excluded from NPS surveys.
+
+## Social Sharing
+
+When enabled, delivery messages include clickable share links for X/Twitter and LinkedIn. The share text is configurable and supports `{eventName}` interpolation.
+
+Configure from the Settings panel under Engagement:
+
+- **Enable Share Links** toggle
+- **Twitter Handle** -- included in tweet text (default `@twilio`)
+- **LinkedIn Share Text** -- customizable template (default: "Check out my AI portrait from {eventName}, powered by Twilio!")
+
+The share URLs point to the portrait's MMS image on your server, so they only work while the server is accessible at the same URL.
+
+## BRB Screen
+
+All three booth displays (intro video, combo, photo book) include a **BRB** button in the bottom toolbar. Clicking it shows a fullscreen "We'll Be Right Back" overlay with animated visuals, the event name, and an optional custom message. Click anywhere to dismiss.
+
+The break message is configurable from the Settings panel under Queue Control. The standalone break screen is also available directly at `/home/break`.
+
 ## Promotional Messages
 
 The app can send a promotional message as a standalone SMS after each portrait is delivered. The promo is always the last message in the conversation for each portrait -- it arrives a few seconds after the completion MMS, separate from all status messages.
@@ -297,19 +365,23 @@ Configure the message from the Settings panel on the home page under Promotional
 
 The Settings panel on the home page (`/home`) lets admins change all app configuration at runtime without editing `.env` or restarting the server. Changes take effect immediately and are persisted to `data/settings.json`.
 
-The settings panel is organized into six sections:
+The settings panel is organized into seven sections:
 
 **Event** -- Event Name (combo-box with existing events or type a new name), Max Prints Per User, Max Concurrent Generations, Admin Phone Numbers
 
-**Art & Branding** -- Default Style selector, Brand Prompt (global branding applied to all styles), art style toggles with editable prompts (and reset for built-ins), custom style creation with editable names and prompts
+**Art & Branding** -- Default Style selector, Brand Prompt (global branding applied to all styles), Brand Reference Images, art style toggles with editable prompts (and reset for built-ins), custom style creation with editable names and prompts
 
 **Delivery & Printing** -- Delivery Mode (Print + Digital or Digital Only), Printer selection, Print Size (4x6, 5x7, 8x10), Print Quality (Standard, High, Max), Custom Print Flags. Print settings are only visible when Print + Digital mode is selected and take effect on the next print job.
 
-**Booth Display** -- Template Frame, Intro Video, Terms URL (displayed on booth screens)
+**Booth Display** -- Template Frame, Frame Border, Intro Video, Terms URL (displayed on booth screens)
 
-**Lead Capture** -- Enable/disable toggle. When enabled, choose timing: Before Portrait or After Portrait. See [Lead Capture](#lead-capture) for details.
+**Engagement** -- Social Share Links (X/Twitter and LinkedIn), Promotional Message, NPS Survey toggle and delay
 
-**Promotional** -- Promotional Message (standalone SMS sent after each portrait delivery)
+**Lead Capture** -- Enable/disable toggle. When enabled, choose timing: Before Portrait or After Portrait. Lead capture messages (intro, completion) and survey field prompts/errors are editable inline. See [Lead Capture](#lead-capture) for details.
+
+**Operations** -- Queue Control (pause/resume, break screen message), API Keys (Twilio and OpenAI overrides)
+
+**SMS Messages** -- All user-facing SMS messages organized by category (Welcome & Onboarding, Style Selection, Processing & Delivery, Error Responses). Each message is editable with `{variable}` interpolation support.
 
 Settings are stored as overrides on top of `.env` defaults. Click "Reset to Defaults" to revert all overrides.
 
@@ -382,7 +454,9 @@ twilio-cartoon-printer/
 │   ├── queue.js          Concurrent generation worker, serial print worker, usage tracking
 │   ├── dashboard.js      Admin dashboard (mounted at /dashboard)
 │   ├── home.js           Home page, settings panel, intro video, booth display (mounted at /home)
+│   ├── brb.js            Shared BRB overlay (CSS, HTML, script) used by all booth displays
 │   ├── leads.js          Lead capture SMS survey engine and persistence
+│   ├── nps.js            NPS survey engine and persistence
 │   ├── outreach.js       Outreach -- broadcast messaging, raffles, lead reports (mounted at /outreach)
 │   ├── photogallery.js   Photo book (mounted at /photogallery)
 │   └── paper.js          Paper counter with file persistence
@@ -390,6 +464,7 @@ twilio-cartoon-printer/
 │   └── GUIDE.md          Detailed documentation (this file)
 ├── assets/               Video and media files for the home page
 │   └── get-started.mp4   Attract loop video (gitignored)
+├── brand-references/     Brand reference images for AI generation
 ├── templates/            Frame overlays (PNGs with transparent center)
 │   └── signal_sf.png     Example: SIGNAL SF branded frame
 ├── downloads/            Generated images, organized by event name
@@ -405,6 +480,7 @@ twilio-cartoon-printer/
 │   └── failed/           Permanent failures or max retries exceeded
 ├── data/                 Persistent app data
 │   ├── leads.json        Captured leads — keyed by phone:event (gitignored)
+│   ├── nps.json          NPS survey scores — keyed by phone:event (gitignored)
 │   ├── paper.json        Paper counter state
 │   ├── raffle.json       Raffle winner history
 │   └── settings.json     Runtime settings overrides

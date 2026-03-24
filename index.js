@@ -32,12 +32,14 @@ const { mountHome } = require("./lib/home");
 const { mountPhotoGallery } = require("./lib/photogallery");
 const { mountOutreach } = require("./lib/outreach");
 const leads = require("./lib/leads");
+const nps = require("./lib/nps");
 
 const app = express();
 const port = parseInt(process.env.PORT || "3000", 10);
 
 // Ensure directories exist
-for (const dir of [DATA_DIR, PENDING_DIR, GENERATING_DIR, READY_DIR, PRINTING_DIR, DONE_DIR, FAILED_DIR]) {
+const BRAND_REFS_DIR = path.join(__dirname, "brand-references");
+for (const dir of [DATA_DIR, PENDING_DIR, GENERATING_DIR, READY_DIR, PRINTING_DIR, DONE_DIR, FAILED_DIR, BRAND_REFS_DIR]) {
     if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
 }
 
@@ -80,22 +82,26 @@ app.post("/sms", async (req, res) => {
     // Helper: confirm and enqueue a job with the chosen style
     async function confirmAndEnqueue(style, imageUrl, messageSid, useTwiml) {
         const styleName = activeStyles[style].name;
+        const singleStyle = activeStyleList.length === 1;
+        const confirmLabel = singleStyle ? "Your portrait" : `Your ${styleName} portrait`;
         console.log(`📩 Enqueuing portrait for ${userPhone} (style: ${styleName})`);
 
         const printingEnabled = settings.get("enablePrinting");
-        const twilioBlurb = `\n\nFun fact: this experience is powered by Twilio! Your photo is received via text, transformed by AI, and delivered back to you — all through Twilio's APIs.`;
-        const pickupMsg = printingEnabled
-            ? ` It may take a minute or two — we'll text you when it's ready for pickup at the Twilio booth.${twilioBlurb}`
-            : ` It may take a minute or two — we'll text it to you as soon as it's done.${twilioBlurb}`;
+        const twilioBlurb = settings.getMsg("twilioBlurb");
+        const pickupText = printingEnabled
+            ? settings.getMsg("pickupPrint")
+            : settings.getMsg("pickupDigital");
+        const pickupMsg = ` ${pickupText}${twilioBlurb ? `\n\n${twilioBlurb}` : ""}`;
         const unit = printingEnabled ? "print" : "portrait";
         const units = printingEnabled ? "prints" : "portraits";
 
         if (treatAsAdmin) {
+            const msg = `${settings.getMsg("enqueued", { confirmLabel })}${pickupMsg}`;
             if (useTwiml) {
-                twiml.message(`Your ${styleName} portrait is in the works!${pickupMsg}`);
+                twiml.message(msg);
             } else {
                 const { sendSms } = require("./lib/helpers");
-                await sendSms(userPhone, appPhone, `Your ${styleName} portrait is in the works!${pickupMsg}`);
+                await sendSms(userPhone, appPhone, msg);
             }
             enqueueJob(imageUrl, messageSid, userPhone, appPhone, style, baseUrl);
         } else {
@@ -105,11 +111,12 @@ app.post("/sms", async (req, res) => {
             const unlimited = isAdmin(userPhone) && testingMode;
 
             if (remaining <= 0 && !unlimited) {
+                const quotaMsg = settings.getMsg("quotaExceeded", { maxPrints, units, eventName });
                 if (useTwiml) {
-                    twiml.message(`You've already used your ${maxPrints} free ${units} for ${eventName}. Thanks for stopping by!`);
+                    twiml.message(quotaMsg);
                 } else {
                     const { sendSms } = require("./lib/helpers");
-                    await sendSms(userPhone, appPhone, `You've already used your ${maxPrints} free ${units} for ${eventName}. Thanks for stopping by!`);
+                    await sendSms(userPhone, appPhone, quotaMsg);
                 }
                 return;
             }
@@ -117,21 +124,37 @@ app.post("/sms", async (req, res) => {
             const afterThis = unlimited ? null : remaining - 1;
             const countMsg = afterThis === null || afterThis <= 0
                 ? ""
-                : ` By the way, you have ${afterThis} ${unit}${afterThis === 1 ? "" : "s"} remaining.`;
+                : ` ${settings.getMsg("remainingCount", { remaining: afterThis, unit: afterThis === 1 ? unit : unit + "s" })}`;
+            const msg = `${settings.getMsg("enqueued", { confirmLabel })}${pickupMsg}${countMsg}`;
             if (useTwiml) {
-                twiml.message(`Your ${styleName} portrait is in the works!${pickupMsg}${countMsg}`);
+                twiml.message(msg);
             } else {
                 const { sendSms } = require("./lib/helpers");
-                await sendSms(userPhone, appPhone, `Your ${styleName} portrait is in the works!${pickupMsg}${countMsg}`);
+                await sendSms(userPhone, appPhone, msg);
             }
             enqueueJob(imageUrl, messageSid, userPhone, appPhone, style, baseUrl);
         }
     }
 
-    // Helper: show style menu and hold the image
-    function showMenuAndHold(imageUrl, messageSid) {
+    // Helper: show style menu and hold the image (auto-selects if only one style)
+    async function showMenuAndHold(imageUrl, messageSid) {
+        if (activeStyleList.length === 1) {
+            await confirmAndEnqueue(activeStyleList[0], imageUrl, messageSid, true);
+            return;
+        }
         styleMenu.setPending(userPhone, { imageUrl, messageSid, body, appPhone, baseUrl });
         twiml.message(styleMenu.buildMenu(activeStyles, activeStyleList));
+    }
+
+    // ── 0. NPS response ────────────────────────────────────────────────────
+    if (nps.hasPending(userPhone) && numMedia === 0) {
+        const trimmed = (body || "").trim();
+        const score = parseInt(trimmed, 10);
+        if (score >= 1 && score <= 5) {
+            nps.recordScore(userPhone, eventName, score);
+            twiml.message(settings.getMsg("npsThanks"));
+            return res.type("text/xml").send(twiml.toString());
+        }
     }
 
     // ── 1. Lead capture active survey ───────────────────────────────────────
@@ -184,7 +207,7 @@ app.post("/sms", async (req, res) => {
     // ── 3. Lead capture "before" intercept ──────────────────────────────────
     if (leadMode === "before" && !treatAsAdmin && !leads.isCompleted(userPhone, eventName)) {
         if (numMedia > 1) {
-            twiml.message("One at a time! Send a single selfie and we'll work our magic.");
+            twiml.message(settings.getMsg("multiplePhotos"));
         } else if (numMedia === 1) {
             const explicitStyle = detectStyle(body, activeStyles);
             if (explicitStyle) {
@@ -196,7 +219,7 @@ app.post("/sms", async (req, res) => {
                     baseUrl,
                 });
             } else {
-                showMenuAndHold(req.body.MediaUrl0, req.body.MessageSid);
+                await showMenuAndHold(req.body.MediaUrl0, req.body.MessageSid);
             }
         } else {
             await leads.startSurvey(userPhone, appPhone, eventName, "before", null);
@@ -206,7 +229,7 @@ app.post("/sms", async (req, res) => {
 
     // ── 4. Normal flow ──────────────────────────────────────────────────────
     if (numMedia > 1) {
-        twiml.message("One at a time! Send a single selfie and we'll work our magic.");
+        twiml.message(settings.getMsg("multiplePhotos"));
     } else if (numMedia === 1) {
         // Check quota before showing style menu or enqueuing
         if (!treatAsAdmin) {
@@ -216,7 +239,7 @@ app.post("/sms", async (req, res) => {
             const printingEnabled = settings.get("enablePrinting");
             const units = printingEnabled ? "prints" : "portraits";
             if (used >= maxPrints && !unlimited) {
-                twiml.message(`You've already used your ${maxPrints} free ${units} for ${eventName}. Thanks for stopping by!`);
+                twiml.message(settings.getMsg("quotaExceeded", { maxPrints, units, eventName }));
                 return res.type("text/xml").send(twiml.toString());
             }
         }
@@ -225,7 +248,7 @@ app.post("/sms", async (req, res) => {
         if (explicitStyle) {
             await confirmAndEnqueue(explicitStyle, req.body.MediaUrl0, req.body.MessageSid, true);
         } else {
-            showMenuAndHold(req.body.MediaUrl0, req.body.MessageSid);
+            await showMenuAndHold(req.body.MediaUrl0, req.body.MessageSid);
         }
     } else {
         const printingEnabled = settings.get("enablePrinting");
@@ -245,17 +268,13 @@ app.post("/sms", async (req, res) => {
                     return res.type("text/xml").send(twiml.toString());
                 }
             }
-            twiml.message(
-                `Send us a selfie and we'll turn it into art! You'll get to pick your style after.`,
-            );
+            twiml.message(settings.getMsg("welcome"));
         } else {
             const used = getUsageCount(userPhone);
             const maxPrints = settings.get("maxPrints");
             const remaining = maxPrints - used;
             if (remaining <= 0) {
-                twiml.message(
-                    `You've already used your ${maxPrints} free ${unit}s for ${eventName}. Thanks for stopping by!`,
-                );
+                twiml.message(settings.getMsg("quotaExceeded", { maxPrints, units: unit + "s", eventName }));
             } else {
                 if (conversational) {
                     const { generateSmartReply } = require("./lib/helpers");
@@ -266,11 +285,9 @@ app.post("/sms", async (req, res) => {
                     }
                 }
                 const countNote = used === 0
-                    ? ` You get ${maxPrints} free ${unit}${maxPrints === 1 ? "" : "s"} at ${eventName}.`
-                    : ` By the way, you have ${remaining} ${unit}${remaining === 1 ? "" : "s"} remaining.`;
-                twiml.message(
-                    `Send us a selfie and we'll turn it into art! You'll get to pick your style after.${countNote}`,
-                );
+                    ? ` ${settings.getMsg("welcomeCount", { maxPrints, unit: maxPrints === 1 ? unit : unit + "s", eventName })}`
+                    : ` ${settings.getMsg("remainingCount", { remaining, unit: remaining === 1 ? unit : unit + "s" })}`;
+                twiml.message(`${settings.getMsg("welcome")}${countNote}`);
             }
         }
     }
@@ -287,6 +304,7 @@ app.listen(port, "0.0.0.0", () => {
     if (!fs.existsSync(dlDir)) fs.mkdirSync(dlDir, { recursive: true });
     buildUsageCache();
     leads.load();
+    nps.load();
     settings.onEventNameChange(() => buildUsageCache());
     recoverStaleJobs();
     mountHome(app);
@@ -295,14 +313,14 @@ app.listen(port, "0.0.0.0", () => {
     mountOutreach(app);
     let genPollRunning = false;
     setInterval(async () => {
-        if (genPollRunning) return;
+        if (genPollRunning || settings.get("queuePaused")) return;
         genPollRunning = true;
         try { await processGenerationQueue(); }
         finally { genPollRunning = false; }
     }, POLL_INTERVAL);
     let printPollRunning = false;
     setInterval(async () => {
-        if (printPollRunning) return;
+        if (printPollRunning || settings.get("queuePaused")) return;
         printPollRunning = true;
         try { await processPrintQueue(); }
         finally { printPollRunning = false; }

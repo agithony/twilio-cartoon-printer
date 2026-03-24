@@ -28,7 +28,7 @@ flowchart TB
   R --> P1 --> S["SMS sent: your print is ready"]
 ```
 
-After sending a selfie, users receive a numbered style menu and reply with a number or style name. The bot also responds conversationally to questions via AI (gpt-4o-mini).
+After sending a selfie, users receive a numbered style menu and reply with a number or style name. The bot also responds conversationally to questions via AI (gpt-4o-mini). All SMS messages are fully configurable from the admin Settings panel at runtime.
 
 ## Prerequisites
 
@@ -115,6 +115,7 @@ Add `PORT=8080` to your `.env` for Docker, then point Twilio to `http://<your-ho
 | `/home` | Admin console -- settings, booth display launcher |
 | `/home/video` | Fullscreen looping intro video for booth displays |
 | `/home/combo` | Split-screen booth display (intro video + photo book) |
+| `/home/break` | "We'll Be Right Back" screen for booth breaks |
 | `/photogallery` | Photo book with page-turn animations |
 | `/dashboard` | Real-time admin dashboard with metrics and monitoring |
 | `/outreach` | Broadcast messaging, raffles, lead capture reports |
@@ -124,9 +125,13 @@ Add `PORT=8080` to your `.env` for Docker, then point Twilio to `http://<your-ho
 - **Style selection menu** -- numbered list sent after selfie, reply by number or name
 - **AI smart replies** -- conversational responses to text-only messages via gpt-4o-mini
 - **Template frames** -- PNG overlays with transparent windows, auto-detected safe zones
-- **Lead capture** -- SMS survey (before or after portrait) with CSV export
+- **Configurable SMS messages** -- every message editable from the Settings panel, with `{variable}` interpolation
+- **Lead capture** -- SMS survey (before or after portrait) with configurable fields, toggles, and CSV export
+- **NPS survey** -- 1-5 rating after last portrait, with dashboard stats and PDF report integration
+- **BRB screen** -- "We'll Be Right Back" overlay on all booth displays, toggled via a button
+- **Social sharing** -- optional X/Twitter and LinkedIn share links appended to delivery messages
 - **Runtime settings** -- all config changeable from `/home` without restarts
-- **Dashboard** -- job health, failure breakdown, queue status, stuck job alerts, paper counter, PDF reports
+- **Dashboard** -- job health, failure breakdown, queue status, NPS scores, stuck job alerts, paper counter, PDF reports
 - **Outreach** -- broadcast SMS, animated raffle draws, lead reports
 - **Photo book** -- realistic page-turn gallery for booth displays
 - **Crash recovery** -- file-based queue survives server restarts, auto-retries failed jobs
