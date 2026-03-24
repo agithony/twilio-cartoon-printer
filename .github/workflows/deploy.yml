@@ -123,33 +123,10 @@ jobs:
 
       - name: Create or update Container App
         run: |
-          # Write YAML with volume mount configuration (no indentation — heredoc is literal)
-          cat > /tmp/containerapp.yaml <<'YAMLEOF'
-          properties:
-            configuration:
-              ingress:
-                external: true
-                targetPort: 8080
-            template:
-              containers:
-                - name: ${{ env.APP_NAME }}
-                  image: ${{ steps.acr-creds.outputs.server }}/${{ env.IMAGE_TAG }}
-                  resources:
-                    cpu: 1.0
-                    memory: 2Gi
-                  volumeMounts:
-                    - volumeName: appdata
-                      mountPath: /app/appdata
-              scale:
-                minReplicas: 1
-                maxReplicas: 1
-              volumes:
-                - name: appdata
-                  storageName: appdata
-                  storageType: AzureFile
-          YAMLEOF
-          # Strip leading whitespace from the YAML (heredoc preserves workflow indentation)
-          sed -i 's/^          //' /tmp/containerapp.yaml
+          # Render YAML template with actual values
+          export APP_NAME="${{ env.APP_NAME }}"
+          export CONTAINER_IMAGE="${{ steps.acr-creds.outputs.server }}/${{ env.IMAGE_TAG }}"
+          envsubst < .github/containerapp.yaml > /tmp/containerapp.yaml
 
           if az containerapp show --name ${{ env.APP_NAME }} --resource-group ${{ env.RESOURCE_GROUP }} 2>/dev/null; then
             echo "Updating existing container app..."

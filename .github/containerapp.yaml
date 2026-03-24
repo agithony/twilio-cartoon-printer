@@ -1,0 +1,22 @@
+properties:
+  configuration:
+    ingress:
+      external: true
+      targetPort: 8080
+  template:
+    containers:
+      - name: ${APP_NAME}
+        image: ${CONTAINER_IMAGE}
+        resources:
+          cpu: 1.0
+          memory: 2Gi
+        volumeMounts:
+          - volumeName: appdata
+            mountPath: /app/appdata
+    scale:
+      minReplicas: 1
+      maxReplicas: 1
+    volumes:
+      - name: appdata
+        storageName: appdata
+        storageType: AzureFile
