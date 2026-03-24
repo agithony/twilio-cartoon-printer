@@ -1,3 +1,4 @@
+require("./lib/log-buffer").init();
 require("dotenv").config();
 const fs = require("fs");
 const path = require("path");
