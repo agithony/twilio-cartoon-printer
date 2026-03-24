@@ -27,6 +27,7 @@ const {
 } = require("./lib/queue");
 const { parseStyle, detectStyle } = require("./lib/styles");
 const styleMenu = require("./lib/style-menu");
+const backgroundMenu = require("./lib/background-menu");
 const { mountDashboard } = require("./lib/dashboard");
 const { mountHome } = require("./lib/home");
 const { mountPhotoGallery } = require("./lib/photogallery");
@@ -39,7 +40,7 @@ const port = parseInt(process.env.PORT || "3000", 10);
 
 // Ensure directories exist
 const BRAND_REFS_DIR = path.join(__dirname, "brand-references");
-for (const dir of [DATA_DIR, PENDING_DIR, GENERATING_DIR, READY_DIR, PRINTING_DIR, DONE_DIR, FAILED_DIR, BRAND_REFS_DIR]) {
+for (const dir of [DATA_DIR, PENDING_DIR, GENERATING_DIR, READY_DIR, PRINTING_DIR, DONE_DIR, FAILED_DIR, BRAND_REFS_DIR, settings.EVENTS_DIR]) {
     if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
 }
 
@@ -79,8 +80,8 @@ app.post("/sms", async (req, res) => {
     const testingMode = eventName.toLowerCase() === "testing";
     const treatAsAdmin = isAdmin(userPhone) && !testingMode;
 
-    // Helper: confirm and enqueue a job with the chosen style
-    async function confirmAndEnqueue(style, imageUrl, messageSid, useTwiml) {
+    // Helper: confirm and enqueue a job with the chosen style (and optional background)
+    async function confirmAndEnqueue(style, imageUrl, messageSid, useTwiml, background) {
         const styleName = activeStyles[style].name;
         const singleStyle = activeStyleList.length === 1;
         const confirmLabel = singleStyle ? "Your portrait" : `Your ${styleName} portrait`;
@@ -103,7 +104,7 @@ app.post("/sms", async (req, res) => {
                 const { sendSms } = require("./lib/helpers");
                 await sendSms(userPhone, appPhone, msg);
             }
-            enqueueJob(imageUrl, messageSid, userPhone, appPhone, style, baseUrl);
+            enqueueJob(imageUrl, messageSid, userPhone, appPhone, style, baseUrl, background);
         } else {
             const used = getUsageCount(userPhone);
             const maxPrints = settings.get("maxPrints");
@@ -132,18 +133,40 @@ app.post("/sms", async (req, res) => {
                 const { sendSms } = require("./lib/helpers");
                 await sendSms(userPhone, appPhone, msg);
             }
-            enqueueJob(imageUrl, messageSid, userPhone, appPhone, style, baseUrl);
+            enqueueJob(imageUrl, messageSid, userPhone, appPhone, style, baseUrl, background);
         }
     }
 
     // Helper: show style menu and hold the image (auto-selects if only one style)
     async function showMenuAndHold(imageUrl, messageSid) {
         if (activeStyleList.length === 1) {
-            await confirmAndEnqueue(activeStyleList[0], imageUrl, messageSid, true);
+            await showBackgroundMenuOrEnqueue(activeStyleList[0], imageUrl, messageSid, true);
             return;
         }
         styleMenu.setPending(userPhone, { imageUrl, messageSid, body, appPhone, baseUrl });
         twiml.message(styleMenu.buildMenu(activeStyles, activeStyleList));
+    }
+
+    // Helper: show background menu or enqueue directly
+    async function showBackgroundMenuOrEnqueue(style, imageUrl, messageSid, useTwiml) {
+        const bgChoices = settings.get("backgroundChoices") || [];
+        if (settings.get("enableBackgroundMenu") && bgChoices.length > 0) {
+            if (bgChoices.length === 1) {
+                // Auto-select if only one background
+                await confirmAndEnqueue(style, imageUrl, messageSid, useTwiml, bgChoices[0].key);
+                return;
+            }
+            backgroundMenu.setPending(userPhone, { imageUrl, messageSid, style, appPhone, baseUrl });
+            const menuMsg = backgroundMenu.buildMenu(bgChoices);
+            if (useTwiml) {
+                twiml.message(menuMsg);
+            } else {
+                const { sendSms } = require("./lib/helpers");
+                await sendSms(userPhone, appPhone, menuMsg);
+            }
+            return;
+        }
+        await confirmAndEnqueue(style, imageUrl, messageSid, useTwiml);
     }
 
     // ── 0. NPS response ────────────────────────────────────────────────────
@@ -164,13 +187,51 @@ app.post("/sms", async (req, res) => {
         if (result.status === "completed" && result.pendingImage) {
             const pi = result.pendingImage;
             const style = pi.style || parseStyle(pi.body, activeStyles, settings.get("defaultStyle"));
-            await confirmAndEnqueue(style, pi.imageUrl, pi.messageSid, false);
+            if (pi.background) {
+                await confirmAndEnqueue(style, pi.imageUrl, pi.messageSid, false, pi.background);
+            } else {
+                await showBackgroundMenuOrEnqueue(style, pi.imageUrl, pi.messageSid, false);
+            }
         }
 
         return res.type("text/xml").send(twiml.toString());
     }
 
-    // ── 2. Style menu pending ───────────────────────────────────────────────
+    // ── 2. Background menu pending ──────────────────────────────────────────
+    if (backgroundMenu.hasPending(userPhone)) {
+        if (numMedia >= 1) {
+            // New selfie replaces old pending — clear and fall through
+            backgroundMenu.clearPending(userPhone);
+        } else {
+            const bgChoices = settings.get("backgroundChoices") || [];
+            const matched = backgroundMenu.matchReply(body, bgChoices);
+            if (!matched) {
+                twiml.message(backgroundMenu.buildRetryMenu(bgChoices));
+                return res.type("text/xml").send(twiml.toString());
+            }
+
+            const bgPending = backgroundMenu.getPending(userPhone);
+            backgroundMenu.clearPending(userPhone);
+
+            // Check if lead capture "before" is needed
+            if (leadMode === "before" && !treatAsAdmin && !leads.isCompleted(userPhone, eventName)) {
+                await leads.startSurvey(userPhone, appPhone, eventName, "before", {
+                    imageUrl: bgPending.imageUrl,
+                    messageSid: bgPending.messageSid,
+                    body: bgPending.body || "",
+                    style: bgPending.style,
+                    background: matched,
+                    baseUrl,
+                });
+                return res.type("text/xml").send(twiml.toString());
+            }
+
+            await confirmAndEnqueue(bgPending.style, bgPending.imageUrl, bgPending.messageSid, false, matched);
+            return res.type("text/xml").send(twiml.toString());
+        }
+    }
+
+    // ── 3. Style menu pending ───────────────────────────────────────────────
     if (styleMenu.hasPending(userPhone)) {
         if (numMedia >= 1) {
             // New selfie replaces old pending — clear and fall through
@@ -198,13 +259,13 @@ app.post("/sms", async (req, res) => {
                 return res.type("text/xml").send(twiml.toString());
             }
 
-            // Normal enqueue
-            await confirmAndEnqueue(matched, pending.imageUrl, pending.messageSid, false);
+            // Background menu or enqueue
+            await showBackgroundMenuOrEnqueue(matched, pending.imageUrl, pending.messageSid, false);
             return res.type("text/xml").send(twiml.toString());
         }
     }
 
-    // ── 3. Lead capture "before" intercept ──────────────────────────────────
+    // ── 4. Lead capture "before" intercept ──────────────────────────────────
     if (leadMode === "before" && !treatAsAdmin && !leads.isCompleted(userPhone, eventName)) {
         if (numMedia > 1) {
             twiml.message(settings.getMsg("multiplePhotos"));
@@ -227,7 +288,7 @@ app.post("/sms", async (req, res) => {
         return res.type("text/xml").send(twiml.toString());
     }
 
-    // ── 4. Normal flow ──────────────────────────────────────────────────────
+    // ── 5. Normal flow ──────────────────────────────────────────────────────
     if (numMedia > 1) {
         twiml.message(settings.getMsg("multiplePhotos"));
     } else if (numMedia === 1) {
@@ -246,7 +307,7 @@ app.post("/sms", async (req, res) => {
 
         const explicitStyle = detectStyle(body, activeStyles);
         if (explicitStyle) {
-            await confirmAndEnqueue(explicitStyle, req.body.MediaUrl0, req.body.MessageSid, true);
+            await showBackgroundMenuOrEnqueue(explicitStyle, req.body.MediaUrl0, req.body.MessageSid, true);
         } else {
             await showMenuAndHold(req.body.MediaUrl0, req.body.MessageSid);
         }

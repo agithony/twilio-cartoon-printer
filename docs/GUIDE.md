@@ -18,6 +18,7 @@ This document covers all features and configuration in depth. For quick setup, s
 - [Style Selection](#style-selection)
 - [Adding or Changing Styles](#adding-or-changing-styles)
 - [Brand Prompt](#brand-prompt)
+- [Background Selection](#background-selection)
 - [Delivery Mode](#delivery-mode)
 - [Lead Capture](#lead-capture)
 - [Outreach](#outreach)
@@ -47,7 +48,7 @@ This document covers all features and configuration in depth. For quick setup, s
 | `EVENT_NAME` | Yes | Name of the current event (used for per-event print limits and download folders) |
 | `ADMIN_PHONES` | No | Comma-separated phone numbers in E.164 format (e.g. `+14155551234`). Admins get unlimited prints and are excluded from dashboard metrics. |
 | `MAX_PRINTS_PER_USER` | No | Max free prints per phone number per event. Defaults to `2`. |
-| `MAX_CONCURRENT_GENERATION` | No | Max AI image generations running at the same time. Defaults to `3`. Increase for faster throughput, decrease if hitting OpenAI rate limits. |
+| `MAX_CONCURRENT_GENERATION` | No | Max AI image generations running at the same time. Defaults to `3`. Increase for faster throughput, decrease if hitting OpenAI rate limits. Configurable at runtime under Operations. |
 | `TEMPLATE_FILE` | No | Filename of the template frame in the `templates/` folder (e.g. `signal_sf.png`). Leave blank to disable. |
 | `VIDEO_FILE` | No | Filename of the Get Started video in the `assets/` folder (e.g. `get-started.mp4`). Defaults to `get-started.mp4`. |
 | `TERMS_URL` | No | URL to your terms of service. Displayed on booth screens (video, combo, photo gallery). |
@@ -60,7 +61,7 @@ This document covers all features and configuration in depth. For quick setup, s
 
 ## Template Frames
 
-Place your template PNGs in the `templates/` folder. Set `TEMPLATE_FILE` in `.env` to the filename you want to use (e.g. `signal_sf.png`). You can also change the template at runtime from the Settings panel on the home page, and upload new templates directly through the UI.
+Place your template PNGs in the `templates/` folder. Set `TEMPLATE_FILE` in `.env` to the filename you want to use (e.g. `signal_sf.png`). You can also change the template at runtime from the Settings panel on the home page under Art & Branding, and upload new templates directly through the UI.
 
 Templates should be PNGs with **transparent areas** where the generated portrait shows through. The opaque areas form the frame border (branding, logos, CTA, etc.). The template is composited on top of the portrait at print dimensions (1500x2100).
 
@@ -239,6 +240,18 @@ For example, setting the brand prompt to "wearing a bright red Twilio t-shirt wi
 
 Configure it from the Settings panel under Art & Branding. Leave blank to disable. Can also be set via the `BRAND_PROMPT` environment variable.
 
+Brand reference images (uploaded under Art & Branding) are stored in a shared library. Each event selects which images to use via checkboxes, so you can have hockey jerseys selected for one event and golf gear for another without re-uploading. See [Switching Events](#switching-events) for details.
+
+## Background Selection
+
+The app includes a configurable background system for AI-generated portraits. By default, a background instruction is appended to every generation prompt that tells the AI to recreate the original photo's background in the chosen art style. This default prompt is editable from the Settings panel under Art & Branding > Default Background Prompt.
+
+When **Enable Background Selection** is turned on, users get a numbered background menu via SMS after choosing their art style -- similar to the style selection menu. Admins configure the available background options (name + prompt) from the Settings panel. Each option tells the AI what background to render (e.g. "Solid White", "Original Scene", "City Skyline").
+
+If only one background option is configured, it's auto-selected (no menu shown). If the background menu is disabled, the default background prompt is used for all portraits. Leave the default prompt blank to let the AI decide freely.
+
+Background menu SMS messages (intro, footer, retry) are configurable under Engagement > SMS Messages > Background Selection.
+
 ## Delivery Mode
 
 The app supports two delivery modes, configurable from the Settings panel under Delivery & Printing:
@@ -296,6 +309,7 @@ Every SMS message the app sends to users is configurable from the Settings panel
 
 - **Welcome & Onboarding** -- welcome text, quota counts, multiple photo warning
 - **Style Selection** -- menu intro, footer, retry on invalid input
+- **Background Selection** -- menu intro, footer, retry on invalid input (shown when background selection is enabled)
 - **Processing & Delivery** -- enqueue confirmation, pickup instructions, delivery text, last portrait notice, Twilio blurb
 - **Error Responses** -- moderation failure, no face detected
 - **Lead Capture** -- intro (before/after), completion, CTA
@@ -351,7 +365,7 @@ The share URLs point to the portrait's MMS image on your server, so they only wo
 
 All three booth displays (intro video, combo, photo book) include a **BRB** button in the bottom toolbar. Clicking it shows a fullscreen "We'll Be Right Back" overlay with animated visuals, the event name, and an optional custom message. Click anywhere to dismiss.
 
-The break message is configurable from the Settings panel under Queue Control. The standalone break screen is also available directly at `/home/break`.
+The break message is configurable from the Settings panel under Operations. The standalone break screen is also available directly at `/home/break`.
 
 ## Promotional Messages
 
@@ -365,43 +379,88 @@ Configure the message from the Settings panel on the home page under Promotional
 
 The Settings panel on the home page (`/home`) lets admins change all app configuration at runtime without editing `.env` or restarting the server. Changes take effect immediately and are persisted to `data/settings.json`.
 
-The settings panel is organized into seven sections:
+The settings panel is organized into eight sections:
 
-**Event** -- Event Name (combo-box with existing events or type a new name), Max Prints Per User, Max Concurrent Generations, Admin Phone Numbers
+**Event** -- Event Name (combo-box with existing events, saved-profile badges, or type a new name to create one -- selecting auto-saves and switches), Max Prints Per User, Admin Phone Numbers
 
-**Art & Branding** -- Default Style selector, Brand Prompt (global branding applied to all styles), Brand Reference Images, art style toggles with editable prompts (and reset for built-ins), custom style creation with editable names and prompts
+**Art & Branding** -- Default Style selector, Brand Prompt (global branding applied to all styles), Brand Reference Images (shared library with per-event checkbox selection), Template Frame (PNG overlay composited on portraits) with Frame Border toggle and color picker, art style toggles with editable prompts (and reset for built-ins), custom style creation with editable names and prompts, Background settings (default prompt + optional user-facing background selection menu with configurable choices)
+
+**AI Prompts** -- All AI prompts used in generation, vision analysis, and smart replies. Includes Preserve Line, Composition Line, Preserve Line (Brand Mode), Brand Instruction, Face Detection, Scene Analysis, Smart Reply System Prompt, and User Directive. Each prompt has a reset button to revert to defaults.
 
 **Delivery & Printing** -- Delivery Mode (Print + Digital or Digital Only), Printer selection, Print Size (4x6, 5x7, 8x10), Print Quality (Standard, High, Max), Custom Print Flags. Print settings are only visible when Print + Digital mode is selected and take effect on the next print job.
 
-**Booth Display** -- Template Frame, Frame Border, Intro Video, Terms URL (displayed on booth screens)
+**Booth Display** -- Intro Video, Terms URL (displayed on booth screens)
 
-**Engagement** -- Social Share Links (X/Twitter and LinkedIn), Promotional Message, NPS Survey toggle and delay
+**Engagement** -- Lead Capture (enable/disable, before/after timing, survey messages and fields), Promotional Message, Social Share Links (X/Twitter and LinkedIn), NPS Survey toggle and delay, SMS Messages organized by category (Welcome & Onboarding, Style Selection, Processing & Delivery, Error Responses) with `{variable}` interpolation support. See [Lead Capture](#lead-capture) for details.
 
-**Lead Capture** -- Enable/disable toggle. When enabled, choose timing: Before Portrait or After Portrait. Lead capture messages (intro, completion) and survey field prompts/errors are editable inline. See [Lead Capture](#lead-capture) for details.
+**Operations** -- Max Concurrent Generations, Queue Control (pause/resume), Break Screen Message
 
-**Operations** -- Queue Control (pause/resume, break screen message), API Keys (Twilio and OpenAI overrides)
+**API Keys** -- Twilio credentials (Phone Number, Account SID, Auth Token) and OpenAI configuration (API Key, Orchestrator Model, Vision Light Model, Image Generation Model, Smart Reply Model). These override values from `.env`.
 
-**SMS Messages** -- All user-facing SMS messages organized by category (Welcome & Onboarding, Style Selection, Processing & Delivery, Error Responses). Each message is editable with `{variable}` interpolation support.
-
-Settings are stored as overrides on top of `.env` defaults. Click "Reset to Defaults" to revert all overrides.
+Settings are stored as overrides on top of `.env` defaults. Per-event settings are saved automatically when switching events (see [Switching Events](#switching-events)). Click "Reset to Defaults" to revert all overrides for the current event.
 
 The settings API is also available programmatically:
 
 - `GET /dashboard/api/settings` -- current settings
 - `POST /dashboard/api/settings` -- update settings
 - `POST /dashboard/api/settings/reset` -- revert to `.env` defaults
-- `GET /dashboard/api/settings/files` -- list available templates, videos, printers, and known events
+- `GET /dashboard/api/settings/files` -- list available templates, videos, printers, known events, and event profiles with saved settings
 - `POST /dashboard/api/settings/upload?type=template&filename=foo.png` -- upload a file
 
 ## Switching Events
 
-When moving to a new event, change the Event Name in the Settings panel on `/home`. The Event Name field is a combo-box -- click the arrow to select a previous event, or type a new name to create one. This automatically:
+Settings are saved and restored **per event**. Each event keeps its own complete settings profile -- art styles, brand references, prompts, SMS messages, lead capture, background config, and all other creative settings. Infrastructure settings (API keys, admin phones, printers, concurrency) are global and shared across all events.
 
-1. Creates a new downloads subfolder for the event
-2. Resets everyone's print count
-3. Takes effect immediately -- no restart needed
+### How it works
 
-You can also update the promo messages and template frame from the same panel. Previous event data (downloads, completed jobs) is preserved on disk.
+The Event Name field in the Settings panel is a combo-box. Click the arrow to select a previous event, or type a new name to create one. Selecting an event from the dropdown **immediately saves** the current event's settings and loads the selected event's settings -- no manual Save click needed.
+
+When you switch events, the app:
+
+1. Saves the current event's per-event settings to `data/events/{eventName}/settings.json`
+2. Loads the target event's saved settings (or starts with defaults for a new event)
+3. Creates a downloads subfolder for the event
+4. Resets everyone's print count
+5. Refreshes the entire Settings UI with the loaded configuration
+
+Events with saved profiles show a green **saved** badge in the dropdown. New events show a **+ Create** option.
+
+### What's saved per event
+
+All creative and event-specific settings, including:
+
+- Art styles (custom styles, disabled styles, prompt overrides, default style)
+- Brand prompt and brand reference file selection
+- AI prompts (preserve, composition, brand, background, face detection, scene analysis, smart reply)
+- Background settings (default prompt, background menu toggle, background choices)
+- SMS messages (all categories)
+- Template frame, frame border, video
+- Lead capture mode and fields
+- Delivery mode, print size/quality
+- NPS, social sharing, promo messages
+- Max prints per user, terms URL, break message
+
+### What stays global
+
+- Twilio credentials (Account SID, Auth Token, Phone Number)
+- OpenAI credentials (API Key, model selections)
+- Admin phone numbers
+- Printer selection
+- Max concurrent generations
+- Queue pause state
+
+### Brand reference images
+
+Brand reference images are stored in a shared library (`brand-references/` folder). Each event **selects** which images to use via checkboxes -- uploading an image adds it to the library and auto-selects it for the current event. Switching events changes the selection, not the files on disk. Deleting an image removes it from the library for all events.
+
+### Example workflow
+
+1. Configure "LAKingsHockey" with hockey jerseys, brand refs, custom styles → Save
+2. Type "GolfTournament" in event name → click "+ Create" → starts with defaults
+3. Upload golf brand refs, configure golf styles → Save
+4. Switch back to "LAKingsHockey" from dropdown → all hockey settings restored instantly
+
+Previous event data (downloads, completed jobs, leads, NPS scores) is always preserved on disk regardless of which event is active.
 
 ## Job Queue
 
@@ -449,6 +508,7 @@ twilio-cartoon-printer/
 │   ├── styles.js         Art style definitions and prompts
 │   ├── helpers.js        Image download, SMS, moderation, face detection, compositing, AI smart replies
 │   ├── style-menu.js     Style selection menu after selfie (numbered list, pending state)
+│   ├── background-menu.js Background selection menu after style choice (numbered list, pending state)
 │   ├── printer.js        Printer discovery and print commands
 │   ├── pipeline.js       generateImage (steps 1-6) and printJob (steps 7-8)
 │   ├── queue.js          Concurrent generation worker, serial print worker, usage tracking
@@ -479,11 +539,14 @@ twilio-cartoon-printer/
 │   ├── done/             Successfully printed jobs
 │   └── failed/           Permanent failures or max retries exceeded
 ├── data/                 Persistent app data
+│   ├── events/           Per-event settings profiles
+│   │   └── YourEventName/
+│   │       └── settings.json  Saved per-event overrides
 │   ├── leads.json        Captured leads — keyed by phone:event (gitignored)
 │   ├── nps.json          NPS survey scores — keyed by phone:event (gitignored)
 │   ├── paper.json        Paper counter state
 │   ├── raffle.json       Raffle winner history
-│   └── settings.json     Runtime settings overrides
+│   └── settings.json     Active runtime settings overrides
 ├── .env                  API keys, printer config, event settings
 ├── .gitignore            Excludes downloads/, queue/, .env, node_modules/, data/leads.json
 ├── package.json

@@ -124,12 +124,14 @@ Add `PORT=8080` to your `.env` for Docker, then point Twilio to `http://<your-ho
 
 - **Style selection menu** -- numbered list sent after selfie, reply by number or name
 - **AI smart replies** -- conversational responses to text-only messages via gpt-4o-mini
+- **Background selection** -- configurable background options users can choose via SMS, or a default background prompt for all portraits
 - **Template frames** -- PNG overlays with transparent windows, auto-detected safe zones
 - **Configurable SMS messages** -- every message editable from the Settings panel, with `{variable}` interpolation
 - **Lead capture** -- SMS survey (before or after portrait) with configurable fields, toggles, and CSV export
 - **NPS survey** -- 1-5 rating after last portrait, with dashboard stats and PDF report integration
 - **BRB screen** -- "We'll Be Right Back" overlay on all booth displays, toggled via a button
 - **Social sharing** -- optional X/Twitter and LinkedIn share links appended to delivery messages
+- **Per-event settings** -- save and restore complete settings profiles (styles, brand refs, prompts, messages) per event
 - **Runtime settings** -- all config changeable from `/home` without restarts
 - **Dashboard** -- job health, failure breakdown, queue status, NPS scores, stuck job alerts, paper counter, PDF reports
 - **Outreach** -- broadcast SMS, animated raffle draws, lead reports
