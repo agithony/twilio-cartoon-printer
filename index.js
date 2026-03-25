@@ -25,6 +25,7 @@ const {
     recoverStaleJobs,
     processGenerationQueue,
     processPrintQueue,
+    recoverStaleRelayJobs,
 } = require("./lib/queue");
 const { parseStyle, detectStyle } = require("./lib/styles");
 const styleMenu = require("./lib/style-menu");
@@ -33,6 +34,7 @@ const { mountDashboard } = require("./lib/dashboard");
 const { mountHome } = require("./lib/home");
 const { mountPhotoGallery } = require("./lib/photogallery");
 const { mountOutreach } = require("./lib/outreach");
+const { mountPrintRelay } = require("./lib/print-relay");
 const leads = require("./lib/leads");
 const nps = require("./lib/nps");
 
@@ -99,7 +101,7 @@ app.post("/sms", async (req, res) => {
         const confirmLabel = singleStyle ? "Your portrait" : `Your ${styleName} portrait`;
         console.log(`📩 Enqueuing portrait for ${userPhone} (style: ${styleName})`);
 
-        const printingEnabled = settings.get("enablePrinting");
+        const printingEnabled = settings.get("enablePrinting") || !!settings.get("printRelayKey");
         const twilioBlurb = settings.getMsg("twilioBlurb");
         const pickupText = printingEnabled
             ? settings.getMsg("pickupPrint")
@@ -309,7 +311,7 @@ app.post("/sms", async (req, res) => {
             const used = getUsageCount(userPhone);
             const maxPrints = settings.get("maxPrints");
             const unlimited = isAdmin(userPhone) && testingMode;
-            const printingEnabled = settings.get("enablePrinting");
+            const printingEnabled = settings.get("enablePrinting") || !!settings.get("printRelayKey");
             const units = printingEnabled ? "prints" : "portraits";
             if (used >= maxPrints && !unlimited) {
                 twiml.message(settings.getMsg("quotaExceeded", { maxPrints, units, eventName }));
@@ -324,7 +326,7 @@ app.post("/sms", async (req, res) => {
             await showMenuAndHold(req.body.MediaUrl0, req.body.MessageSid);
         }
     } else {
-        const printingEnabled = settings.get("enablePrinting");
+        const printingEnabled = settings.get("enablePrinting") || !!settings.get("printRelayKey");
         const unit = printingEnabled ? "print" : "portrait";
         const styleChoices = activeStyleList.map((k) => activeStyles[k].name).join(", ");
 
@@ -384,6 +386,7 @@ app.listen(port, "0.0.0.0", () => {
     mountPhotoGallery(app);
     mountDashboard(app);
     mountOutreach(app);
+    mountPrintRelay(app);
     let genPollRunning = false;
     setInterval(async () => {
         if (genPollRunning || settings.get("queuePaused")) return;
@@ -395,7 +398,10 @@ app.listen(port, "0.0.0.0", () => {
     setInterval(async () => {
         if (printPollRunning || settings.get("queuePaused")) return;
         printPollRunning = true;
-        try { await processPrintQueue(); }
+        try {
+            await recoverStaleRelayJobs();
+            await processPrintQueue();
+        }
         finally { printPollRunning = false; }
     }, POLL_INTERVAL);
     console.log(`⏱️  Workers started (polling every ${POLL_INTERVAL}ms, max ${settings.get("maxConcurrentGeneration")} concurrent generations)`);
