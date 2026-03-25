@@ -8,3 +8,4 @@ assets/*.webm
 data/leads.json
 .DS_Store
 .relay-temp/
+relay-app/out/

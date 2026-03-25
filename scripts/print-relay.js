@@ -191,6 +191,7 @@ function waitForPrintComplete(requestId, resolve, reject) {
     const poll = () => {
         if (Date.now() - startTime > TIMEOUT) {
             log(`Print job ${requestId} timed out after 5 minutes`);
+            exec(`cancel ${requestId}`, () => {});
             return reject(new Error("Print job timed out — printer may be offline or stuck"));
         }
         exec("lpstat -l", (err, stdout) => {
@@ -203,6 +204,7 @@ function waitForPrintComplete(requestId, resolve, reject) {
             const errorFound = PRINTER_ERRORS.find(e => lower.includes(e));
             if (errorFound) {
                 log(`Print job ${requestId} failed — printer is ${errorFound}`);
+                exec(`cancel ${requestId}`, () => {});
                 return reject(new Error(`Printer is ${errorFound}`));
             }
             setTimeout(poll, 3000);
@@ -218,7 +220,8 @@ if (!fs.existsSync(TEMP_DIR)) fs.mkdirSync(TEMP_DIR, { recursive: true });
 
 // Track processed job filenames to prevent double-prints (auto-expires after 1 hour)
 const processedJobs = new Map(); // filename -> timestamp
-const PROCESSED_TTL = 60 * 60 * 1000; // 1 hour
+const PROCESSED_TTL = 10 * 60 * 1000; // 10 min (must be < server's 15-min stale threshold)
+let consecutiveErrors = 0;
 
 function cleanupProcessedJobs() {
     const cutoff = Date.now() - PROCESSED_TTL;
@@ -244,9 +247,11 @@ async function pollOnce() {
         cleanupProcessedJobs();
         const { status, data } = await request("GET", "/api/print-relay/jobs");
         if (status !== 200) {
-            log(`Poll failed: HTTP ${status} — ${JSON.stringify(data)}`);
+            consecutiveErrors++;
+            log(`Poll failed: HTTP ${status} (retry in ${Math.min(POLL_INTERVAL * Math.pow(2, consecutiveErrors), 120000) / 1000}s)`);
             return;
         }
+        consecutiveErrors = 0;
 
         const jobs = data.jobs || [];
         if (jobs.length === 0) return;
@@ -305,17 +310,27 @@ async function pollOnce() {
                 processedJobs.set(job.filename, Date.now());
             } catch (err) {
                 log(`Print failed for ${job.filename}: ${err.message}`);
-                await request("POST", `/api/print-relay/jobs/${job.filename}/complete`, {
-                    success: false,
-                    error: err.message,
-                }).catch(() => {});
+                const isPrinterError = /printer is |timed out/i.test(err.message);
+                if (isPrinterError) {
+                    // Printer issue — back off locally but DON'T tell server.
+                    // Job stays in server's printing/ dir; server will recover it
+                    // after 15 min if we don't retry in time (our TTL is 10 min).
+                    processedJobs.set(job.filename, Date.now());
+                } else {
+                    // Non-printer error (download fail, etc.) — report to server
+                    await request("POST", `/api/print-relay/jobs/${job.filename}/complete`, {
+                        success: false,
+                        error: err.message,
+                    }).catch(() => {});
+                }
             } finally {
                 // Clean up temp file
                 try { fs.unlinkSync(localPath); } catch {}
             }
         }
     } catch (err) {
-        log(`Poll error: ${err.message}`);
+        consecutiveErrors++;
+        log(`Poll error: ${err.message} (retry in ${Math.min(POLL_INTERVAL * Math.pow(2, consecutiveErrors), 120000) / 1000}s)`);
     } finally {
         polling = false;
     }
@@ -351,18 +366,27 @@ async function pollOnce() {
     }
 
     log("Polling for print jobs...\n");
-    const interval = setInterval(pollOnce, POLL_INTERVAL);
-    pollOnce(); // first poll immediately
+
+    let timer = null;
+    function schedulePoll() {
+        const delay = consecutiveErrors === 0
+            ? POLL_INTERVAL
+            : Math.min(POLL_INTERVAL * Math.pow(2, consecutiveErrors), 120000);
+        timer = setTimeout(() => {
+            pollOnce().finally(schedulePoll);
+        }, delay);
+    }
+    pollOnce().finally(schedulePoll);
 
     // Graceful shutdown
     process.on("SIGINT", () => {
         log("Shutting down...");
-        clearInterval(interval);
+        clearTimeout(timer);
         process.exit(0);
     });
     process.on("SIGTERM", () => {
         log("Shutting down...");
-        clearInterval(interval);
+        clearTimeout(timer);
         process.exit(0);
     });
 })();

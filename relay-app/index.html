@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Twilio AI Photobooth — Print Station</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="app">
+    <header>
+      <div class="brand">
+        <svg class="twilio-logo" viewBox="0 0 46 46" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <path d="M17.25 33.1731C19.6928 33.1731 21.673 31.1928 21.673 28.75C21.673 26.3072 19.6928 24.327 17.25 24.327C14.8072 24.327 12.8269 26.3072 12.8269 28.75C12.8269 31.1928 14.8072 33.1731 17.25 33.1731ZM17.25 21.6731C19.6928 21.6731 21.673 19.6928 21.673 17.25C21.673 14.8072 19.6928 12.8269 17.25 12.8269C14.8072 12.8269 12.8269 14.8072 12.8269 17.25C12.8269 19.6928 14.8072 21.6731 17.25 21.6731ZM28.75 33.1731C31.1928 33.1731 33.1731 31.1928 33.1731 28.75C33.1731 26.3072 31.1928 24.327 28.75 24.327C26.3072 24.327 24.3269 26.3072 24.3269 28.75C24.3269 31.1928 26.3072 33.1731 28.75 33.1731ZM28.75 21.6731C31.1928 21.6731 33.1731 19.6928 33.1731 17.25C33.1731 14.8072 31.1928 12.8269 28.75 12.8269C26.3072 12.8269 24.3269 14.8072 24.3269 17.25C24.3269 19.6928 26.3072 21.6731 28.75 21.6731ZM23 0C35.4583 0 46 10.5417 46 23C46 35.4583 35.4583 46 23 46C10.5417 46 0 35.4583 0 23C0 10.5418 10.5417 0 23 0ZM23 6.19231C13.7438 6.19231 6.19231 13.4824 6.19231 22.6912C6.19231 31.9001 13.7438 39.8077 23 39.8077C32.2561 39.8077 39.8077 31.9001 39.8077 22.6912C39.8077 13.4823 32.2561 6.19231 23 6.19231Z" fill="#F22F46"/>
+        </svg>
+        <div class="brand-text">
+          <h1>Print Station</h1>
+          <span class="subtitle">Twilio AI Photobooth</span>
+        </div>
+      </div>
+    </header>
+
+    <section class="config">
+      <div class="field">
+        <label for="url">Cloud URL</label>
+        <div class="input-row">
+          <input type="url" id="url" placeholder="https://your-app.example.com" spellcheck="false">
+          <button id="urlEditBtn" type="button" class="edit-btn">Edit</button>
+        </div>
+      </div>
+      <div class="field">
+        <label for="key">Relay Key</label>
+        <div class="input-row">
+          <input type="password" id="key" placeholder="Enter relay key" spellcheck="false">
+          <button id="keyEditBtn" type="button" class="edit-btn">Edit</button>
+        </div>
+      </div>
+      <div class="field-row">
+        <div class="field flex-1">
+          <label for="printer">Printer</label>
+          <div class="input-row">
+            <select id="printer">
+              <option value="">Auto-detect</option>
+            </select>
+            <button id="refreshPrinters" type="button" class="icon-btn" title="Refresh printers">&#x21bb;</button>
+          </div>
+        </div>
+        <label class="toggle-label">
+          <input type="checkbox" id="dryRun">
+          <span>Dry Run</span>
+        </label>
+      </div>
+      <button id="connectBtn" class="connect-btn">
+        <span class="btn-dot"></span>
+        Connect
+      </button>
+    </section>
+
+    <section class="status-bar">
+      <div class="status-card">
+        <span class="dot" id="cloudDot"></span>
+        <div>
+          <div class="status-label">Cloud</div>
+          <div class="status-value" id="cloudLabel">Disconnected</div>
+        </div>
+      </div>
+      <div class="status-card">
+        <span class="dot" id="printerDot"></span>
+        <div>
+          <div class="status-label">Printer</div>
+          <div class="status-value" id="printerLabel">Unknown</div>
+        </div>
+      </div>
+      <div class="status-card counter">
+        <div class="count-number" id="jobCount">0</div>
+        <div class="status-label">Printed</div>
+      </div>
+    </section>
+
+    <section class="jobs">
+      <h2>Recent Jobs</h2>
+      <div id="jobList" class="job-list">
+        <div class="empty">Waiting for print jobs...</div>
+      </div>
+    </section>
+
+    <section class="log-section">
+      <details>
+        <summary>Log</summary>
+        <div id="logBox" class="log-box"></div>
+      </details>
+    </section>
+  </div>
+
+  <script src="renderer.js"></script>
+</body>
+</html>
