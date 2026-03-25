@@ -101,7 +101,7 @@ app.post("/sms", async (req, res) => {
         const confirmLabel = singleStyle ? "Your portrait" : `Your ${styleName} portrait`;
         console.log(`📩 Enqueuing portrait for ${userPhone} (style: ${styleName})`);
 
-        const printingEnabled = settings.get("enablePrinting") || !!settings.get("printRelayKey");
+        const printingEnabled = settings.get("enablePrinting");
         const twilioBlurb = settings.getMsg("twilioBlurb");
         const pickupText = printingEnabled
             ? settings.getMsg("pickupPrint")
@@ -311,7 +311,7 @@ app.post("/sms", async (req, res) => {
             const used = getUsageCount(userPhone);
             const maxPrints = settings.get("maxPrints");
             const unlimited = isAdmin(userPhone) && testingMode;
-            const printingEnabled = settings.get("enablePrinting") || !!settings.get("printRelayKey");
+            const printingEnabled = settings.get("enablePrinting");
             const units = printingEnabled ? "prints" : "portraits";
             if (used >= maxPrints && !unlimited) {
                 twiml.message(settings.getMsg("quotaExceeded", { maxPrints, units, eventName }));
@@ -326,7 +326,7 @@ app.post("/sms", async (req, res) => {
             await showMenuAndHold(req.body.MediaUrl0, req.body.MessageSid);
         }
     } else {
-        const printingEnabled = settings.get("enablePrinting") || !!settings.get("printRelayKey");
+        const printingEnabled = settings.get("enablePrinting");
         const unit = printingEnabled ? "print" : "portrait";
         const styleChoices = activeStyleList.map((k) => activeStyles[k].name).join(", ");
 
