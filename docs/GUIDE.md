@@ -20,6 +20,8 @@ This document covers all features and configuration in depth. For quick setup, s
 - [Brand Prompt](#brand-prompt)
 - [Background Selection](#background-selection)
 - [Delivery Mode](#delivery-mode)
+- [Print Relay (Cloud Printing)](#print-relay-cloud-printing)
+- [Cloud Deployment](#cloud-deployment)
 - [Lead Capture](#lead-capture)
 - [Outreach](#outreach)
 - [Configurable SMS Messages](#configurable-sms-messages)
@@ -58,6 +60,11 @@ This document covers all features and configuration in depth. For quick setup, s
 | `PRINT_QUALITY` | No | Print resolution. Options: `standard` (360 DPI), `high` (720 DPI), `max` (1440 DPI). Defaults to `high`. |
 | `CUSTOM_PRINT_FLAGS` | No | Additional raw flags appended to the `lp` command. For non-Epson printers or advanced CUPS options (e.g. `-o MediaType=Glossy`). |
 | `PROMO_MESSAGE` | No | Promotional message sent as a standalone SMS after each portrait delivery. Leave blank to disable. |
+| `PRINT_RELAY_KEY` | No | Shared secret for the print relay agent. Set this to enable cloud-to-local printing. See [Print Relay](#print-relay-cloud-printing). |
+| `PRINT_RELAY_URL` | No | Cloud app URL for the relay agent (used by the local script only, not the server). |
+| `PRINT_RELAY_PRINTER` | No | Override printer name for the relay agent (default: auto-detect). |
+| `PRINT_RELAY_INTERVAL` | No | Relay poll interval in seconds (default: `5`). |
+| `PRINT_RELAY_DRY_RUN` | No | Set to `true` to download images without printing (for testing). |
 
 ## Template Frames
 
@@ -254,12 +261,152 @@ Background menu SMS messages (intro, footer, retry) are configurable under Engag
 
 ## Delivery Mode
 
-The app supports two delivery modes, configurable from the Settings panel under Delivery & Printing:
+The app supports three delivery modes, configurable from the Settings panel under Delivery & Printing:
 
-- **Print + Digital** (default) -- Portraits are printed at the booth and sent to the user via MMS after printing completes. Requires a connected printer.
-- **Digital Only** -- Portraits are sent via MMS immediately after AI generation. No printer required. Use this for demos, remote events, or setups without a physical printer.
+- **Print + Digital (local)** -- Portraits are printed on a directly connected printer and sent to the user via MMS after printing completes. Requires a CUPS printer on the server machine. Set `ENABLE_PRINTING=true` in `.env` or toggle in the Settings panel.
+- **Print + Digital (cloud relay)** -- The server runs in the cloud. A relay agent on the event laptop polls for print-ready jobs, downloads images, and prints locally. Set a **Print Relay Key** in the Settings panel to enable. See [Print Relay](#print-relay-cloud-printing) for full setup.
+- **Digital Only** -- Portraits are sent via MMS immediately after AI generation. No printer required. Use this for demos, remote events, or setups without a physical printer. Set `ENABLE_PRINTING=false` and leave the Print Relay Key blank.
 
-Can also be set via the `ENABLE_PRINTING` environment variable (`true` or `false`).
+The delivery mode affects the SMS messages users receive (e.g. "head to the booth to pick up your print" vs "we'll text it to you").
+
+## Print Relay (Cloud Printing)
+
+The print relay enables physical printing when the app runs in the cloud (Azure, Docker, etc.) and the printer is at the event venue. A lightweight polling agent runs on the event laptop and bridges the gap.
+
+### Architecture
+
+```
+Cloud App                              Event Laptop
+┌────────────────────────┐             ┌────────────────────────┐
+│                        │   poll/5s   │                        │
+│  /api/print-relay/jobs ◄─────────────┤  pnpm relay            │
+│                        │             │                        │
+│  /api/print-relay/     │   claim     │  1. Poll for ready jobs│
+│    jobs/:id/ack        ◄─────────────┤  2. Claim a job        │
+│                        │             │  3. Download image     │
+│  /api/print-relay/     │  download   │  4. Print via CUPS     │
+│    image/:event/:file  ├────────────►│  5. Report completion  │
+│                        │             │                        │
+│  /api/print-relay/     │  complete   │  Handles: offline      │
+│    jobs/:id/complete   ◄─────────────┤  printers, retries,    │
+│                        │             │  crashes, reconnects   │
+│  sendPrintCompletionMms│             │                        │
+│  (after relay reports) │             │                        │
+└────────────────────────┘             └────────────────────────┘
+```
+
+### Setup
+
+**1. On the cloud app** -- Open the admin Settings panel. Under Delivery & Printing, enter a **Print Relay Key** (any secret string, e.g. `my-event-2026`). Save settings. This enables the relay API and routes generated portraits to the relay print queue instead of trying to print locally.
+
+You do NOT need to enable the "Print + Digital" toggle -- the relay key alone is enough.
+
+**2. On the event laptop** -- Clone the repo and install dependencies:
+
+```sh
+git clone <your-repo-url>
+cd twilio-cartoon-printer
+pnpm install
+```
+
+Create a `.env` file:
+
+```sh
+PRINT_RELAY_URL=https://your-cloud-app.example.com
+PRINT_RELAY_KEY=my-event-2026
+```
+
+Start the relay:
+
+```sh
+pnpm relay
+```
+
+**3. Verify** -- You should see:
+
+```
+Connected to cloud app (printing: false, size: 5x7, quality: high)
+Printer found: EPSON_ET_8550_Series
+Polling for print jobs...
+```
+
+Text a selfie to your Twilio number. The relay should claim the job, download the image, and print it. After printing, the cloud app sends the MMS.
+
+### CLI options
+
+| Flag | Env var | Default | Description |
+|------|---------|---------|-------------|
+| `--url` | `PRINT_RELAY_URL` | (required) | Cloud app base URL |
+| `--key` | `PRINT_RELAY_KEY` | (required) | Shared secret matching the cloud app |
+| `--printer` | `PRINT_RELAY_PRINTER` | auto-detect | Override printer name |
+| `--interval` | `PRINT_RELAY_INTERVAL` | `5` | Poll interval in seconds |
+| `--dry-run` | `PRINT_RELAY_DRY_RUN` | `false` | Download images but skip printing |
+
+### Reliability
+
+- **Network drops** -- The relay keeps polling. When the network comes back, it reconnects automatically. No manual intervention needed.
+- **Relay crash** -- If the relay crashes while a job is in the "printing" state, the cloud app detects the stale job after 15 minutes and moves it back to the ready queue. The relay picks it up on the next poll after restart.
+- **Printer offline** -- If the printer is offline or stopped, the relay detects this within seconds and reports failure. The cloud app re-queues the job for retry (up to 3 retries).
+- **Multiple agents** -- You can run multiple relay agents with the same key for redundancy. They race to claim jobs; only one wins each job. The others gracefully skip it.
+- **Image missing** -- If the output image doesn't exist on the server (e.g. disk error), the relay is told to skip the job and it won't retry for 1 hour.
+- **Graceful shutdown** -- Press Ctrl+C to stop the relay cleanly.
+
+### Print settings
+
+The relay fetches print settings (size, quality) from the cloud app on each print. Changing print size or quality in the Settings panel takes effect on the next job without restarting the relay.
+
+## Cloud Deployment
+
+### Docker
+
+```sh
+docker build -t twilio-cartoon-printer .
+docker run --rm -p 8080:8080 --env-file .env twilio-cartoon-printer
+```
+
+The container listens on port 8080 (set in the Dockerfile via `PORT=8080`).
+
+### Persistent storage
+
+Without persistent storage, all data (settings, jobs, downloads, leads) is lost when the container restarts. Mount a volume at `/app/appdata` to persist everything:
+
+```sh
+docker run --rm -p 8080:8080 --env-file .env \
+  -v /path/to/storage:/app/appdata \
+  twilio-cartoon-printer
+```
+
+The startup script (`scripts/start.sh`) automatically symlinks these directories to the mount:
+
+| Directory | Contents |
+|-----------|----------|
+| `data/` | Settings, leads, NPS scores, raffle history, paper counter |
+| `queue/` | Job files in all pipeline stages |
+| `downloads/` | Input photos and generated portraits |
+| `brand-references/` | Brand reference images for AI generation |
+| `templates/` | Frame overlay PNGs |
+| `assets/` | Videos and media files |
+
+Set `DATA_MOUNT` to customize the mount path (defaults to `/app/appdata`).
+
+### Azure Container Apps
+
+1. Build and push the Docker image to Azure Container Registry
+2. Create an Azure Container App with the image
+3. Set environment variables (Twilio, OpenAI credentials) in the container app configuration
+4. Create an Azure Files share and mount it at `/app/appdata` for persistent storage
+5. Point your Twilio webhook to `https://your-app.azurecontainerapps.io/sms`
+6. (Optional) Set up the [print relay](#print-relay-cloud-printing) for physical printing at events
+
+### Twilio webhook
+
+Point your Twilio phone number's Messaging webhook (POST) to:
+
+```
+https://your-cloud-app.example.com/sms
+```
+
+No ngrok needed for cloud deployments -- the app is already publicly accessible.
 
 ## Lead Capture
 
@@ -387,7 +534,7 @@ The settings panel is organized into eight sections:
 
 **AI Prompts** -- All AI prompts used in generation, vision analysis, and smart replies. Includes Preserve Line, Composition Line, Preserve Line (Brand Mode), Brand Instruction, Face Detection, Scene Analysis, Smart Reply System Prompt, and User Directive. Each prompt has a reset button to revert to defaults.
 
-**Delivery & Printing** -- Delivery Mode (Print + Digital or Digital Only), Printer selection, Print Size (4x6, 5x7, 8x10), Print Quality (Standard, High, Max), Custom Print Flags. Print settings are only visible when Print + Digital mode is selected and take effect on the next print job.
+**Delivery & Printing** -- Delivery Mode (Print + Digital or Digital Only), Printer selection, Print Size (4x6, 5x7, 8x10), Print Quality (Standard, High, Max), Custom Print Flags, Print Relay Key (for cloud-to-local printing). Print settings are visible when Print + Digital mode is selected. The Print Relay Key is always visible -- set it to enable [cloud printing via the relay agent](#print-relay-cloud-printing).
 
 **Booth Display** -- Intro Video, Terms URL (displayed on booth screens)
 
@@ -477,7 +624,8 @@ downloads/YourEventName/20260211_143000_output.png
 The pipeline is split into two independent workers:
 
 - **Generation worker** -- Processes up to `MAX_CONCURRENT_GENERATION` jobs at the same time. Each job goes through download, moderation, face detection, scene analysis, AI generation, compositing, and print prep. The scene analysis step describes the subjects in the photo (number of people, positions, pets) so the generation model includes everyone. Multiple images generate in parallel so users don't wait in a long single-threaded queue.
-- **Print worker** -- Processes one job at a time from the `ready/` queue. Sends the image to the printer and notifies the user via SMS when their print is ready.
+- **Print worker** -- Processes one job at a time from the `ready/` queue. In local mode, sends the image directly to the printer. In relay mode, the cloud app exposes the ready queue via API and a remote agent handles printing. In both cases, the user is notified via SMS when their print is ready.
+- **Stale relay recovery** -- Periodically scans `printing/` for jobs older than 15 minutes. If a relay agent crashes mid-print, these jobs are moved back to `ready/` for retry.
 
 Each job tracks timestamps for every state transition (`pendingAt`, `generatingAt`, `readyAt`, `printingAt`, `completedAt`) which are used by the dashboard to compute average generation/print times and detect stuck jobs.
 
@@ -511,7 +659,8 @@ twilio-cartoon-printer/
 │   ├── background-menu.js Background selection menu after style choice (numbered list, pending state)
 │   ├── printer.js        Printer discovery and print commands
 │   ├── pipeline.js       generateImage (steps 1-6) and printJob (steps 7-8)
-│   ├── queue.js          Concurrent generation worker, serial print worker, usage tracking
+│   ├── queue.js          Concurrent generation worker, serial print worker, usage tracking, stale relay recovery
+│   ├── print-relay.js    Cloud-side relay API (poll, claim, download, complete endpoints)
 │   ├── dashboard.js      Admin dashboard (mounted at /dashboard)
 │   ├── home.js           Home page, settings panel, intro video, booth display (mounted at /home)
 │   ├── brb.js            Shared BRB overlay (CSS, HTML, script) used by all booth displays
@@ -520,6 +669,9 @@ twilio-cartoon-printer/
 │   ├── outreach.js       Outreach -- broadcast messaging, raffles, lead reports (mounted at /outreach)
 │   ├── photogallery.js   Photo book (mounted at /photogallery)
 │   └── paper.js          Paper counter with file persistence
+├── scripts/
+│   ├── print-relay.js    Local relay agent -- polls cloud, downloads images, prints via CUPS
+│   └── start.sh          Docker entrypoint -- symlinks dirs to persistent storage
 ├── docs/
 │   └── GUIDE.md          Detailed documentation (this file)
 ├── assets/               Video and media files for the home page
@@ -534,9 +686,9 @@ twilio-cartoon-printer/
 ├── queue/                File-based job queue
 │   ├── pending/          New jobs waiting for generation
 │   ├── generating/       Jobs currently generating AI images (up to N concurrent)
-│   ├── ready/            Generation complete, waiting to print
-│   ├── printing/         Job currently being printed
-│   ├── done/             Successfully printed jobs
+│   ├── ready/            Generation complete, waiting to print or relay
+│   ├── printing/         Job currently being printed (local or relay)
+│   ├── done/             Successfully printed/delivered jobs
 │   └── failed/           Permanent failures or max retries exceeded
 ├── data/                 Persistent app data
 │   ├── events/           Per-event settings profiles
@@ -548,6 +700,8 @@ twilio-cartoon-printer/
 │   ├── raffle.json       Raffle winner history
 │   └── settings.json     Active runtime settings overrides
 ├── .env                  API keys, printer config, event settings
+├── .env.example          Template with all available environment variables
+├── Dockerfile            Production container image
 ├── .gitignore            Excludes downloads/, queue/, .env, node_modules/, data/leads.json
 ├── package.json
 └── pnpm-lock.yaml

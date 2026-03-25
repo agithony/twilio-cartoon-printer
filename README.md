@@ -1,6 +1,6 @@
 # Twilio + AI Photo Generator
 
-A photobooth-style app powered by Twilio and OpenAI. Attendees text a selfie to a Twilio phone number, choose an art style, and get a printed portrait at your booth. All configuration is manageable at runtime through a web-based admin UI -- no server restarts needed.
+A photobooth-style app powered by Twilio and OpenAI. Attendees text a selfie to a Twilio phone number, choose an art style, and receive a printed portrait at your booth (or a digital copy via MMS). All configuration is manageable at runtime through a web-based admin UI -- no server restarts needed.
 
 ## How It Works
 
@@ -21,14 +21,25 @@ flowchart TB
 
   Q --> M
 
-  subgraph P["Printing (one at a time)"]
-    P1["Printed on connected printer"]
+  subgraph P["Delivery"]
+    P1["Printed locally or via cloud relay"]
+    P2["MMS sent to user"]
   end
 
-  R --> P1 --> S["SMS sent: your print is ready"]
+  R --> P1 --> P2
 ```
 
-After sending a selfie, users receive a numbered style menu and reply with a number or style name. The bot also responds conversationally to questions via AI (gpt-4o-mini). All SMS messages are fully configurable from the admin Settings panel at runtime.
+After sending a selfie, users receive a numbered style menu and reply with a number or style name. The bot also responds conversationally to questions via AI. All SMS messages are fully configurable from the admin Settings panel at runtime.
+
+## Deployment Options
+
+| Mode | Server runs | Printer | Best for |
+|------|------------|---------|----------|
+| **Local** | On your laptop | USB/WiFi connected directly | Simple booth setup |
+| **Cloud (digital only)** | Cloud (Azure, Docker, etc.) | None needed | Remote/virtual events |
+| **Cloud + print relay** | Cloud | Local laptop at event | Large events, persistent data |
+
+See [Quick Start](#quick-start) for local setup, or [Cloud Deployment](#cloud-deployment) for hosting in the cloud.
 
 ## Prerequisites
 
@@ -36,7 +47,7 @@ After sending a selfie, users receive a numbered style menu and reply with a num
 - **pnpm** -- install with `npm install -g pnpm` ([docs](https://pnpm.io/installation))
 - **Twilio account** with a phone number that has SMS/MMS enabled
 - **OpenAI API key** with access to gpt-5.2 and gpt-image-1.5
-- **Printer** -- Epson EcoTank ET-8550 recommended, connected via USB/WiFi and registered in CUPS
+- **Printer** (optional) -- Epson EcoTank ET-8550 recommended, connected via USB/WiFi and registered in CUPS
 
 ## Quick Start
 
@@ -50,63 +61,200 @@ pnpm install
 
 ### 2. Configure environment
 
-Copy into a `.env` file in the project root:
+Copy `.env.example` to `.env` and fill in your credentials:
 
 ```sh
-# Required
+cp .env.example .env
+```
+
+At minimum, you need:
+
+```sh
 TWILIO_ACCOUNT_SID=your_account_sid
 TWILIO_AUTH_TOKEN=your_auth_token
 OPENAI_API_KEY=your_openai_key
-PRINTER_NAME=your_printer_name
 EVENT_NAME=YourEventName
-
-# Optional
-ADMIN_PHONES=+1234567890,+0987654321
-MAX_PRINTS_PER_USER=2
-MAX_CONCURRENT_GENERATION=15
-TEMPLATE_FILE=signal_sf.png
-VIDEO_FILE=get-started.mp4
-TERMS_URL=https://example.com/terms
-ENABLE_PRINTING=true
-BRAND_PROMPT=
-PRINT_SIZE=5x7
-PRINT_QUALITY=high
-CUSTOM_PRINT_FLAGS=
-PROMO_MESSAGE=
 ```
 
-See [docs/GUIDE.md](docs/GUIDE.md#environment-variables) for a full description of each variable.
+All other values have sensible defaults. See [docs/GUIDE.md](docs/GUIDE.md#environment-variables) for a full description of each variable.
 
-### 3. Printer setup
-
-Find your printer name with `lpstat -p` and set `PRINTER_NAME` in `.env`. The app prints through CUPS (built into macOS/Linux) and works with USB, WiFi, Bonjour, or IPP connections. See [docs/GUIDE.md](docs/GUIDE.md#printer-setup) for details.
-
-### 4. Start the server
+### 3. Start the server
 
 ```sh
 pnpm start
 ```
 
-The server starts on port 3000 by default. Set `PORT` in `.env` to use a different port. The home page opens automatically at `http://localhost:3000`.
+The server starts on port 3000. The admin home page opens automatically at `http://localhost:3000`.
 
-### 5. Connect Twilio
+### 4. Connect Twilio
 
-Point your Twilio phone number's **Messaging webhook** (POST) to:
+Point your Twilio phone number's **Messaging webhook** (POST) to your server:
 
 ```
-http://your-server-ip/sms
+https://your-server/sms
 ```
 
-Use [ngrok](https://ngrok.com) if your server isn't publicly accessible: `ngrok http 3000`.
+**For local development**, use [ngrok](https://ngrok.com) to expose your server:
 
-## Docker
+```sh
+ngrok http 3000
+```
+
+Copy the ngrok URL (e.g. `https://abc123.ngrok.io`) and set it as your Twilio webhook: `https://abc123.ngrok.io/sms`
+
+### 5. Test it
+
+Text a selfie to your Twilio phone number. You should receive a style menu, pick a style, and get your portrait back via MMS.
+
+## Printer Setup
+
+To enable printing, you need a CUPS-compatible printer connected to the machine running the server (or the print relay laptop -- see [Print Relay](#print-relay-cloud-printing)).
+
+```sh
+# Find your printer name
+lpstat -p
+```
+
+Set your printer name in the admin Settings panel under **Delivery & Printing**, or in `.env`:
+
+```sh
+PRINTER_NAME=EPSON_ET_8550_Series
+```
+
+The app is built for the **Epson EcoTank ET-8550** but works with any CUPS printer. Non-Epson printers may need custom print flags. See [docs/GUIDE.md](docs/GUIDE.md#printer-setup) for details.
+
+## Cloud Deployment
+
+The app runs in any Docker-compatible cloud platform. The examples below use Azure Container Apps, but the same approach works with AWS ECS, Google Cloud Run, Railway, Fly.io, etc.
+
+### Docker
 
 ```sh
 docker build -t twilio-cartoon-printer .
 docker run --rm -p 8080:8080 --env-file .env twilio-cartoon-printer
 ```
 
-Add `PORT=8080` to your `.env` for Docker, then point Twilio to `http://<your-host>:8080/sms`.
+The container listens on port 8080 by default (`PORT=8080` is set in the Dockerfile).
+
+### Persistent storage
+
+Without persistent storage, all data (settings, jobs, downloads, leads) is lost when the container restarts. To persist data, mount a volume at `/app/appdata`:
+
+```sh
+docker run --rm -p 8080:8080 --env-file .env \
+  -v /path/to/storage:/app/appdata \
+  twilio-cartoon-printer
+```
+
+The startup script (`scripts/start.sh`) automatically symlinks `data/`, `queue/`, `downloads/`, `templates/`, `assets/`, and `brand-references/` to the mount. Set `DATA_MOUNT` to customize the mount path (defaults to `/app/appdata`).
+
+On **Azure Container Apps**, use an Azure Files volume mount pointed at `/app/appdata`.
+
+### Twilio webhook for cloud
+
+Point your Twilio phone number's webhook to your cloud URL:
+
+```
+https://your-cloud-app.example.com/sms
+```
+
+No ngrok needed -- the cloud app is already publicly accessible.
+
+### Digital-only mode
+
+If you don't need printing, the cloud app works out of the box. Portraits are delivered via MMS directly. No printer or relay needed.
+
+Set delivery mode to **Digital Only** in the Settings panel, or:
+
+```sh
+ENABLE_PRINTING=false
+```
+
+## Print Relay (Cloud Printing)
+
+When the app runs in the cloud but you need physical printing at an event, the **print relay** bridges them. The cloud app queues print jobs; a lightweight agent on the event laptop polls for jobs, downloads images, and prints locally.
+
+### How it works
+
+```
+Cloud App (Azure/Docker)          Event Laptop
+┌─────────────────────┐          ┌──────────────────────┐
+│  Twilio webhook      │          │  pnpm relay           │
+│  AI generation       │  poll    │  ↓                    │
+│  Job queue (ready/)  │ ◄────── │  Claim job            │
+│  Relay API           │ ──────► │  Download image       │
+│  MMS delivery        │ complete│  Print via CUPS       │
+└─────────────────────┘          └──────────────────────┘
+```
+
+### Step 1: Set the relay key on the cloud app
+
+Open the admin Settings panel on the cloud app. Under **Delivery & Printing**, enter a **Print Relay Key** -- any secret string (e.g. `my-event-secret-2026`). Save.
+
+This enables the relay API and tells the cloud app to queue jobs for relay printing instead of trying to print locally.
+
+### Step 2: Run the relay agent on the event laptop
+
+On the laptop connected to the printer:
+
+```sh
+# Clone the repo (or copy just the scripts/ folder)
+git clone <your-repo-url>
+cd twilio-cartoon-printer
+pnpm install
+```
+
+Create a `.env` file with:
+
+```sh
+PRINT_RELAY_URL=https://your-cloud-app.example.com
+PRINT_RELAY_KEY=my-event-secret-2026
+```
+
+Start the relay:
+
+```sh
+pnpm relay
+```
+
+You should see:
+
+```
+[10:30:00 PM] Print Relay Agent starting...
+[10:30:00 PM]   Cloud URL: https://your-cloud-app.example.com
+[10:30:00 PM]   Poll interval: 5s
+[10:30:00 PM]   Dry run: false
+[10:30:01 PM] Connected to cloud app (printing: false, size: 5x7, quality: high)
+[10:30:01 PM] Printer found: EPSON_ET_8550_Series
+[10:30:01 PM] Polling for print jobs...
+```
+
+The relay polls the cloud every 5 seconds. When a portrait finishes generating, the relay claims it, downloads the image, prints it, and reports back. The cloud app then sends the MMS to the user.
+
+### Relay options
+
+```sh
+pnpm relay                          # Uses .env settings
+pnpm relay --dry-run                # Download images but don't actually print
+pnpm relay --printer MyPrinter      # Override auto-detected printer
+pnpm relay --interval 2             # Poll every 2 seconds instead of 5
+```
+
+Or set these in `.env`:
+
+```sh
+PRINT_RELAY_PRINTER=EPSON_ET_8550_Series
+PRINT_RELAY_INTERVAL=5
+PRINT_RELAY_DRY_RUN=true
+```
+
+### Relay features
+
+- **Auto-reconnects** -- if the cloud app or network drops, the relay keeps polling and reconnects automatically
+- **Crash recovery** -- if the relay crashes mid-print, the cloud app detects the stale job after 15 minutes and re-queues it
+- **Race-safe** -- multiple relay agents can run with the same key; only one claims each job
+- **Printer error detection** -- detects offline/stopped printers and fails fast instead of hanging
+- **Graceful shutdown** -- Ctrl+C stops cleanly
 
 ## Web UI
 
@@ -123,19 +271,20 @@ Add `PORT=8080` to your `.env` for Docker, then point Twilio to `http://<your-ho
 ## Key Features
 
 - **Style selection menu** -- numbered list sent after selfie, reply by number or name
-- **AI smart replies** -- conversational responses to text-only messages via gpt-4o-mini
-- **Background selection** -- configurable background options users can choose via SMS, or a default background prompt for all portraits
+- **AI smart replies** -- conversational responses to text-only messages
+- **Background selection** -- configurable background options users can choose via SMS
 - **Template frames** -- PNG overlays with transparent windows, auto-detected safe zones
 - **Configurable SMS messages** -- every message editable from the Settings panel, with `{variable}` interpolation
 - **Lead capture** -- SMS survey (before or after portrait) with configurable fields, toggles, and CSV export
 - **NPS survey** -- 1-5 rating after last portrait, with dashboard stats and PDF report integration
-- **BRB screen** -- "We'll Be Right Back" overlay on all booth displays, toggled via a button
-- **Social sharing** -- optional X/Twitter and LinkedIn share links appended to delivery messages
-- **Per-event settings** -- save and restore complete settings profiles (styles, brand refs, prompts, messages) per event
+- **BRB screen** -- "We'll Be Right Back" overlay on all booth displays
+- **Social sharing** -- optional X/Twitter and LinkedIn share links
+- **Per-event settings** -- save and restore complete settings profiles per event
 - **Runtime settings** -- all config changeable from `/home` without restarts
 - **Dashboard** -- job health, failure breakdown, queue status, NPS scores, stuck job alerts, paper counter, PDF reports
 - **Outreach** -- broadcast SMS, animated raffle draws, lead reports
 - **Photo book** -- realistic page-turn gallery for booth displays
 - **Crash recovery** -- file-based queue survives server restarts, auto-retries failed jobs
+- **Print relay** -- cloud-to-local printing via polling agent for cloud deployments
 
 For detailed documentation on all features, see **[docs/GUIDE.md](docs/GUIDE.md)**.

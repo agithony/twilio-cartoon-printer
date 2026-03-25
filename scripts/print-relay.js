@@ -177,25 +177,33 @@ function printImage(filepath, printerName) {
                 const match = stdout.match(/request id is (\S+)/);
                 if (!match) return resolve();
 
-                waitForPrintComplete(match[1], resolve);
+                waitForPrintComplete(match[1], resolve, reject);
             });
         }).catch(reject);
     });
 }
 
-function waitForPrintComplete(requestId, resolve) {
+function waitForPrintComplete(requestId, resolve, reject) {
     const startTime = Date.now();
     const TIMEOUT = 5 * 60 * 1000;
+    const PRINTER_ERRORS = ["stopped", "offline", "unplugged", "paused", "error"];
 
     const poll = () => {
         if (Date.now() - startTime > TIMEOUT) {
-            log(`Print job ${requestId} timed out, proceeding`);
-            return resolve();
+            log(`Print job ${requestId} timed out after 5 minutes`);
+            return reject(new Error("Print job timed out — printer may be offline or stuck"));
         }
-        exec("lpstat", (err, stdout) => {
+        exec("lpstat -l", (err, stdout) => {
             if (err || !stdout.includes(requestId)) {
                 log(`Print job ${requestId} completed`);
                 return resolve();
+            }
+            // Check for printer error states
+            const lower = stdout.toLowerCase();
+            const errorFound = PRINTER_ERRORS.find(e => lower.includes(e));
+            if (errorFound) {
+                log(`Print job ${requestId} failed — printer is ${errorFound}`);
+                return reject(new Error(`Printer is ${errorFound}`));
             }
             setTimeout(poll, 3000);
         });
