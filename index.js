@@ -13,6 +13,7 @@ const {
     GENERATING_DIR,
     READY_DIR,
     PRINTING_DIR,
+    REVIEW_DIR,
     DONE_DIR,
     FAILED_DIR,
 } = require("./lib/config");
@@ -53,7 +54,7 @@ if (dataMount) {
 
 // Ensure directories exist
 const BRAND_REFS_DIR = path.join(__dirname, "brand-references");
-for (const dir of [DATA_DIR, PENDING_DIR, GENERATING_DIR, READY_DIR, PRINTING_DIR, DONE_DIR, FAILED_DIR, BRAND_REFS_DIR, settings.EVENTS_DIR]) {
+for (const dir of [DATA_DIR, PENDING_DIR, GENERATING_DIR, READY_DIR, PRINTING_DIR, REVIEW_DIR, DONE_DIR, FAILED_DIR, BRAND_REFS_DIR, settings.EVENTS_DIR]) {
     if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
 }
 
