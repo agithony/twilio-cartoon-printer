@@ -69,6 +69,14 @@ app.use("/images", (req, res, next) => {
     express.static(settings.getDownloadDir())(req, res, next);
 });
 
+// ── Google OAuth (admin routes) ─────────────────────────────────────────────
+const { mountAuth, requireAuth, isPublicRoute } = require("./lib/auth");
+mountAuth(app);
+app.use((req, res, next) => {
+    if (isPublicRoute(req)) return next();
+    requireAuth(req, res, next);
+});
+
 // ── Twilio Webhook ───────────────────────────────────────────────────────────
 
 let baseUrl = process.env.BASE_URL || "";
