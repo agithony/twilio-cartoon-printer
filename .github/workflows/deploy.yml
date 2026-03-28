@@ -182,6 +182,9 @@ jobs:
               "twilio-sid=${{ secrets.TWILIO_ACCOUNT_SID }}" \
               "twilio-token=${{ secrets.TWILIO_AUTH_TOKEN }}" \
               "openai-key=${{ secrets.OPENAI_API_KEY }}" \
+              "google-client-id=${{ secrets.GOOGLE_CLIENT_ID }}" \
+              "google-client-secret=${{ secrets.GOOGLE_CLIENT_SECRET }}" \
+              "session-secret=${{ secrets.SESSION_SECRET }}" \
             --output none
 
           az containerapp update \
@@ -196,6 +199,9 @@ jobs:
               TWILIO_ACCOUNT_SID=secretref:twilio-sid \
               TWILIO_AUTH_TOKEN=secretref:twilio-token \
               OPENAI_API_KEY=secretref:openai-key \
+              GOOGLE_CLIENT_ID=secretref:google-client-id \
+              GOOGLE_CLIENT_SECRET=secretref:google-client-secret \
+              SESSION_SECRET=secretref:session-secret \
             --min-replicas 1 \
             --max-replicas 1 \
             --output none

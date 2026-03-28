@@ -72,6 +72,13 @@ TWILIO_SID=$(prompt_secret "Twilio Account SID")
 TWILIO_TOKEN=$(prompt_secret "Twilio Auth Token")
 TWILIO_PHONE=$(prompt_secret "Twilio Phone Number (e.g. +14155551234)")
 OPENAI_KEY=$(prompt_secret "OpenAI API Key")
+GOOGLE_CID=$(prompt_secret "Google OAuth Client ID")
+GOOGLE_CSEC=$(prompt_secret "Google OAuth Client Secret")
+SESSION_SEC=$(prompt_secret "Session Secret (hex string, or leave blank to auto-generate)")
+if [[ -z "$SESSION_SEC" ]]; then
+  SESSION_SEC=$(openssl rand -hex 32)
+  echo "  Generated session secret: ${SESSION_SEC:0:8}..."
+fi
 EVENT_NAME=$(prompt_with_default "Event name" "default")
 
 # --- Azure Extensions ---
@@ -172,6 +179,12 @@ properties:
         value: "${TWILIO_PHONE}"
       - name: openai-key
         value: "${OPENAI_KEY}"
+      - name: google-client-id
+        value: "${GOOGLE_CID}"
+      - name: google-client-secret
+        value: "${GOOGLE_CSEC}"
+      - name: session-secret
+        value: "${SESSION_SEC}"
   template:
     containers:
       - name: ${APP_NAME}
@@ -198,6 +211,12 @@ properties:
             secretRef: twilio-phone
           - name: OPENAI_API_KEY
             secretRef: openai-key
+          - name: GOOGLE_CLIENT_ID
+            secretRef: google-client-id
+          - name: GOOGLE_CLIENT_SECRET
+            secretRef: google-client-secret
+          - name: SESSION_SECRET
+            secretRef: session-secret
         volumeMounts:
           - volumeName: appdata
             mountPath: /app/appdata
