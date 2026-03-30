@@ -16,14 +16,19 @@ env:
   IMAGE_TAG: cartoon-printer:${{ github.sha }}
 
 jobs:
+  ci:
+    uses: ./.github/workflows/ci.yml
+
   build-and-deploy:
+    needs: ci
+    if: needs.ci.result == 'success'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Login to Azure
-        uses: azure/login@v2
+        uses: azure/login@v3
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
 

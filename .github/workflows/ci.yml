@@ -1,0 +1,67 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_call:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    name: Validate
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v5
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Smoke test
+        run: |
+          node index.js &
+          SERVER_PID=$!
+          for i in 1 2 3 4 5 6; do
+            if curl -sf http://localhost:3000/ > /dev/null 2>&1; then
+              echo "Server started successfully"
+              kill $SERVER_PID
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "Server failed to start within 12 seconds"
+          kill $SERVER_PID 2>/dev/null || true
+          exit 1
+
+      # Surfaces known vulnerabilities. Soft fail because transitive dep
+      # vulns are common and often have no fix available. The dependency
+      # review job below is the actual gate for NEW vulnerabilities.
+      - name: Audit dependencies
+        run: pnpm audit --audit-level=high || true
+
+  dependency-review:
+    name: Dependency Review
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Review dependency changes
+        uses: actions/dependency-review-action@v4
+        with:
+          fail-on-severity: high
