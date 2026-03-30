@@ -36,7 +36,7 @@ jobs:
           node index.js &
           SERVER_PID=$!
           for i in 1 2 3 4 5 6; do
-            if curl -sf http://localhost:3000/ > /dev/null 2>&1; then
+            if curl -sf http://localhost:3000/healthz > /dev/null 2>&1; then
               echo "Server started successfully"
               kill $SERVER_PID
               exit 0
