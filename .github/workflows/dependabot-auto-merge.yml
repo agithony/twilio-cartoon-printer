@@ -27,9 +27,37 @@ jobs:
           PR_URL: ${{ github.event.pull_request.html_url }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Enable auto-merge for minor/patch updates
+      # Without GitHub Pro, branch protection/rulesets aren't available on
+      # private repos, so --auto would merge immediately without waiting for
+      # CI. Instead, we poll for the Validate check to pass before merging.
+      - name: Wait for CI to pass
         if: steps.metadata.outputs.update-type != 'version-update:semver-major'
-        run: gh pr merge --auto --squash "$PR_URL"
+        run: |
+          echo "Waiting for Validate check to complete..."
+          TIMEOUT=600
+          ELAPSED=0
+          while [ $ELAPSED -lt $TIMEOUT ]; do
+            STATE=$(gh pr checks "$PR_URL" --json name,state \
+              --jq '.[] | select(.name == "Validate") | .state' 2>/dev/null || true)
+            if [ "$STATE" = "SUCCESS" ]; then
+              echo "CI passed"
+              exit 0
+            elif [ "$STATE" = "FAILURE" ] || [ "$STATE" = "ERROR" ]; then
+              echo "CI failed ($STATE) — skipping merge"
+              exit 1
+            fi
+            sleep 15
+            ELAPSED=$((ELAPSED + 15))
+          done
+          echo "Timed out waiting for CI after ${TIMEOUT}s"
+          exit 1
+        env:
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Merge minor/patch updates
+        if: steps.metadata.outputs.update-type != 'version-update:semver-major'
+        run: gh pr merge --squash "$PR_URL"
         env:
           PR_URL: ${{ github.event.pull_request.html_url }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
