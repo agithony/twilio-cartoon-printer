@@ -9,3 +9,5 @@ data/leads.json
 .DS_Store
 .relay-temp/
 relay-app/out/
+data/settings.json
+data/events/
