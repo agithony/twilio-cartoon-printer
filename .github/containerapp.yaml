@@ -3,19 +3,6 @@ properties:
     ingress:
       external: true
       targetPort: 8080
-    secrets:
-      - name: twilio-sid
-        value: ${TWILIO_ACCOUNT_SID}
-      - name: twilio-token
-        value: ${TWILIO_AUTH_TOKEN}
-      - name: openai-key
-        value: ${OPENAI_API_KEY}
-      - name: google-client-id
-        value: ${GOOGLE_CLIENT_ID}
-      - name: google-client-secret
-        value: ${GOOGLE_CLIENT_SECRET}
-      - name: session-secret
-        value: ${SESSION_SECRET}
   template:
     containers:
       - name: ${APP_NAME}

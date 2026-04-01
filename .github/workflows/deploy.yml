@@ -126,6 +126,21 @@ jobs:
             --account-name ${{ env.STORAGE_ACCOUNT }} \
             --query '[0].value' -o tsv)" >> $GITHUB_OUTPUT
 
+      - name: Set secrets
+        run: |
+          # Set app secrets first (does NOT create a new revision, preserves registry secret)
+          az containerapp secret set \
+            --name ${{ env.APP_NAME }} \
+            --resource-group ${{ env.RESOURCE_GROUP }} \
+            --secrets \
+              "twilio-sid=${{ secrets.TWILIO_ACCOUNT_SID }}" \
+              "twilio-token=${{ secrets.TWILIO_AUTH_TOKEN }}" \
+              "openai-key=${{ secrets.OPENAI_API_KEY }}" \
+              "google-client-id=${{ secrets.GOOGLE_CLIENT_ID }}" \
+              "google-client-secret=${{ secrets.GOOGLE_CLIENT_SECRET }}" \
+              "session-secret=${{ secrets.SESSION_SECRET }}" \
+            --output none
+
       - name: Deploy Container App
         run: |
           # Resolve BASE_URL for existing apps; new apps get it on first update
@@ -134,16 +149,10 @@ jobs:
             --resource-group ${{ env.RESOURCE_GROUP }} \
             --query properties.configuration.ingress.fqdn -o tsv 2>/dev/null || true)
 
-          # Render YAML template with all config: image, env vars, secrets, volume mount
+          # Render YAML template with image, env vars, and volume mount
           export APP_NAME="${{ env.APP_NAME }}"
           export CONTAINER_IMAGE="${{ steps.acr-creds.outputs.server }}/${{ env.IMAGE_TAG }}"
           export BASE_URL="https://${FQDN}"
-          export TWILIO_ACCOUNT_SID="${{ secrets.TWILIO_ACCOUNT_SID }}"
-          export TWILIO_AUTH_TOKEN="${{ secrets.TWILIO_AUTH_TOKEN }}"
-          export OPENAI_API_KEY="${{ secrets.OPENAI_API_KEY }}"
-          export GOOGLE_CLIENT_ID="${{ secrets.GOOGLE_CLIENT_ID }}"
-          export GOOGLE_CLIENT_SECRET="${{ secrets.GOOGLE_CLIENT_SECRET }}"
-          export SESSION_SECRET="${{ secrets.SESSION_SECRET }}"
           envsubst < .github/containerapp.yaml > /tmp/containerapp.yaml
 
           if az containerapp show --name ${{ env.APP_NAME }} --resource-group ${{ env.RESOURCE_GROUP }} 2>/dev/null; then
@@ -156,7 +165,7 @@ jobs:
               --password "${{ steps.acr-creds.outputs.password }}" \
               --output none
 
-            echo "Deploying image, env vars, secrets, and volume mount in a single revision..."
+            echo "Deploying image, env vars, and volume mount in a single revision..."
             az containerapp update \
               --name ${{ env.APP_NAME }} \
               --resource-group ${{ env.RESOURCE_GROUP }} \
