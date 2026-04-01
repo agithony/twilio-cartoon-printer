@@ -11,7 +11,7 @@ if [ -d "$DATA_MOUNT" ]; then
     mkdir -p "$DATA_MOUNT/$dir"
     # Queue has subdirectories
     if [ "$dir" = "queue" ]; then
-      for sub in pending generating ready printing done failed; do
+      for sub in pending generating review ready printing done failed; do
         mkdir -p "$DATA_MOUNT/$dir/$sub"
       done
     fi
