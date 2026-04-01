@@ -1,0 +1,213 @@
+/* ══════════════════════════════════════════════════════════════════════════════
+   Twilio Brand Foundation — twilio-cartoon-printer
+   Shared across all admin pages (home, dashboard, outreach)
+   ══════════════════════════════════════════════════════════════════════════════ */
+
+/* ── @font-face ──────────────────────────────────────────────────────────────── */
+
+@font-face { font-family: 'Twilio Sans Display'; src: url('/assets/fonts/TwilioSansDisplay-Regular.otf') format('opentype'); font-weight: 400; font-style: normal; font-display: swap; }
+@font-face { font-family: 'Twilio Sans Display'; src: url('/assets/fonts/TwilioSansDisplay-Extrabold.otf') format('opentype'); font-weight: 800; font-style: normal; font-display: swap; }
+@font-face { font-family: 'Twilio Sans Text'; src: url('/assets/fonts/TwilioSansText-Regular.otf') format('opentype'); font-weight: 400; font-style: normal; font-display: swap; }
+@font-face { font-family: 'Twilio Sans Text'; src: url('/assets/fonts/TwilioSansText-Bold.otf') format('opentype'); font-weight: 700; font-style: normal; font-display: swap; }
+@font-face { font-family: 'Twilio Sans Mono'; src: url('/assets/fonts/TwilioSansMono-Regular.otf') format('opentype'); font-weight: 400; font-style: normal; font-display: swap; }
+@font-face { font-family: 'Twilio Sans Mono'; src: url('/assets/fonts/TwilioSansMono-Bold.otf') format('opentype'); font-weight: 700; font-style: normal; font-display: swap; }
+
+/* ── Brand color primitives ──────────────────────────────────────────────────── */
+
+:root {
+  --brand-red: #EF223A;
+  --brand-red-hover: #DB132A;
+  --ink: #000D25;
+
+  --red-50: #FFF1F3; --red-100: #FFD6DB; --red-200: #FFA6B1;
+  --red-300: #FD7685; --red-400: #F83D53; --red-450: #EF223A;
+  --red-500: #DB132A; --red-600: #B10F23; --red-700: #880B19;
+  --red-800: #5A0E17; --red-850: #430B12; --red-900: #1D0508;
+
+  --gray-50: #F3F4F7; --gray-100: #DDE0E6; --gray-200: #BABECC;
+  --gray-300: #9AA0B4; --gray-400: #7E869C; --gray-500: #656E87;
+  --gray-600: #4D5777; --gray-700: #38425E; --gray-800: #232B45;
+  --gray-850: #191F36; --gray-900: #080C18;
+
+  --blue-50: #E4F7FF; --blue-100: #A5EBFF; --blue-200: #3ACEFA;
+  --blue-300: #19ABF3; --blue-400: #2188EF; --blue-500: #1866EE;
+  --blue-600: #1953B9; --blue-700: #0E3E92; --blue-800: #0B2A60;
+  --blue-850: #081F47; --blue-900: #000D25;
+}
+
+/* ── Dark theme (default) ────────────────────────────────────────────────────── */
+
+:root, html[data-theme="dark"] {
+  --th-bg: #000D25;
+  --th-bg-subtle: #080C18;
+  --th-card: #232B45;
+  --th-card-hover: #2a3350;
+  --th-card-border: #38425E;
+  --th-card-gradient: linear-gradient(145deg, #232B45, #191F36);
+  --th-raised: #38425E;
+  --th-input: #191F36;
+  --th-input-border: #4D5777;
+  --th-text: #FFFFFF;
+  --th-text-secondary: #DDE0E6;
+  --th-text-dim: #9AA0B4;
+  --th-text-muted: #656E87;
+  --th-border-subtle: #191F36;
+  --th-toggle-off: #38425E;
+  --th-overlay: rgba(0,0,0,0.5);
+  --th-card-shadow: rgba(0,0,0,0.3);
+  --th-scrollbar-thumb: #38425E;
+  --th-scrollbar-track: transparent;
+  --th-select-option-bg: #191F36;
+  --th-logo-filter: none;
+  --th-icon-filter: none;
+}
+
+/* ── Light theme ─────────────────────────────────────────────────────────────── */
+
+html[data-theme="light"] {
+  --th-bg: #FFFFFF;
+  --th-bg-subtle: #F3F4F7;
+  --th-card: #FFFFFF;
+  --th-card-hover: #F3F4F7;
+  --th-card-border: #DDE0E6;
+  --th-card-gradient: linear-gradient(145deg, #FFFFFF, #F3F4F7);
+  --th-raised: #F3F4F7;
+  --th-input: #FFFFFF;
+  --th-input-border: #BABECC;
+  --th-text: #000D25;
+  --th-text-secondary: #232B45;
+  --th-text-dim: #4D5777;
+  --th-text-muted: #656E87;
+  --th-border-subtle: #DDE0E6;
+  --th-toggle-off: #BABECC;
+  --th-overlay: rgba(0,0,0,0.3);
+  --th-card-shadow: rgba(0,13,37,0.08);
+  --th-scrollbar-thumb: #BABECC;
+  --th-scrollbar-track: transparent;
+  --th-select-option-bg: #FFFFFF;
+  --th-logo-filter: brightness(0) saturate(100%) invert(15%) sepia(80%) saturate(5000%) hue-rotate(345deg) brightness(90%);
+  --th-icon-filter: brightness(0) saturate(100%) invert(25%) sepia(10%) saturate(500%) hue-rotate(200deg);
+}
+
+/* ── Base typography ─────────────────────────────────────────────────────────── */
+
+html {
+  background-color: var(--th-bg);
+  transition: background-color 0.2s ease;
+}
+
+body {
+  font-family: 'Twilio Sans Text', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+  font-weight: 400;
+  line-height: 1.6;
+  letter-spacing: 0;
+  color: var(--th-text-dim);
+  background: var(--th-bg);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+h1, h2, h3, h4, h5, h6 {
+  font-family: 'Twilio Sans Display', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  line-height: 1;
+  color: var(--th-text);
+}
+
+code, pre, kbd, samp, .font-mono {
+  font-family: 'Twilio Sans Mono', 'SF Mono', 'Cascadia Code', 'Fira Code', monospace;
+  font-weight: 400;
+  line-height: 1.4;
+}
+
+/* ── Theme transition smoothing ──────────────────────────────────────────────── */
+
+body, .th-transition,
+input, select, textarea, button {
+  transition: background-color 0.2s ease, border-color 0.2s ease, color 0.2s ease;
+}
+
+/* ── Scrollbar ───────────────────────────────────────────────────────────────── */
+
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: var(--th-scrollbar-track); }
+::-webkit-scrollbar-thumb { background: var(--th-scrollbar-thumb); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--gray-500); }
+
+/* ── Light-mode icon/logo handling ───────────────────────────────────────────── */
+
+.brand-logo { transition: filter 0.2s ease; filter: var(--th-logo-filter); }
+.icon-img { transition: filter 0.2s ease; filter: var(--th-icon-filter); opacity: 0.7; }
+html[data-theme="light"] .icon-img { opacity: 0.55; }
+
+/* Icon tint classes */
+.icon-tint-red { filter: brightness(0) saturate(100%) invert(42%) sepia(90%) saturate(4000%) hue-rotate(340deg) brightness(105%); }
+.icon-tint-blue { filter: brightness(0) saturate(100%) invert(35%) sepia(90%) saturate(2000%) hue-rotate(200deg) brightness(110%); }
+.icon-tint-gray { filter: brightness(0) saturate(100%) invert(75%) sepia(10%) saturate(200%) hue-rotate(180deg); }
+
+/* ── Theme toggle button ─────────────────────────────────────────────────────── */
+
+.theme-toggle {
+  display: inline-flex; align-items: center; gap: 6px;
+  background: none; border: 1px solid var(--th-card-border);
+  border-radius: 8px; padding: 6px 12px;
+  color: var(--th-text-muted); font-size: 12px; font-weight: 400;
+  font-family: 'Twilio Sans Text', sans-serif;
+  cursor: pointer; transition: all 0.15s ease;
+}
+.theme-toggle:hover {
+  color: var(--th-text); border-color: var(--th-raised);
+  background: var(--th-raised);
+}
+.theme-toggle svg { width: 14px; height: 14px; }
+.theme-toggle .icon-sun,
+.theme-toggle .icon-moon { display: none; }
+html[data-theme="dark"] .theme-toggle .icon-sun { display: block; }
+html[data-theme="light"] .theme-toggle .icon-moon { display: block; }
+
+/* ── Stat numbers (Display Extrabold) ────────────────────────────────────────── */
+
+.stat-number {
+  font-family: 'Twilio Sans Display', sans-serif;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  color: var(--th-text);
+}
+
+/* ── Eyebrow labels (Mono) ───────────────────────────────────────────────────── */
+
+.eyebrow {
+  font-family: 'Twilio Sans Mono', monospace;
+  font-weight: 400;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: var(--th-text-muted);
+}
+
+/* ── Buttons ─────────────────────────────────────────────────────────────────── */
+
+.btn-brand {
+  background: var(--brand-red);
+  color: #fff;
+  font-family: 'Twilio Sans Text', sans-serif;
+  font-weight: 700;
+  padding: 0.625rem 1.25rem;
+  border-radius: 0.5rem;
+  border: none;
+  cursor: pointer;
+  transition: background-color 0.15s, transform 0.15s, box-shadow 0.15s;
+}
+.btn-brand:hover {
+  background: var(--brand-red-hover);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 16px rgba(239, 34, 58, 0.3);
+}
+
+/* ── Status dot colors (brand-compliant) ─────────────────────────────────────── */
+
+.dot-active { background: var(--blue-400); box-shadow: 0 0 8px rgba(33,136,239,0.4); }
+.dot-error { background: var(--brand-red); box-shadow: 0 0 8px rgba(239,34,58,0.4); }
+.dot-idle { background: var(--gray-500); }
+.dot-progress { background: var(--blue-300); box-shadow: 0 0 8px rgba(25,171,243,0.3); }
