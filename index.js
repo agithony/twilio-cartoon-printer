@@ -72,14 +72,13 @@ app.use((req, res, next) => {
 app.get("/", (req, res) => res.redirect("/home"));
 app.use("/assets", express.static(path.join(__dirname, "assets")));
 
-// Serve generated images — resolves download dir dynamically per request
+// Staging images (for review previews in dashboard)
+app.use("/images/staging", (req, res, next) => {
+    express.static(path.join(settings.getDownloadDir(), ".staging"))(req, res, next);
+});
+// Serve approved images — resolves download dir dynamically per request
 app.use("/images", (req, res, next) => {
-    // Try final downloads first, fall back to staging (for review previews)
-    const finalDir = settings.getDownloadDir();
-    const stagingDir = path.join(finalDir, ".staging");
-    express.static(finalDir)(req, res, () => {
-        express.static(stagingDir)(req, res, next);
-    });
+    express.static(settings.getDownloadDir())(req, res, next);
 });
 
 // ── Twilio Webhook ───────────────────────────────────────────────────────────
