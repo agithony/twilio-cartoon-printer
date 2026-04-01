@@ -37,7 +37,7 @@ After sending a selfie, users receive a numbered style menu and reply with a num
 |------|------------|---------|----------|
 | **Local** | On your laptop | USB/WiFi connected directly | Simple booth setup |
 | **Cloud (digital only)** | Cloud (Azure, Docker, etc.) | None needed | Remote/virtual events |
-| **Cloud + print relay** | Cloud | Local laptop at event | Large events, persistent data |
+| **Cloud + Print Station app** | Cloud | Local laptop at event | Large events, persistent data |
 
 See [Quick Start](#quick-start) for local setup, or [Cloud Deployment](#cloud-deployment) for hosting in the cloud.
 
@@ -179,11 +179,11 @@ When the app runs in the cloud but you need physical printing at an event, the *
 ```
 Cloud App (Azure/Docker)          Event Laptop
 ┌─────────────────────┐          ┌──────────────────────┐
-│  Twilio webhook      │          │  pnpm relay           │
-│  AI generation       │  poll    │  ↓                    │
-│  Job queue (ready/)  │ ◄────── │  Claim job            │
-│  Relay API           │ ──────► │  Download image       │
-│  MMS delivery        │ complete│  Print via CUPS       │
+│  Twilio webhook      │          │  Print Station app    │
+│  AI generation       │  poll    │  (or pnpm relay CLI)  │
+│  Job queue (ready/)  │ ◄────── │  ↓                    │
+│  Relay API           │ ──────► │  Download & print     │
+│  MMS delivery        │ complete│  via CUPS             │
 └─────────────────────┘          └──────────────────────┘
 ```
 
@@ -193,9 +193,35 @@ Open the admin Settings panel on the cloud app. Under **Delivery & Printing**, e
 
 This enables the relay API and tells the cloud app to queue jobs for relay printing instead of trying to print locally.
 
-### Step 2: Run the relay agent on the event laptop
+### Step 2: Run the relay on the event laptop
 
-On the laptop connected to the printer:
+There are two ways to run the relay. **The Print Station app is recommended** for event staff.
+
+#### Option A: Print Station App (Recommended)
+
+The Print Station is a desktop app with a visual interface for managing printing. No terminal required -- event staff enter the Cloud URL and Relay Key in the UI, select a printer from a dropdown, and click Connect.
+
+```sh
+cd relay-app
+npm install
+npm start
+```
+
+The app shows live status indicators (cloud connection, printer health, job count), a job history list, and a debug log. Configuration is saved between launches.
+
+To build a standalone `.app` bundle you can hand to event staff (no Node.js required):
+
+```sh
+cd relay-app
+npm run make
+# Output: out/make/zip/darwin/arm64/Twilio Print Station-darwin-arm64-1.0.0.zip
+```
+
+See **[relay-app/README.md](relay-app/README.md)** for full documentation.
+
+#### Option B: CLI Relay
+
+For developers or automated setups, the CLI relay runs in the terminal:
 
 ```sh
 # Clone the repo (or copy just the scripts/ folder)
@@ -231,7 +257,7 @@ You should see:
 
 The relay polls the cloud every 5 seconds. When a portrait finishes generating, the relay claims it, downloads the image, prints it, and reports back. The cloud app then sends the MMS to the user.
 
-### Relay options
+### CLI relay options
 
 ```sh
 pnpm relay                          # Uses .env settings
@@ -250,11 +276,13 @@ PRINT_RELAY_DRY_RUN=true
 
 ### Relay features
 
+Both the Print Station app and CLI relay share these capabilities:
+
 - **Auto-reconnects** -- if the cloud app or network drops, the relay keeps polling and reconnects automatically
 - **Crash recovery** -- if the relay crashes mid-print, the cloud app detects the stale job after 15 minutes and re-queues it
 - **Race-safe** -- multiple relay agents can run with the same key; only one claims each job
 - **Printer error detection** -- detects offline/stopped printers and fails fast instead of hanging
-- **Graceful shutdown** -- Ctrl+C stops cleanly
+- **Graceful shutdown** -- Ctrl+C (CLI) or close window (app) stops cleanly
 
 ## Web UI
 

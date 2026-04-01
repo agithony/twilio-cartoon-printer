@@ -271,15 +271,24 @@ The delivery mode affects the SMS messages users receive (e.g. "head to the boot
 
 ## Print Relay (Cloud Printing)
 
-The print relay enables physical printing when the app runs in the cloud (Azure, Docker, etc.) and the printer is at the event venue. A lightweight polling agent runs on the event laptop and bridges the gap.
+The print relay enables physical printing when the app runs in the cloud (Azure, Docker, etc.) and the printer is at the event venue. A polling agent runs on the event laptop and bridges the gap.
+
+There are two ways to run the relay:
+
+| | Print Station App | CLI (`pnpm relay`) |
+|---|---|---|
+| **Location** | `relay-app/` directory | `scripts/print-relay.js` |
+| **Best for** | Event staff, booth operators | Developers, CI/automation |
+| **Setup** | Fill in fields in the UI | Edit `.env` file, run terminal command |
+| **Distribution** | Build a standalone `.app` bundle | Requires Node.js + repo clone |
 
 ### Architecture
 
 ```
 Cloud App                              Event Laptop
 ┌────────────────────────┐             ┌────────────────────────┐
-│                        │   poll/5s   │                        │
-│  /api/print-relay/jobs ◄─────────────┤  pnpm relay            │
+│                        │   poll/5s   │  Print Station app     │
+│  /api/print-relay/jobs ◄─────────────┤  (or pnpm relay CLI)   │
 │                        │             │                        │
 │  /api/print-relay/     │   claim     │  1. Poll for ready jobs│
 │    jobs/:id/ack        ◄─────────────┤  2. Claim a job        │
@@ -295,13 +304,48 @@ Cloud App                              Event Laptop
 └────────────────────────┘             └────────────────────────┘
 ```
 
-### Setup
+### Setup -- Step 1: Cloud App
 
-**1. On the cloud app** -- Open the admin Settings panel. Under Delivery & Printing, enter a **Print Relay Key** (any secret string, e.g. `my-event-2026`). Save settings. This enables the relay API and routes generated portraits to the relay print queue instead of trying to print locally.
+Open the admin Settings panel. Under Delivery & Printing, enter a **Print Relay Key** (any secret string, e.g. `my-event-2026`). Save settings. This enables the relay API and routes generated portraits to the relay print queue instead of trying to print locally.
 
 You do NOT need to enable the "Print + Digital" toggle -- the relay key alone is enough.
 
-**2. On the event laptop** -- Clone the repo and install dependencies:
+### Setup -- Step 2: Event Laptop
+
+#### Print Station App (Recommended)
+
+The Print Station is a desktop app in the `relay-app/` directory. Event staff enter the Cloud URL and Relay Key in the UI, pick a printer from the dropdown, and click Connect. No terminal or `.env` files needed.
+
+**Install and run:**
+
+```sh
+cd relay-app
+npm install
+npm start
+```
+
+**In the app UI:**
+1. Enter your **Cloud URL** (e.g. `https://your-app.azurecontainerapps.io`)
+2. Enter the **Relay Key** (same one you set in the cloud app's Settings)
+3. Select a **Printer** from the dropdown (or leave on Auto-detect)
+4. Click **Connect**
+
+The status bar shows live indicators for cloud connection (green/yellow/red), printer status, and a printed job count. Jobs appear in the Recent Jobs list as users submit selfies.
+
+**Building for distribution** -- To create a standalone `.app` that event staff can run without Node.js installed:
+
+```sh
+cd relay-app
+npm run make
+```
+
+This creates a `.zip` in `out/make/zip/darwin/arm64/` (~99 MB). Send it to event staff -- they unzip, open the app, and configure in the UI.
+
+See **[relay-app/README.md](../relay-app/README.md)** for full documentation including UI overview, features, and project structure.
+
+#### CLI Relay (Alternative)
+
+For developers or automated setups, the CLI relay runs in the terminal. Clone the repo and install dependencies:
 
 ```sh
 git clone <your-repo-url>
@@ -322,7 +366,7 @@ Start the relay:
 pnpm relay
 ```
 
-**3. Verify** -- You should see:
+**Verify** -- You should see:
 
 ```
 Connected to cloud app (printing: false, size: 5x7, quality: high)
