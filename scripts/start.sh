@@ -17,7 +17,7 @@ if [ -d "$DATA_MOUNT" ]; then
     fi
     # Seed persistent storage with built-in defaults (won't overwrite existing)
     if [ -d "/app/$dir" ]; then
-      cp -n /app/$dir/* "$DATA_MOUNT/$dir/" 2>/dev/null || true
+      cp -rn /app/$dir/. "$DATA_MOUNT/$dir/" 2>/dev/null || true
     fi
     rm -rf "/app/$dir"
     ln -sf "$DATA_MOUNT/$dir" "/app/$dir"
