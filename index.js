@@ -32,6 +32,7 @@ const { parseStyle, detectStyle } = require("./lib/styles");
 const styleMenu = require("./lib/style-menu");
 const backgroundMenu = require("./lib/background-menu");
 const { mountDashboard } = require("./lib/dashboard");
+const { mountReview } = require("./lib/review");
 const { mountHome } = require("./lib/home");
 const { mountPhotoGallery } = require("./lib/photogallery");
 const { mountOutreach } = require("./lib/outreach");
@@ -400,6 +401,7 @@ app.listen(port, "0.0.0.0", () => {
     mountDashboard(app);
     mountOutreach(app);
     mountPrintRelay(app);
+    mountReview(app);
     let genPollRunning = false;
     setInterval(async () => {
         if (genPollRunning || settings.get("queuePaused")) return;
