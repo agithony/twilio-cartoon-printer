@@ -3,6 +3,19 @@ properties:
     ingress:
       external: true
       targetPort: 8080
+    secrets:
+      - name: twilio-sid
+        value: ${TWILIO_ACCOUNT_SID}
+      - name: twilio-token
+        value: ${TWILIO_AUTH_TOKEN}
+      - name: openai-key
+        value: ${OPENAI_API_KEY}
+      - name: google-client-id
+        value: ${GOOGLE_CLIENT_ID}
+      - name: google-client-secret
+        value: ${GOOGLE_CLIENT_SECRET}
+      - name: session-secret
+        value: ${SESSION_SECRET}
   template:
     containers:
       - name: ${APP_NAME}
@@ -10,6 +23,29 @@ properties:
         resources:
           cpu: 1.0
           memory: 2Gi
+        env:
+          - name: PORT
+            value: "8080"
+          - name: NODE_ENV
+            value: production
+          - name: ENABLE_PRINTING
+            value: "false"
+          - name: DATA_MOUNT
+            value: /app/appdata
+          - name: BASE_URL
+            value: ${BASE_URL}
+          - name: TWILIO_ACCOUNT_SID
+            secretRef: twilio-sid
+          - name: TWILIO_AUTH_TOKEN
+            secretRef: twilio-token
+          - name: OPENAI_API_KEY
+            secretRef: openai-key
+          - name: GOOGLE_CLIENT_ID
+            secretRef: google-client-id
+          - name: GOOGLE_CLIENT_SECRET
+            secretRef: google-client-secret
+          - name: SESSION_SECRET
+            secretRef: session-secret
         volumeMounts:
           - volumeName: appdata
             mountPath: /app/appdata

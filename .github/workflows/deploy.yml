@@ -126,11 +126,24 @@ jobs:
             --account-name ${{ env.STORAGE_ACCOUNT }} \
             --query '[0].value' -o tsv)" >> $GITHUB_OUTPUT
 
-      - name: Create or update Container App
+      - name: Deploy Container App
         run: |
-          # Render YAML template (used for both create and update to ensure volume mount)
+          # Resolve BASE_URL for existing apps; new apps get it on first update
+          FQDN=$(az containerapp show \
+            --name ${{ env.APP_NAME }} \
+            --resource-group ${{ env.RESOURCE_GROUP }} \
+            --query properties.configuration.ingress.fqdn -o tsv 2>/dev/null || true)
+
+          # Render YAML template with all config: image, env vars, secrets, volume mount
           export APP_NAME="${{ env.APP_NAME }}"
           export CONTAINER_IMAGE="${{ steps.acr-creds.outputs.server }}/${{ env.IMAGE_TAG }}"
+          export BASE_URL="https://${FQDN}"
+          export TWILIO_ACCOUNT_SID="${{ secrets.TWILIO_ACCOUNT_SID }}"
+          export TWILIO_AUTH_TOKEN="${{ secrets.TWILIO_AUTH_TOKEN }}"
+          export OPENAI_API_KEY="${{ secrets.OPENAI_API_KEY }}"
+          export GOOGLE_CLIENT_ID="${{ secrets.GOOGLE_CLIENT_ID }}"
+          export GOOGLE_CLIENT_SECRET="${{ secrets.GOOGLE_CLIENT_SECRET }}"
+          export SESSION_SECRET="${{ secrets.SESSION_SECRET }}"
           envsubst < .github/containerapp.yaml > /tmp/containerapp.yaml
 
           if az containerapp show --name ${{ env.APP_NAME }} --resource-group ${{ env.RESOURCE_GROUP }} 2>/dev/null; then
@@ -143,7 +156,7 @@ jobs:
               --password "${{ steps.acr-creds.outputs.password }}" \
               --output none
 
-            echo "Applying image + volume mount..."
+            echo "Deploying image, env vars, secrets, and volume mount in a single revision..."
             az containerapp update \
               --name ${{ env.APP_NAME }} \
               --resource-group ${{ env.RESOURCE_GROUP }} \
@@ -155,61 +168,12 @@ jobs:
               --name ${{ env.APP_NAME }} \
               --resource-group ${{ env.RESOURCE_GROUP }} \
               --environment ${{ env.ENV_NAME }} \
-              --image ${{ steps.acr-creds.outputs.server }}/${{ env.IMAGE_TAG }} \
-              --target-port 8080 \
-              --ingress external \
-              --cpu 1.0 --memory 2Gi \
-              --min-replicas 1 --max-replicas 1 \
+              --yaml /tmp/containerapp.yaml \
               --registry-server ${{ steps.acr-creds.outputs.server }} \
               --registry-username ${{ steps.acr-creds.outputs.username }} \
               --registry-password "${{ steps.acr-creds.outputs.password }}" \
               --output none
-
-            echo "Adding volume mount..."
-            az containerapp update \
-              --name ${{ env.APP_NAME }} \
-              --resource-group ${{ env.RESOURCE_GROUP }} \
-              --yaml /tmp/containerapp.yaml \
-              --output none
           fi
-
-      - name: Set secrets and env vars
-        run: |
-          FQDN=$(az containerapp show \
-            --name ${{ env.APP_NAME }} \
-            --resource-group ${{ env.RESOURCE_GROUP }} \
-            --query properties.configuration.ingress.fqdn -o tsv)
-
-          az containerapp secret set \
-            --name ${{ env.APP_NAME }} \
-            --resource-group ${{ env.RESOURCE_GROUP }} \
-            --secrets \
-              "twilio-sid=${{ secrets.TWILIO_ACCOUNT_SID }}" \
-              "twilio-token=${{ secrets.TWILIO_AUTH_TOKEN }}" \
-              "openai-key=${{ secrets.OPENAI_API_KEY }}" \
-              "google-client-id=${{ secrets.GOOGLE_CLIENT_ID }}" \
-              "google-client-secret=${{ secrets.GOOGLE_CLIENT_SECRET }}" \
-              "session-secret=${{ secrets.SESSION_SECRET }}" \
-            --output none
-
-          az containerapp update \
-            --name ${{ env.APP_NAME }} \
-            --resource-group ${{ env.RESOURCE_GROUP }} \
-            --set-env-vars \
-              PORT=8080 \
-              NODE_ENV=production \
-              ENABLE_PRINTING=false \
-              DATA_MOUNT=/app/appdata \
-              "BASE_URL=https://${FQDN}" \
-              TWILIO_ACCOUNT_SID=secretref:twilio-sid \
-              TWILIO_AUTH_TOKEN=secretref:twilio-token \
-              OPENAI_API_KEY=secretref:openai-key \
-              GOOGLE_CLIENT_ID=secretref:google-client-id \
-              GOOGLE_CLIENT_SECRET=secretref:google-client-secret \
-              SESSION_SECRET=secretref:session-secret \
-            --min-replicas 1 \
-            --max-replicas 1 \
-            --output none
 
       - name: Print app URL
         run: |
