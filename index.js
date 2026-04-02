@@ -386,7 +386,7 @@ app.post("/sms", async (req, res) => {
 
 // ── Start ────────────────────────────────────────────────────────────────────
 
-const server = app.listen(port, "0.0.0.0", () => {
+const server = app.listen(port, "0.0.0.0", async () => {
     server.keepAliveTimeout = 65_000;
     server.headersTimeout = 66_000;
     console.log(`🚀 App running on port ${port} | Event: ${settings.get("eventName")}`);
@@ -394,11 +394,11 @@ const server = app.listen(port, "0.0.0.0", () => {
     // Ensure download dir for current event exists
     const dlDir = settings.getDownloadDir();
     if (!fs.existsSync(dlDir)) fs.mkdirSync(dlDir, { recursive: true });
-    buildUsageCache();
+    await buildUsageCache();
     leads.load();
     nps.load();
     settings.onEventNameChange(() => buildUsageCache());
-    recoverStaleJobs();
+    await recoverStaleJobs();
     mountHome(app);
     mountPhotoGallery(app);
     mountDashboard(app);
