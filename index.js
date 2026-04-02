@@ -60,6 +60,7 @@ for (const dir of [DATA_DIR, PENDING_DIR, GENERATING_DIR, READY_DIR, PRINTING_DI
 }
 
 app.use(bodyParser.urlencoded({ extended: false }));
+app.use(require("compression")());
 
 // ── Google OAuth (must be before all other routes) ──────────────────────────
 const { mountAuth, requireAuth, isPublicRoute } = require("./lib/auth");
@@ -71,7 +72,7 @@ app.use((req, res, next) => {
 });
 
 app.get("/", (req, res) => res.redirect("/home"));
-app.use("/assets", express.static(path.join(__dirname, "assets")));
+app.use("/assets", express.static(path.join(__dirname, "assets"), { maxAge: "1d" }));
 
 // Staging images (for review previews in dashboard)
 app.use("/images/staging", (req, res, next) => {
@@ -385,7 +386,9 @@ app.post("/sms", async (req, res) => {
 
 // ── Start ────────────────────────────────────────────────────────────────────
 
-app.listen(port, "0.0.0.0", () => {
+const server = app.listen(port, "0.0.0.0", () => {
+    server.keepAliveTimeout = 65_000;
+    server.headersTimeout = 66_000;
     console.log(`🚀 App running on port ${port} | Event: ${settings.get("eventName")}`);
     settings.load();
     // Ensure download dir for current event exists
