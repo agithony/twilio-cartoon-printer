@@ -10,6 +10,7 @@ This document covers all features and configuration in depth. For quick setup, s
 - [Web UI](#web-ui)
   - [Home Page](#home-page)
   - [Get Started Video](#get-started-video)
+  - [Static Instruction Page](#static-instruction-page)
   - [Booth Display](#booth-display)
   - [Photo Book](#photo-book)
 - [Admin Dashboard](#admin-dashboard)
@@ -17,7 +18,9 @@ This document covers all features and configuration in depth. For quick setup, s
   - [Paper Counter](#paper-counter)
 - [Style Selection](#style-selection)
 - [Adding or Changing Styles](#adding-or-changing-styles)
-- [Brand Prompt](#brand-prompt)
+- [Branding](#branding)
+  - [Single Brand Mode](#single-brand-mode)
+  - [Multi-Brand Selection](#multi-brand-selection)
 - [Background Selection](#background-selection)
 - [Delivery Mode](#delivery-mode)
 - [Print Relay (Cloud Printing)](#print-relay-cloud-printing)
@@ -30,6 +33,7 @@ This document covers all features and configuration in depth. For quick setup, s
 - [BRB Screen](#brb-screen)
 - [Promotional Messages](#promotional-messages)
 - [Runtime Settings](#runtime-settings)
+- [Import Style Prompts](#import-style-prompts)
 - [Switching Events](#switching-events)
 - [Job Queue](#job-queue)
   - [Crash Recovery](#crash-recovery)
@@ -50,7 +54,7 @@ This document covers all features and configuration in depth. For quick setup, s
 | `EVENT_NAME` | Yes | Name of the current event (used for per-event print limits and download folders) |
 | `ADMIN_PHONES` | No | Comma-separated phone numbers in E.164 format (e.g. `+14155551234`). Admins get unlimited prints and are excluded from dashboard metrics. |
 | `MAX_PRINTS_PER_USER` | No | Max free prints per phone number per event. Defaults to `2`. |
-| `MAX_CONCURRENT_GENERATION` | No | Max AI image generations running at the same time. Defaults to `3`. Increase for faster throughput, decrease if hitting OpenAI rate limits. Configurable at runtime under Operations. |
+| `MAX_CONCURRENT_GENERATION` | No | Max AI image generations running at the same time. Defaults to `3`. Increase for faster throughput, decrease if hitting OpenAI rate limits. Configurable at runtime under Event & Operations. |
 | `TEMPLATE_FILE` | No | Filename of the template frame in the `templates/` folder (e.g. `signal_sf.png`). Leave blank to disable. |
 | `VIDEO_FILE` | No | Filename of the Get Started video in the `assets/` folder (e.g. `get-started.mp4`). Defaults to `get-started.mp4`. |
 | `TERMS_URL` | No | URL to your terms of service. Displayed on booth screens (video, combo, photo gallery). |
@@ -68,7 +72,7 @@ This document covers all features and configuration in depth. For quick setup, s
 
 ## Template Frames
 
-Place your template PNGs in the `templates/` folder. Set `TEMPLATE_FILE` in `.env` to the filename you want to use (e.g. `signal_sf.png`). You can also change the template at runtime from the Settings panel on the home page under Art & Branding, and upload new templates directly through the UI.
+Place your template PNGs in the `templates/` folder. Set `TEMPLATE_FILE` in `.env` to the filename you want to use (e.g. `signal_sf.png`). You can also change the template at runtime from the Settings panel on the home page under **Styles & Art**, and upload new templates directly through the UI.
 
 Templates should be PNGs with **transparent areas** where the generated portrait shows through. The opaque areas form the frame border (branding, logos, CTA, etc.). The template is composited on top of the portrait at print dimensions (1500x2100).
 
@@ -130,9 +134,33 @@ The intro video at `/home/video` is a fullscreen looping video player designed t
 - The video autoplays on loop with floating BRB, Pause/Play, and Fullscreen buttons
 - To switch videos, change the setting from the Settings panel on `/home` or update `.env`
 
+### Static Instruction Page
+
+The static page at `/home/panel` is a branded instruction panel designed for booth monitors. It displays a QR code, numbered steps, and configurable text -- all with Twilio typography (Display Extrabold headlines, Text body copy, Mono step numbers) and draft line accents.
+
+Configure from the Settings panel under **Booth Display** when the display mode is set to "Static Page":
+
+- **Headline** -- large text at the top (e.g. "Get Your AI Portrait")
+- **Subline** -- smaller text below the headline (e.g. event name)
+- **QR Code** -- uploadable image that attendees scan to start
+- **Steps 1-3** -- numbered instructions shown below the QR code
+- **Legal Text** -- small compliance text at the bottom
+
+The page includes BRB and Fullscreen buttons. When no QR code is uploaded, a placeholder message is shown.
+
 ### Booth Display
 
-The booth display at `/home/combo` is a split-screen view combining the intro video and photo book side by side on a single monitor. The divider between panes is draggable to resize each side. A BRB button in the bottom-right shows the break overlay.
+The booth display at `/home/combo` is a split-screen view with the left pane and photo book side by side on a single monitor. The divider between panes is draggable to resize each side.
+
+The **Display Mode** setting (under Booth Display in the Settings panel) controls what shows on the left side:
+
+| Mode | Left pane | Right pane | Use case |
+|------|-----------|------------|----------|
+| **Video** | Looping intro video (`/home/video`) | Photo book | Attract with video |
+| **Static Page** | Instruction panel with QR code (`/home/panel`) | Photo book | QR-driven engagement |
+| **None** | *(no left pane)* | Photo book (full width) | Photo book only |
+
+When the mode is "Video" but no video file is selected, the display falls back to full-width photo book (same as "None").
 
 ### Photo Book
 
@@ -226,7 +254,7 @@ The bot also responds conversationally when users send text-only messages with q
 
 Art styles can be managed in two ways:
 
-**From the Settings panel** (no code changes): Open the Settings panel on `/home`, scroll to the Art & Branding section. You can toggle built-in styles on/off, edit their prompts (with a reset button to revert to the original), add custom styles with a name and prompt, and edit custom style names and prompts after creation. You can also choose which style is used as the default when a user doesn't specify one. All customizations are stored in `data/settings.json`.
+**From the Settings panel** (no code changes): Open the Settings panel on `/home`, scroll to the **Styles & Art** section. You can toggle built-in styles on/off, edit their prompts (with a reset button to revert to the original), add custom styles with a name and prompt, and edit custom style names and prompts after creation. You can also choose which style is used as the default when a user doesn't specify one, and import style prompt overrides from another event. All customizations are stored in `data/settings.json`.
 
 **In code**: Built-in styles are defined in `lib/styles.js`. Each style has a keyword, display name, and an LLM prompt. To add a new built-in style, add an entry to the `STYLES` object:
 
@@ -239,29 +267,53 @@ Art styles can be managed in two ways:
 
 Styles automatically appear in SMS messages and are available for users to select. Style matching is fuzzy -- it handles extra spaces, hyphens, and case differences.
 
-## Brand Prompt
+## Branding
 
-The brand prompt is a global modifier appended to every art style's AI prompt. Use it for event-specific branding that should appear across all styles -- clothing, logos, visual themes, etc. The brand prompt is automatically applied to all subjects when a photo contains multiple people or pets.
+Branding controls how the AI renders clothing, logos, and visual themes across all art styles. The Branding section in the Settings panel has two modes, toggled by the **Enable Brand Selection Menu** switch.
 
-For example, setting the brand prompt to "wearing a bright red Twilio t-shirt with the Twilio logo clearly visible" will dress every person in the photo in that shirt across cartoon, watercolor, anime, and every other style.
+### Single Brand Mode
 
-Configure it from the Settings panel under Art & Branding. Leave blank to disable. Can also be set via the `BRAND_PROMPT` environment variable.
+When the brand selection toggle is OFF, all portraits use a single brand configuration:
 
-Brand reference images (uploaded under Art & Branding) are stored in a shared library. Each event selects which images to use via checkboxes, so you can have hockey jerseys selected for one event and golf gear for another without re-uploading. See [Switching Events](#switching-events) for details.
+- **Brand Prompt** -- a global modifier appended to every art style's AI prompt (e.g. "wearing a bright red Twilio t-shirt with the Twilio logo clearly visible"). Applied to all subjects in multi-person photos.
+- **Brand Reference Images** -- uploaded images that show the AI what the branded items look like (jerseys, logos, gear). Stored in a shared library; each event selects which images to use via checkboxes.
+
+Configure from the Settings panel under **Branding**. Leave the brand prompt blank to disable. Can also be set via the `BRAND_PROMPT` environment variable.
+
+### Multi-Brand Selection
+
+When the brand selection toggle is ON, users choose a brand/team via SMS after picking their art style. This mirrors the style and background selection menus.
+
+**SMS flow:** Selfie → Style → Brand → Background → Enqueue
+
+Each brand is a card in the Settings panel with:
+
+- **Display name** -- what users see in the SMS menu (e.g. "LA Kings")
+- **Brand prompt** -- per-brand AI prompt override
+- **Reference files** -- selected from the shared brand reference library
+
+Brands are stored as a global library (`customBrands` in settings), shared across events. Per-event controls include:
+
+- **Enable/disable individual brands** -- toggle brands on or off per event without deleting them
+- **Brand prompt overrides** -- customize a brand's prompt for a specific event
+
+If only one brand is active, it's auto-selected (no menu shown). Brand menu SMS messages (intro, footer, retry) are configurable under **Engagement & Messages**.
+
+Brand reference images are stored in the `brand-references/` folder. Uploading adds to the shared library; each brand selects which images to use. Deleting an image removes it from the library and from all brands that reference it.
 
 ## Background Selection
 
-The app includes a configurable background system for AI-generated portraits. By default, a background instruction is appended to every generation prompt that tells the AI to recreate the original photo's background in the chosen art style. This default prompt is editable from the Settings panel under Art & Branding > Default Background Prompt.
+The app includes a configurable background system for AI-generated portraits. By default, a background instruction is appended to every generation prompt that tells the AI to recreate the original photo's background in the chosen art style. This default prompt is editable from the Settings panel under **Backgrounds**.
 
 When **Enable Background Selection** is turned on, users get a numbered background menu via SMS after choosing their art style -- similar to the style selection menu. Admins configure the available background options (name + prompt) from the Settings panel. Each option tells the AI what background to render (e.g. "Solid White", "Original Scene", "City Skyline").
 
 If only one background option is configured, it's auto-selected (no menu shown). If the background menu is disabled, the default background prompt is used for all portraits. Leave the default prompt blank to let the AI decide freely.
 
-Background menu SMS messages (intro, footer, retry) are configurable under Engagement > SMS Messages > Background Selection.
+Background menu SMS messages (intro, footer, retry) are configurable under **Engagement & Messages**.
 
 ## Delivery Mode
 
-The app supports three delivery modes, configurable from the Settings panel under Delivery & Printing:
+The app supports three delivery modes, configurable from the Settings panel under **Delivery & Display**:
 
 - **Print + Digital (local)** -- Portraits are printed on a directly connected printer and sent to the user via MMS after printing completes. Requires a CUPS printer on the server machine. Set `ENABLE_PRINTING=true` in `.env` or toggle in the Settings panel.
 - **Print + Digital (cloud relay)** -- The server runs in the cloud. A relay agent on the event laptop polls for print-ready jobs, downloads images, and prints locally. Set a **Print Relay Key** in the Settings panel to enable. See [Print Relay](#print-relay-cloud-printing) for full setup.
@@ -306,7 +358,7 @@ Cloud App                              Event Laptop
 
 ### Setup -- Step 1: Cloud App
 
-Open the admin Settings panel. Under Delivery & Printing, enter a **Print Relay Key** (any secret string, e.g. `my-event-2026`). Save settings. This enables the relay API and routes generated portraits to the relay print queue instead of trying to print locally.
+Open the admin Settings panel. Under **Delivery & Display**, enter a **Print Relay Key** (any secret string, e.g. `my-event-2026`). Save settings. This enables the relay API and routes generated portraits to the relay print queue instead of trying to print locally.
 
 You do NOT need to enable the "Print + Digital" toggle -- the relay key alone is enough.
 
@@ -500,6 +552,7 @@ Every SMS message the app sends to users is configurable from the Settings panel
 
 - **Welcome & Onboarding** -- welcome text, quota counts, multiple photo warning
 - **Style Selection** -- menu intro, footer, retry on invalid input
+- **Brand Selection** -- menu intro, footer, retry on invalid input (shown when multi-brand is enabled)
 - **Background Selection** -- menu intro, footer, retry on invalid input (shown when background selection is enabled)
 - **Processing & Delivery** -- enqueue confirmation, pickup instructions, delivery text, last portrait notice, Twilio blurb
 - **Error Responses** -- moderation failure, no face detected
@@ -527,7 +580,7 @@ All message customizations are stored in `data/settings.json` and take effect im
 
 The app can send a Net Promoter Score survey after a user's final portrait (when their quota is exhausted). When enabled, the app waits a configurable delay (default 30 seconds) after the last delivery, then texts the user asking for a 1-5 rating.
 
-Configure from the Settings panel under NPS Survey:
+Configure from the Settings panel under **Engagement & Messages**:
 
 - **Enable/Disable** toggle
 - **Delay** -- seconds to wait after delivery before sending the prompt (default 30)
@@ -544,7 +597,7 @@ Scores persist to `data/nps.json` across restarts. Admin phone numbers are exclu
 
 When enabled, delivery messages include clickable share links for X/Twitter and LinkedIn. The share text is configurable and supports `{eventName}` interpolation.
 
-Configure from the Settings panel under Engagement:
+Configure from the Settings panel under **Engagement & Messages**:
 
 - **Enable Share Links** toggle
 - **Twitter Handle** -- included in tweet text (default `@twilio`)
@@ -556,7 +609,7 @@ The share URLs point to the portrait's MMS image on your server, so they only wo
 
 All three booth displays (intro video, combo, photo book) include a **BRB** button in the bottom toolbar. Clicking it shows a fullscreen "We'll Be Right Back" overlay with animated visuals, the event name, and an optional custom message. Click anywhere to dismiss.
 
-The break message is configurable from the Settings panel under Operations. The standalone break screen is also available directly at `/home/break`.
+The break message is configurable from the Settings panel under **Event & Operations**. The standalone break screen is also available directly at `/home/break`.
 
 ## Promotional Messages
 
@@ -564,27 +617,25 @@ The app can send a promotional message as a standalone SMS after each portrait i
 
 The promo is sent after every portrait completion (including repeat users). Admins are excluded. If the promo message field is empty, no promo is sent.
 
-Configure the message from the Settings panel on the home page under Promotional. Set `PROMO_MESSAGE` in `.env` to configure a default, or leave blank to disable.
+Configure the message from the Settings panel on the home page under **Engagement & Messages**. Set `PROMO_MESSAGE` in `.env` to configure a default, or leave blank to disable.
 
 ## Runtime Settings
 
 The Settings panel on the home page (`/home`) lets admins change all app configuration at runtime without editing `.env` or restarting the server. Changes take effect immediately and are persisted to `data/settings.json`.
 
-The settings panel is organized into eight sections:
+The settings panel is organized into seven sections:
 
-**Event** -- Event Name (combo-box with existing events, saved-profile badges, or type a new name to create one -- selecting auto-saves and switches), Max Prints Per User, Admin Phone Numbers
+**Event & Operations** -- Event Name (combo-box with existing events, saved-profile badges, or type a new name to create one -- selecting auto-saves and switches), Max Prints Per User, Admin Phone Numbers, Max Concurrent Generations, Queue Control (pause/resume), Manual Review toggle, Review PIN, Break Screen Message
 
-**Art & Branding** -- Default Style selector, Brand Prompt (global branding applied to all styles), Brand Reference Images (shared library with per-event checkbox selection), Template Frame (PNG overlay composited on portraits) with Frame Border toggle and color picker, art style toggles with editable prompts (and reset for built-ins), custom style creation with editable names and prompts, Background settings (default prompt + optional user-facing background selection menu with configurable choices)
+**Styles & Art** -- Default Style selector, art style toggles with editable prompts (and reset for built-ins), custom style creation with editable names and prompts, "Import from another event" button to copy style prompt overrides between events, Multi-Subject Photos mode, Template Frame (PNG overlay composited on portraits) with Frame Border toggle and color picker, AI Prompts (Preserve Line, Composition Line, Face Detection, Scene Analysis, Smart Reply, User Directive -- each with reset button)
 
-**AI Prompts** -- All AI prompts used in generation, vision analysis, and smart replies. Includes Preserve Line, Composition Line, Preserve Line (Brand Mode), Brand Instruction, Face Detection, Scene Analysis, Smart Reply System Prompt, and User Directive. Each prompt has a reset button to revert to defaults.
+**Branding** -- Single/multi toggle. Single mode: Brand Prompt + Brand Reference Images. Multi mode: brand reference file library, brand cards with per-brand prompts and file selection, enable/disable per brand, brand menu SMS messages. See [Branding](#branding) for details.
 
-**Delivery & Printing** -- Delivery Mode (Print + Digital or Digital Only), Printer selection, Print Size (4x6, 5x7, 8x10), Print Quality (Standard, High, Max), Custom Print Flags, Print Relay Key (for cloud-to-local printing). Print settings are visible when Print + Digital mode is selected. The Print Relay Key is always visible -- set it to enable [cloud printing via the relay agent](#print-relay-cloud-printing).
+**Backgrounds** -- Default Background Prompt, optional Background Selection Menu with configurable choices (name + prompt pairs), background menu SMS messages
 
-**Booth Display** -- Intro Video, Terms URL (displayed on booth screens)
+**Delivery & Display** -- Delivery Mode (Print + Digital or Digital Only), Printer selection, Print Size (4x6, 5x7, 8x10), Print Quality (Standard, High, Max), Custom Print Flags, Print Relay Key (for cloud-to-local printing), Booth Display Mode (Video / Static Page / None), Intro Video, Static Page settings (headline, subline, QR code, steps, legal text), Terms URL
 
-**Engagement** -- Lead Capture (enable/disable, before/after timing, survey messages and fields), Promotional Message, Social Share Links (X/Twitter and LinkedIn), NPS Survey toggle and delay, SMS Messages organized by category (Welcome & Onboarding, Style Selection, Processing & Delivery, Error Responses) with `{variable}` interpolation support. See [Lead Capture](#lead-capture) for details.
-
-**Operations** -- Max Concurrent Generations, Queue Control (pause/resume), Break Screen Message
+**Engagement & Messages** -- Lead Capture (enable/disable, before/after timing, survey messages and fields), Promotional Message, Social Share Links (X/Twitter and LinkedIn), NPS Survey toggle and delay, SMS Messages organized by category (Welcome & Onboarding, Style Selection, Brand Selection, Background Selection, Processing & Delivery, Error Responses, Lead Capture, NPS) with `{variable}` interpolation support. See [Lead Capture](#lead-capture) for details.
 
 **API Keys** -- Twilio credentials (Phone Number, Account SID, Auth Token) and OpenAI configuration (API Key, Orchestrator Model, Vision Light Model, Image Generation Model, Smart Reply Model). These override values from `.env`.
 
@@ -596,7 +647,21 @@ The settings API is also available programmatically:
 - `POST /dashboard/api/settings` -- update settings
 - `POST /dashboard/api/settings/reset` -- revert to `.env` defaults
 - `GET /dashboard/api/settings/files` -- list available templates, videos, printers, known events, and event profiles with saved settings
-- `POST /dashboard/api/settings/upload?type=template&filename=foo.png` -- upload a file
+- `GET /dashboard/api/settings/event-styles/:eventName` -- read another event's style prompt overrides (for importing)
+- `POST /dashboard/api/settings/upload?type=<type>&filename=<name>` -- upload a file (types: `template`, `video`, `brand-reference`, `booth-image`)
+
+## Import Style Prompts
+
+When you craft a great style prompt override for one event and want to reuse it in another, the **Import from another event** button (in the Styles & Art section) lets you copy overrides without manual copy-paste.
+
+1. Click **Import from another event** below the custom style form
+2. Select a source event from the dropdown (only events with saved profiles appear)
+3. The panel shows all style prompt overrides from that event with a preview of each prompt
+4. Overrides that differ from the current event are pre-checked
+5. Click **Import Selected** to apply the checked overrides to the current event's style prompts
+6. Click **Save** to persist -- no auto-save, same as any other edit
+
+This only imports style prompt overrides (the text you've customized for each art style). It does not copy custom styles, disabled styles, or any other settings.
 
 ## Switching Events
 
@@ -621,10 +686,11 @@ Events with saved profiles show a green **saved** badge in the dropdown. New eve
 All creative and event-specific settings, including:
 
 - Art styles (custom styles, disabled styles, prompt overrides, default style)
-- Brand prompt and brand reference file selection
+- Branding (brand prompt, brand reference file selection, enabled/disabled brands, brand prompt overrides, brand menu toggle)
 - AI prompts (preserve, composition, brand, background, face detection, scene analysis, smart reply)
 - Background settings (default prompt, background menu toggle, background choices)
-- SMS messages (all categories)
+- Booth display mode (video/static/none), static page content (headline, subline, QR image, steps, legal text)
+- SMS messages (all categories including brand menu messages)
 - Template frame, frame border, video
 - Lead capture mode and fields
 - Delivery mode, print size/quality
@@ -639,6 +705,7 @@ All creative and event-specific settings, including:
 - Printer selection
 - Max concurrent generations
 - Queue pause state
+- Custom brands library (brand definitions are shared; per-event controls are disabled brands and prompt overrides)
 
 ### Brand reference images
 
@@ -700,7 +767,9 @@ twilio-cartoon-printer/
 │   ├── styles.js         Art style definitions and prompts
 │   ├── helpers.js        Image download, SMS, moderation, face detection, compositing, AI smart replies
 │   ├── style-menu.js     Style selection menu after selfie (numbered list, pending state)
-│   ├── background-menu.js Background selection menu after style choice (numbered list, pending state)
+│   ├── brand-menu.js     Brand selection menu after style choice (numbered list, pending state)
+│   ├── brands.js         Brand library -- active brands, brand resolution for pipeline
+│   ├── background-menu.js Background selection menu after brand/style choice (numbered list, pending state)
 │   ├── printer.js        Printer discovery and print commands
 │   ├── pipeline.js       generateImage (steps 1-6) and printJob (steps 7-8)
 │   ├── queue.js          Concurrent generation worker, serial print worker, usage tracking, stale relay recovery

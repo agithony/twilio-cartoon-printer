@@ -115,7 +115,7 @@ To enable printing, you need a CUPS-compatible printer connected to the machine 
 lpstat -p
 ```
 
-Set your printer name in the admin Settings panel under **Delivery & Printing**, or in `.env`:
+Set your printer name in the admin Settings panel under **Delivery & Display**, or in `.env`:
 
 ```sh
 PRINTER_NAME=EPSON_ET_8550_Series
@@ -189,7 +189,7 @@ Cloud App (Azure/Docker)          Event Laptop
 
 ### Step 1: Set the relay key on the cloud app
 
-Open the admin Settings panel on the cloud app. Under **Delivery & Printing**, enter a **Print Relay Key** -- any secret string (e.g. `my-event-secret-2026`). Save.
+Open the admin Settings panel on the cloud app. Under **Delivery & Display**, enter a **Print Relay Key** -- any secret string (e.g. `my-event-secret-2026`). Save.
 
 This enables the relay API and tells the cloud app to queue jobs for relay printing instead of trying to print locally.
 
@@ -290,7 +290,8 @@ Both the Print Station app and CLI relay share these capabilities:
 |---|---|
 | `/home` | Admin console -- settings, booth display launcher |
 | `/home/video` | Fullscreen looping intro video for booth displays |
-| `/home/combo` | Split-screen booth display (intro video + photo book) |
+| `/home/panel` | Static instruction page with QR code, steps, and Twilio branding |
+| `/home/combo` | Split-screen booth display (video or static page + photo book) |
 | `/home/break` | "We'll Be Right Back" screen for booth breaks |
 | `/photogallery` | Photo book with page-turn animations |
 | `/dashboard` | Real-time admin dashboard with metrics and monitoring |
@@ -299,14 +300,17 @@ Both the Print Station app and CLI relay share these capabilities:
 ## Key Features
 
 - **Style selection menu** -- numbered list sent after selfie, reply by number or name
+- **Brand selection menu** -- optional SMS menu for choosing a brand/team (e.g. LA Kings, Chelsea FC), each with its own reference images and brand prompt
 - **AI smart replies** -- conversational responses to text-only messages
 - **Background selection** -- configurable background options users can choose via SMS
 - **Template frames** -- PNG overlays with transparent windows, auto-detected safe zones
 - **Configurable SMS messages** -- every message editable from the Settings panel, with `{variable}` interpolation
 - **Lead capture** -- SMS survey (before or after portrait) with configurable fields, toggles, and CSV export
 - **NPS survey** -- 1-5 rating after last portrait, with dashboard stats and PDF report integration
+- **Booth display modes** -- video (looping intro), static instruction page (QR code + steps with Twilio branding), or none (photo book only)
 - **BRB screen** -- "We'll Be Right Back" overlay on all booth displays
 - **Social sharing** -- optional X/Twitter and LinkedIn share links
+- **Import style prompts** -- copy style prompt overrides from one event to another
 - **Per-event settings** -- save and restore complete settings profiles per event
 - **Runtime settings** -- all config changeable from `/home` without restarts
 - **Dashboard** -- job health, failure breakdown, queue status, NPS scores, stuck job alerts, paper counter, PDF reports
