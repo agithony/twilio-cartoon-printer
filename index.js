@@ -30,7 +30,9 @@ const {
 } = require("./lib/queue");
 const { parseStyle, detectStyle } = require("./lib/styles");
 const styleMenu = require("./lib/style-menu");
+const brandMenu = require("./lib/brand-menu");
 const backgroundMenu = require("./lib/background-menu");
+const { getActiveBrands } = require("./lib/brands");
 const { mountDashboard } = require("./lib/dashboard");
 const { mountReview } = require("./lib/review");
 const { mountHome } = require("./lib/home");
@@ -109,8 +111,8 @@ app.post("/sms", async (req, res) => {
     const testingMode = eventName.toLowerCase() === "testing";
     const treatAsAdmin = isAdmin(userPhone) && !testingMode;
 
-    // Helper: confirm and enqueue a job with the chosen style (and optional background)
-    async function confirmAndEnqueue(style, imageUrl, messageSid, useTwiml, background) {
+    // Helper: confirm and enqueue a job with the chosen style (and optional background/brand)
+    async function confirmAndEnqueue(style, imageUrl, messageSid, useTwiml, background, brand) {
         const styleName = activeStyles[style].name;
         const singleStyle = activeStyleList.length === 1;
         const confirmLabel = singleStyle ? "Your portrait" : `Your ${styleName} portrait`;
@@ -133,7 +135,7 @@ app.post("/sms", async (req, res) => {
                 const { sendSms } = require("./lib/helpers");
                 await sendSms(userPhone, appPhone, msg);
             }
-            enqueueJob(imageUrl, messageSid, userPhone, appPhone, style, baseUrl, background);
+            enqueueJob(imageUrl, messageSid, userPhone, appPhone, style, baseUrl, background, brand);
         } else {
             const used = getUsageCount(userPhone);
             const maxPrints = settings.get("maxPrints");
@@ -162,14 +164,37 @@ app.post("/sms", async (req, res) => {
                 const { sendSms } = require("./lib/helpers");
                 await sendSms(userPhone, appPhone, msg);
             }
-            enqueueJob(imageUrl, messageSid, userPhone, appPhone, style, baseUrl, background);
+            enqueueJob(imageUrl, messageSid, userPhone, appPhone, style, baseUrl, background, brand);
         }
+    }
+
+    // Helper: show brand menu or proceed to background/enqueue
+    async function showBrandMenuOrNext(style, imageUrl, messageSid, useTwiml) {
+        const activeBrands = getActiveBrands();
+        const activeBrandList = Object.keys(activeBrands);
+        if (settings.get("enableBrandMenu") && activeBrandList.length > 0) {
+            if (activeBrandList.length === 1) {
+                // Auto-select if only one brand
+                await showBackgroundMenuOrEnqueue(style, imageUrl, messageSid, useTwiml, activeBrandList[0]);
+                return;
+            }
+            brandMenu.setPending(userPhone, { imageUrl, messageSid, style, body, appPhone, baseUrl });
+            const menuMsg = brandMenu.buildMenu(activeBrands, activeBrandList);
+            if (useTwiml) {
+                twiml.message(menuMsg);
+            } else {
+                const { sendSms } = require("./lib/helpers");
+                await sendSms(userPhone, appPhone, menuMsg);
+            }
+            return;
+        }
+        await showBackgroundMenuOrEnqueue(style, imageUrl, messageSid, useTwiml);
     }
 
     // Helper: show style menu and hold the image (auto-selects if only one style)
     async function showMenuAndHold(imageUrl, messageSid) {
         if (activeStyleList.length === 1) {
-            await showBackgroundMenuOrEnqueue(activeStyleList[0], imageUrl, messageSid, true);
+            await showBrandMenuOrNext(activeStyleList[0], imageUrl, messageSid, true);
             return;
         }
         styleMenu.setPending(userPhone, { imageUrl, messageSid, body, appPhone, baseUrl });
@@ -177,15 +202,15 @@ app.post("/sms", async (req, res) => {
     }
 
     // Helper: show background menu or enqueue directly
-    async function showBackgroundMenuOrEnqueue(style, imageUrl, messageSid, useTwiml) {
+    async function showBackgroundMenuOrEnqueue(style, imageUrl, messageSid, useTwiml, brand) {
         const bgChoices = settings.get("backgroundChoices") || [];
         if (settings.get("enableBackgroundMenu") && bgChoices.length > 0) {
             if (bgChoices.length === 1) {
                 // Auto-select if only one background
-                await confirmAndEnqueue(style, imageUrl, messageSid, useTwiml, bgChoices[0].key);
+                await confirmAndEnqueue(style, imageUrl, messageSid, useTwiml, bgChoices[0].key, brand);
                 return;
             }
-            backgroundMenu.setPending(userPhone, { imageUrl, messageSid, style, appPhone, baseUrl });
+            backgroundMenu.setPending(userPhone, { imageUrl, messageSid, style, brand, body, appPhone, baseUrl });
             const menuMsg = backgroundMenu.buildMenu(bgChoices);
             if (useTwiml) {
                 twiml.message(menuMsg);
@@ -195,7 +220,7 @@ app.post("/sms", async (req, res) => {
             }
             return;
         }
-        await confirmAndEnqueue(style, imageUrl, messageSid, useTwiml);
+        await confirmAndEnqueue(style, imageUrl, messageSid, useTwiml, undefined, brand);
     }
 
     // ── 0. NPS response ────────────────────────────────────────────────────
@@ -217,9 +242,11 @@ app.post("/sms", async (req, res) => {
             const pi = result.pendingImage;
             const style = pi.style || parseStyle(pi.body, activeStyles, settings.get("defaultStyle"));
             if (pi.background) {
-                await confirmAndEnqueue(style, pi.imageUrl, pi.messageSid, false, pi.background);
+                await confirmAndEnqueue(style, pi.imageUrl, pi.messageSid, false, pi.background, pi.brand);
+            } else if (pi.brand) {
+                await showBackgroundMenuOrEnqueue(style, pi.imageUrl, pi.messageSid, false, pi.brand);
             } else {
-                await showBackgroundMenuOrEnqueue(style, pi.imageUrl, pi.messageSid, false);
+                await showBrandMenuOrNext(style, pi.imageUrl, pi.messageSid, false);
             }
         }
 
@@ -250,12 +277,49 @@ app.post("/sms", async (req, res) => {
                     body: bgPending.body || "",
                     style: bgPending.style,
                     background: matched,
+                    brand: bgPending.brand || null,
                     baseUrl,
                 });
                 return res.type("text/xml").send(twiml.toString());
             }
 
-            await confirmAndEnqueue(bgPending.style, bgPending.imageUrl, bgPending.messageSid, false, matched);
+            await confirmAndEnqueue(bgPending.style, bgPending.imageUrl, bgPending.messageSid, false, matched, bgPending.brand);
+            return res.type("text/xml").send(twiml.toString());
+        }
+    }
+
+    // ── 2b. Brand menu pending ─────────────────────────────────────────────
+    if (brandMenu.hasPending(userPhone)) {
+        if (numMedia >= 1) {
+            // New selfie replaces old pending — clear and fall through
+            brandMenu.clearPending(userPhone);
+        } else {
+            const activeBrands = getActiveBrands();
+            const activeBrandList = Object.keys(activeBrands);
+            const matched = brandMenu.matchReply(body, activeBrands, activeBrandList);
+            if (!matched) {
+                twiml.message(brandMenu.buildRetryMenu(activeBrands, activeBrandList));
+                return res.type("text/xml").send(twiml.toString());
+            }
+
+            const brPending = brandMenu.getPending(userPhone);
+            brandMenu.clearPending(userPhone);
+
+            // Check if lead capture "before" is needed
+            if (leadMode === "before" && !treatAsAdmin && !leads.isCompleted(userPhone, eventName)) {
+                await leads.startSurvey(userPhone, appPhone, eventName, "before", {
+                    imageUrl: brPending.imageUrl,
+                    messageSid: brPending.messageSid,
+                    body: brPending.body || "",
+                    style: brPending.style,
+                    brand: matched,
+                    baseUrl,
+                });
+                return res.type("text/xml").send(twiml.toString());
+            }
+
+            // Background menu or enqueue (with brand)
+            await showBackgroundMenuOrEnqueue(brPending.style, brPending.imageUrl, brPending.messageSid, false, matched);
             return res.type("text/xml").send(twiml.toString());
         }
     }
@@ -288,8 +352,8 @@ app.post("/sms", async (req, res) => {
                 return res.type("text/xml").send(twiml.toString());
             }
 
-            // Background menu or enqueue
-            await showBackgroundMenuOrEnqueue(matched, pending.imageUrl, pending.messageSid, false);
+            // Brand menu or background menu or enqueue
+            await showBrandMenuOrNext(matched, pending.imageUrl, pending.messageSid, false);
             return res.type("text/xml").send(twiml.toString());
         }
     }
@@ -336,7 +400,7 @@ app.post("/sms", async (req, res) => {
 
         const explicitStyle = detectStyle(body, activeStyles);
         if (explicitStyle) {
-            await showBackgroundMenuOrEnqueue(explicitStyle, req.body.MediaUrl0, req.body.MessageSid, true);
+            await showBrandMenuOrNext(explicitStyle, req.body.MediaUrl0, req.body.MessageSid, true);
         } else {
             await showMenuAndHold(req.body.MediaUrl0, req.body.MessageSid);
         }
