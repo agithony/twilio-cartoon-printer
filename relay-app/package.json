@@ -13,7 +13,7 @@
     "electron-store": "^8.2.0"
   },
   "devDependencies": {
-    "electron": "^33.0.0",
+    "electron": "^39.8.4",
     "@electron-forge/cli": "^7.6.0",
     "@electron-forge/maker-zip": "^7.6.0"
   },
