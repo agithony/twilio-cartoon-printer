@@ -66,7 +66,8 @@ app.use(require("compression")());
 
 // ── Google OAuth (must be before all other routes) ──────────────────────────
 const { mountAuth, requireAuth, isPublicRoute } = require("./lib/auth");
-app.get("/healthz", (req, res) => res.send("ok"));
+const { mountHealth } = require("./lib/health");
+mountHealth(app);
 mountAuth(app);
 app.use((req, res, next) => {
     if (isPublicRoute(req)) return next();
