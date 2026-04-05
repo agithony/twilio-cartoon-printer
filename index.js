@@ -91,6 +91,7 @@ app.use("/images", (req, res, next) => {
 let baseUrl = process.env.BASE_URL || "";
 
 app.post("/sms", async (req, res) => {
+  try {
     if (!baseUrl) {
         const proto = req.headers["x-forwarded-proto"] || req.protocol || "http";
         baseUrl = `${proto}://${req.headers.host}`;
@@ -447,15 +448,24 @@ app.post("/sms", async (req, res) => {
         }
     }
     res.type("text/xml").send(twiml.toString());
+  } catch (err) {
+    console.error(`❌ SMS webhook error: ${err.message}`);
+    if (!res.headersSent) {
+        const twiml = new MessagingResponse();
+        res.type("text/xml").send(twiml.toString());
+    }
+  }
 });
 
 // ── Start ────────────────────────────────────────────────────────────────────
+
+// Load settings before accepting connections
+settings.load();
 
 const server = app.listen(port, "0.0.0.0", async () => {
     server.keepAliveTimeout = 65_000;
     server.headersTimeout = 66_000;
     console.log(`🚀 App running on port ${port} | Event: ${settings.get("eventName")}`);
-    settings.load();
     // Ensure download dir for current event exists
     const dlDir = settings.getDownloadDir();
     if (!fs.existsSync(dlDir)) fs.mkdirSync(dlDir, { recursive: true });
