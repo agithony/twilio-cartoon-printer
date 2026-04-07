@@ -90,6 +90,19 @@ app.use("/images", (req, res, next) => {
 
 let baseUrl = process.env.BASE_URL || "";
 
+// Deduplicate Twilio webhook retries (same MessageSid delivered again if
+// the first response was slow).  Keep the last 500 SIDs in a rotating set.
+const _processedSids = new Set();
+const _sidQueue = [];
+function markSid(sid) {
+    if (!sid) return false; // no SID → allow
+    if (_processedSids.has(sid)) return true; // duplicate
+    _processedSids.add(sid);
+    _sidQueue.push(sid);
+    if (_sidQueue.length > 500) _processedSids.delete(_sidQueue.shift());
+    return false;
+}
+
 app.post("/sms", async (req, res) => {
   try {
     if (!baseUrl) {
@@ -97,6 +110,13 @@ app.post("/sms", async (req, res) => {
         baseUrl = `${proto}://${req.headers.host}`;
         console.log(`🌐 Base URL detected: ${baseUrl}`);
     }
+
+    // Skip duplicate webhook deliveries (Twilio retries)
+    if (markSid(req.body.MessageSid)) {
+        console.log(`⚠️  Duplicate webhook skipped: ${req.body.MessageSid}`);
+        return res.type("text/xml").send(new MessagingResponse().toString());
+    }
+
     const twiml = new MessagingResponse();
     const userPhone = req.body.From;
     const appPhone = req.body.To;
@@ -361,7 +381,7 @@ app.post("/sms", async (req, res) => {
     }
 
     // ── 4. Lead capture "before" intercept ──────────────────────────────────
-    if (leadMode === "before" && !treatAsAdmin && !leads.isCompleted(userPhone, eventName)) {
+    if (leadMode === "before" && !treatAsAdmin && !leads.isCompleted(userPhone, eventName) && !leads.isActive(userPhone)) {
         if (numMedia > 1) {
             twiml.message(settings.getMsg("multiplePhotos"));
         } else if (numMedia === 1) {
