@@ -413,7 +413,8 @@ app.post("/sms", async (req, res) => {
 
         // Check if this looks like a real question/conversation vs a simple greeting
         const conversational = body && body.trim().length > 2
-            && !/^(hi|hey|hello|yo|sup|ok|yes|no|thanks|ty|thx|k|lol|hit send to start!?)$/i.test(body.trim());
+            && !/^(hi|hey|hello|yo|sup|ok|yes|no|thanks|ty|thx|k|lol)$/i.test(body.trim())
+            && !/^hit send to start!?/im.test(body.trim());
 
         if (treatAsAdmin) {
             if (conversational) {
