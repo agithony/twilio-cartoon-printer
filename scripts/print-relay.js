@@ -338,6 +338,12 @@ function createWorker(printerOverride) {
                     log(`[${label}] Print failed for ${job.filename}: ${err.message}`);
                     const isPrinterError = /printer is |timed out/i.test(err.message);
                     if (isPrinterError) {
+                        // Report failure so server re-queues the job to ready/
+                        // immediately — another printer's engine can claim it
+                        // on its next poll (~5s) instead of waiting 15 min.
+                        await request("POST", `/api/print-relay/jobs/${job.filename}/complete`, {
+                            success: false, error: err.message,
+                        }).catch(() => {});
                         processedJobs.set(job.filename, Date.now());
                         break; // Stop claiming more jobs — this printer is broken
                     } else {

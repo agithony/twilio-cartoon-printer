@@ -169,9 +169,12 @@ class RelayEngine extends EventEmitter {
                     const isPrinterError = /printer is |timed out/i.test(err.message);
                     this.emit("job", { filename: job.filename, status: "failed", error: err.message });
                     if (isPrinterError) {
-                        // Printer issue — back off locally but DON'T tell server.
-                        // Job stays in server's printing/ dir; server will recover it
-                        // after 15 min if we don't retry in time (our TTL is 10 min).
+                        // Report failure so server re-queues the job to ready/
+                        // immediately — another printer's engine can claim it
+                        // on its next poll (~5s) instead of waiting 15 min.
+                        await this._request("POST", `/api/print-relay/jobs/${job.filename}/complete`, {
+                            success: false, error: err.message,
+                        }).catch(() => {});
                         this.processedJobs.set(job.filename, Date.now());
                         const reason = err.message.replace(/^Printer is /i, "").replace(/^Print job timed out.*/, "offline or stuck");
                         this.emit("status", { printer: "error", printerDetail: reason });
