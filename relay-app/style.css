@@ -232,6 +232,65 @@ html[data-theme="light"] .theme-toggle .icon-moon { display: block; }
   padding: 0 10px;
 }
 
+/* ── Printer Checklist ─────────────────────────── */
+
+.printer-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 4px;
+}
+.printer-header label {
+  font-family: 'Twilio Sans Mono', monospace;
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--th-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.printer-checklist {
+  background: var(--th-input);
+  border: 1px solid var(--th-card-border);
+  border-radius: 6px;
+  padding: 6px 10px;
+  max-height: 90px;
+  overflow-y: auto;
+  transition: border-color 0.15s, background-color 0.2s ease;
+}
+.printer-checklist .empty {
+  color: var(--th-text-muted);
+  font-size: 12px;
+  font-style: italic;
+  padding: 4px 0;
+}
+
+.printer-check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 0;
+  font-size: 13px;
+  color: var(--th-text);
+  cursor: pointer;
+}
+.printer-check input[type="checkbox"] {
+  accent-color: var(--brand-red);
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+}
+.printer-check input[type="checkbox"]:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* ── Printer Status List ──────────────────────── */
+
+.printer-status-list {
+  display: contents;
+}
+
 .toggle-label {
   display: flex;
   align-items: center;
@@ -394,6 +453,16 @@ html[data-theme="light"] .theme-toggle .icon-moon { display: block; }
   width: 55px;
   font-size: 11px;
   font-variant-numeric: tabular-nums;
+}
+.job-printer {
+  color: var(--th-text-muted);
+  font-size: 10px;
+  font-family: 'Twilio Sans Mono', monospace;
+  max-width: 80px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  margin-right: 6px;
 }
 .job-style {
   flex: 1;

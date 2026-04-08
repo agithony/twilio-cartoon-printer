@@ -2,7 +2,7 @@
 
 A desktop app for printing portraits from the Twilio AI Photobooth. This is the **recommended way** to handle printing when the photobooth server runs in the cloud and the printer is at the event venue.
 
-The Print Station polls the cloud app for print-ready portraits, downloads them, and prints them on a locally connected printer. It replaces the CLI relay (`pnpm relay`) with a visual interface that event staff can operate without touching a terminal.
+The Print Station polls the cloud app for print-ready portraits, downloads them, and prints them on locally connected printers. It replaces the CLI relay (`pnpm relay`) with a visual interface that event staff can operate without touching a terminal. Supports **multiple printers** — check two or more printers and they share the workload automatically.
 
 ## Why use this instead of the CLI?
 
@@ -10,7 +10,7 @@ The Print Station polls the cloud app for print-ready portraits, downloads them,
 |---|---|---|
 | Setup | Fill in fields in the UI | Edit `.env` file, run terminal command |
 | Monitoring | Live status indicators, job history | Terminal log output |
-| Printer selection | Dropdown with auto-detect | CLI flag or env var |
+| Printer selection | Checkbox list (multi-printer) with auto-detect | CLI flag or env var |
 | Configuration | Saved automatically, persists between launches | `.env` file |
 | Distribution | Hand someone the `.app` bundle | Requires Node.js + repo clone |
 | Best for | Event staff, booth operators | Developers, CI/automation |
@@ -43,10 +43,12 @@ In the app UI:
 
 1. **Cloud URL** -- Enter your cloud app URL (e.g. `https://your-app.azurecontainerapps.io`)
 2. **Relay Key** -- Enter the same secret key you set in the cloud app's Settings panel
-3. **Printer** -- Select from the dropdown (auto-detects CUPS printers) or leave on "Auto-detect"
+3. **Printers** -- Check one or more printers from the list (auto-detects CUPS printers). Leave all unchecked for auto-detect.
 4. Click **Connect**
 
-The status indicators will turn green when the cloud connection and printer are ready. Print jobs appear automatically as users submit selfies.
+The status indicators will turn green when the cloud connection and printers are ready. Print jobs appear automatically as users submit selfies.
+
+**Multi-printer mode:** When two or more printers are selected, the app creates a separate worker for each printer. Jobs are distributed automatically — whichever printer finishes first grabs the next job. If one printer jams, the other keeps printing.
 
 ## Building for Distribution
 
@@ -67,17 +69,17 @@ Send the `.zip` to event staff. They unzip it, open the app, enter the Cloud URL
 ### Configuration Section
 - **Cloud URL** -- The base URL of your cloud-hosted photobooth server. Click "Edit" to modify after connecting.
 - **Relay Key** -- The shared secret that authenticates this station with the cloud app. Shown as a password field.
-- **Printer** -- Dropdown listing all CUPS printers on this machine. Click the refresh button to re-scan.
+- **Printers** -- Checkbox list of all CUPS printers on this machine. Select one or more. Click the refresh button to re-scan. Leave all unchecked for auto-detect (picks the first healthy printer).
 - **Dry Run** -- Check this to download images without actually printing (useful for testing).
 
 ### Status Bar
-Three status cards show the current state at a glance:
+Dynamic status cards show the current state at a glance:
 - **Cloud** -- Green = connected, Yellow = connecting/reconnecting, Red = disconnected/error
-- **Printer** -- Green = online, Yellow = dry-run mode, Red = offline or not found
-- **Printed** -- Running count of successfully printed jobs this session
+- **Per-printer status** -- One card per selected printer. Green = online, Yellow = dry-run mode, Red = offline or error. Shows which printer has issues at a glance.
+- **Printed** -- Running count of successfully printed jobs this session (aggregated across all printers)
 
 ### Recent Jobs
-Shows the last several print jobs with their current state:
+Shows the last several print jobs with their current state. Each job shows which printer handled it:
 - **Claiming** -- Reserving the job from the cloud queue
 - **Downloading** -- Fetching the print-ready image
 - **Printing** -- Sending to the local printer
@@ -91,7 +93,8 @@ Expandable section with timestamped messages for debugging. Shows connection eve
 
 - **Auto-reconnect** -- If the network drops or the cloud app restarts, the station reconnects automatically with exponential backoff
 - **Printer health monitoring** -- Detects offline/stopped printers and reports status in real time
-- **Persistent configuration** -- Cloud URL, Relay Key, and printer selection are saved between launches (via electron-store)
+- **Multi-printer support** -- Select multiple printers to share the workload; jobs are distributed automatically across printers
+- **Persistent configuration** -- Cloud URL, Relay Key, and printer selections are saved between launches (via electron-store)
 - **Dark/light theme** -- Toggle in the header, persists via localStorage
 - **Dry-run mode** -- Download and process images without printing (for testing or demos)
 - **Job deduplication** -- Won't re-print a job it already handled

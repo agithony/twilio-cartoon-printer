@@ -175,6 +175,7 @@ class RelayEngine extends EventEmitter {
                         this.processedJobs.set(job.filename, Date.now());
                         const reason = err.message.replace(/^Printer is /i, "").replace(/^Print job timed out.*/, "offline or stuck");
                         this.emit("status", { printer: "error", printerDetail: reason });
+                        break; // Stop claiming more jobs — this printer is broken
                     } else {
                         // Non-printer error (download fail, etc.) — report to server
                         await this._request("POST", `/api/print-relay/jobs/${job.filename}/complete`, {
@@ -318,16 +319,16 @@ class RelayEngine extends EventEmitter {
                     this.log(`Print job accepted: ${stdout.trim()}`);
                     const match = stdout.match(/request id is (\S+)/);
                     if (!match) return resolve();
-                    this._waitForPrintComplete(match[1], resolve, reject);
+                    this._waitForPrintComplete(match[1], printerName, resolve, reject);
                 });
             }).catch(reject);
         });
     }
 
-    _waitForPrintComplete(requestId, resolve, reject) {
+    _waitForPrintComplete(requestId, printerName, resolve, reject) {
         const startTime = Date.now();
         const TIMEOUT = 5 * 60 * 1000;
-        const PRINTER_ERRORS = ["stopped", "offline", "unplugged", "paused", "error"];
+        const PRINTER_ERRORS = ["stopped", "offline", "unplugged", "paused"];
 
         const poll = () => {
             if (Date.now() - startTime > TIMEOUT) {
@@ -335,19 +336,26 @@ class RelayEngine extends EventEmitter {
                 exec(`cancel ${requestId}`, () => {});
                 return reject(new Error("Print job timed out — printer may be offline or stuck"));
             }
-            exec("lpstat -l", (err, stdout) => {
+            // Check if job is still queued
+            exec("lpstat -o", (err, stdout) => {
                 if (err || !stdout.includes(requestId)) {
                     this.log(`Print job ${requestId} completed`);
                     return resolve();
                 }
-                const lower = stdout.toLowerCase();
-                const errorFound = PRINTER_ERRORS.find(e => lower.includes(e));
-                if (errorFound) {
-                    this.log(`Print job ${requestId} failed — printer is ${errorFound}`);
-                    exec(`cancel ${requestId}`, () => {});
-                    return reject(new Error(`Printer is ${errorFound}`));
-                }
-                setTimeout(poll, 3000);
+                // Check THIS printer's status (not all printers) to avoid
+                // false errors when another printer is stopped/paused
+                exec(`lpstat -p "${printerName}"`, (perr, pstdout) => {
+                    if (perr) { setTimeout(poll, 3000); return; }
+                    const lower = pstdout.toLowerCase();
+                    const errorFound = PRINTER_ERRORS.find(e => lower.includes(e))
+                        || (lower.includes(" is error") ? "error" : null);
+                    if (errorFound) {
+                        this.log(`Print job ${requestId} failed — printer ${printerName} is ${errorFound}`);
+                        exec(`cancel ${requestId}`, () => {});
+                        return reject(new Error(`Printer is ${errorFound}`));
+                    }
+                    setTimeout(poll, 3000);
+                });
             });
         };
         setTimeout(poll, 3000);

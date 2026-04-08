@@ -39,16 +39,17 @@
           <button id="keyEditBtn" type="button" class="edit-btn">Edit</button>
         </div>
       </div>
-      <div class="field-row">
-        <div class="field flex-1">
-          <label for="printer">Printer</label>
-          <div class="input-row">
-            <select id="printer">
-              <option value="">Auto-detect</option>
-            </select>
-            <button id="refreshPrinters" type="button" class="icon-btn" title="Refresh printers">&#x21bb;</button>
-          </div>
+      <div class="field">
+        <div class="printer-header">
+          <label>Printers</label>
+          <button id="refreshPrinters" type="button" class="icon-btn" title="Refresh printers">&#x21bb;</button>
         </div>
+        <div class="printer-checklist" id="printerList">
+          <div class="empty">Loading printers...</div>
+        </div>
+      </div>
+      <div class="field-row">
+        <div class="flex-1"></div>
         <label class="toggle-label">
           <input type="checkbox" id="dryRun">
           <span>Dry Run</span>
@@ -68,12 +69,8 @@
           <div class="status-value" id="cloudLabel">Disconnected</div>
         </div>
       </div>
-      <div class="status-card">
-        <span class="dot" id="printerDot"></span>
-        <div>
-          <div class="status-label">Printer</div>
-          <div class="status-value" id="printerLabel">Unknown</div>
-        </div>
+      <div id="printerStatusList" class="printer-status-list">
+        <!-- per-printer status cards generated dynamically -->
       </div>
       <div class="status-card counter">
         <div class="count-number" id="jobCount">0</div>

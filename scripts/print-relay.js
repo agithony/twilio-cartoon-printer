@@ -10,7 +10,8 @@
 // Options:
 //   --url       Cloud app base URL (or set PRINT_RELAY_URL in .env)
 //   --key       Relay API key (or set PRINT_RELAY_KEY in .env)
-//   --printer   Printer name override (default: auto-detect via lpstat)
+//   --printer   Single printer override (default: auto-detect via lpstat)
+//   --printers  Comma-separated list of printers (e.g. "PrinterA,PrinterB")
 //   --interval  Poll interval in seconds (default: 5)
 //   --dry-run   Download image but skip actual printing
 
@@ -35,15 +36,19 @@ for (let i = 2; i < process.argv.length; i++) {
 
 const BASE_URL = args.url || process.env.PRINT_RELAY_URL;
 const RELAY_KEY = args.key || process.env.PRINT_RELAY_KEY;
-const PRINTER_OVERRIDE = args.printer || process.env.PRINT_RELAY_PRINTER || "";
 const POLL_INTERVAL = parseInt(args.interval || process.env.PRINT_RELAY_INTERVAL || "5", 10) * 1000;
 const DRY_RUN = args["dry-run"] === "true" || process.env.PRINT_RELAY_DRY_RUN === "true";
+
+// Multi-printer: --printers "A,B" or PRINT_RELAY_PRINTERS, falls back to --printer / PRINT_RELAY_PRINTER
+const PRINTERS_ARG = args.printers || process.env.PRINT_RELAY_PRINTERS || "";
+const PRINTER_OVERRIDE = args.printer || process.env.PRINT_RELAY_PRINTER || "";
 
 if (!BASE_URL || !RELAY_KEY) {
     console.error("Usage: node scripts/print-relay.js --url <cloud-url> --key <relay-key>");
     console.error("  --url       Cloud app base URL (required)");
     console.error("  --key       Relay API key (required)");
-    console.error("  --printer   Printer name override");
+    console.error("  --printer   Single printer override");
+    console.error("  --printers  Comma-separated printer list (e.g. \"PrinterA,PrinterB\")");
     console.error("  --interval  Poll interval in seconds (default: 5)");
     console.error("  --dry-run   Download but don't print");
     process.exit(1);
@@ -113,7 +118,20 @@ function downloadFile(urlPath, dest) {
 
 // ── Printer helpers ──────────────────────────────────────────────────────────
 
-function findPrinter() {
+function findAllPrinters() {
+    return new Promise((resolve, reject) => {
+        exec("lpstat -p", (err, stdout) => {
+            if (err) return reject(new Error(`Cannot list printers: ${err.message}`));
+            const lines = stdout.split("\n").filter(l => l.startsWith("printer "));
+            const BAD = ["looking for printer", "disabled", "unplugged or turned off"];
+            const printers = lines.map(l => ({ name: l.split(" ")[1], lower: l.toLowerCase() }));
+            const healthy = printers.filter(p => !BAD.some(b => p.lower.includes(b)));
+            resolve(healthy.map(p => p.name));
+        });
+    });
+}
+
+function findPrinter(override) {
     return new Promise((resolve, reject) => {
         exec("lpstat -p", (err, stdout) => {
             if (err) return reject(new Error(`Cannot list printers: ${err.message}`));
@@ -123,10 +141,10 @@ function findPrinter() {
                 name: l.split(" ")[1],
                 lower: l.toLowerCase(),
             }));
-            if (PRINTER_OVERRIDE) {
-                const match = printers.find(p => p.name === PRINTER_OVERRIDE);
+            if (override) {
+                const match = printers.find(p => p.name === override);
                 if (match) return resolve(match.name);
-                return reject(new Error(`Printer "${PRINTER_OVERRIDE}" not found`));
+                return reject(new Error(`Printer "${override}" not found`));
             }
             const healthy = printers.filter(p => !BAD.some(b => p.lower.includes(b)));
             if (healthy.length > 0) resolve(healthy[0].name);
@@ -169,45 +187,51 @@ function printImage(filepath, printerName) {
             ];
 
             const command = `lp ${flags.join(" ")} "${filepath}"`;
-            log(`Sending to printer: ${command}`);
+            log(`[${printerName}] Sending to printer: ${command}`);
             exec(command, { timeout: 60000 }, (err, stdout) => {
                 if (err) return reject(err);
-                log(`Print job accepted: ${stdout.trim()}`);
+                log(`[${printerName}] Print job accepted: ${stdout.trim()}`);
 
                 const match = stdout.match(/request id is (\S+)/);
                 if (!match) return resolve();
 
-                waitForPrintComplete(match[1], resolve, reject);
+                waitForPrintComplete(match[1], printerName, resolve, reject);
             });
         }).catch(reject);
     });
 }
 
-function waitForPrintComplete(requestId, resolve, reject) {
+function waitForPrintComplete(requestId, printerName, resolve, reject) {
     const startTime = Date.now();
     const TIMEOUT = 5 * 60 * 1000;
-    const PRINTER_ERRORS = ["stopped", "offline", "unplugged", "paused", "error"];
+    const PRINTER_ERRORS = ["stopped", "offline", "unplugged", "paused"];
 
     const poll = () => {
         if (Date.now() - startTime > TIMEOUT) {
-            log(`Print job ${requestId} timed out after 5 minutes`);
+            log(`[${printerName}] Print job ${requestId} timed out after 5 minutes`);
             exec(`cancel ${requestId}`, () => {});
             return reject(new Error("Print job timed out — printer may be offline or stuck"));
         }
-        exec("lpstat -l", (err, stdout) => {
+        // Check if job is still queued
+        exec("lpstat -o", (err, stdout) => {
             if (err || !stdout.includes(requestId)) {
-                log(`Print job ${requestId} completed`);
+                log(`[${printerName}] Print job ${requestId} completed`);
                 return resolve();
             }
-            // Check for printer error states
-            const lower = stdout.toLowerCase();
-            const errorFound = PRINTER_ERRORS.find(e => lower.includes(e));
-            if (errorFound) {
-                log(`Print job ${requestId} failed — printer is ${errorFound}`);
-                exec(`cancel ${requestId}`, () => {});
-                return reject(new Error(`Printer is ${errorFound}`));
-            }
-            setTimeout(poll, 3000);
+            // Check THIS printer's status (not all printers) to avoid
+            // false errors when another printer is stopped/paused
+            exec(`lpstat -p "${printerName}"`, (perr, pstdout) => {
+                if (perr) { setTimeout(poll, 3000); return; }
+                const lower = pstdout.toLowerCase();
+                const errorFound = PRINTER_ERRORS.find(e => lower.includes(e))
+                    || (lower.includes(" is error") ? "error" : null);
+                if (errorFound) {
+                    log(`[${printerName}] Print job ${requestId} failed — printer ${printerName} is ${errorFound}`);
+                    exec(`cancel ${requestId}`, () => {});
+                    return reject(new Error(`Printer is ${errorFound}`));
+                }
+                setTimeout(poll, 3000);
+            });
         });
     };
     setTimeout(poll, 3000);
@@ -218,122 +242,142 @@ function waitForPrintComplete(requestId, resolve, reject) {
 const TEMP_DIR = path.join(__dirname, "..", ".relay-temp");
 if (!fs.existsSync(TEMP_DIR)) fs.mkdirSync(TEMP_DIR, { recursive: true });
 
-// Track processed job filenames to prevent double-prints (auto-expires after 1 hour)
-const processedJobs = new Map(); // filename -> timestamp
-const PROCESSED_TTL = 10 * 60 * 1000; // 10 min (must be < server's 15-min stale threshold)
-let consecutiveErrors = 0;
-
-function cleanupProcessedJobs() {
-    const cutoff = Date.now() - PROCESSED_TTL;
-    for (const [key, ts] of processedJobs) {
-        if (ts < cutoff) processedJobs.delete(key);
-    }
-}
-
-// ── Main loop ────────────────────────────────────────────────────────────────
+// ── Logging ─────────────────────────────────────────────────────────────────
 
 function log(msg) {
     const ts = new Date().toLocaleTimeString();
     console.log(`[${ts}] ${msg}`);
 }
 
-let polling = false;
+// ── Worker factory — one worker per printer ─────────────────────────────────
 
-async function pollOnce() {
-    if (polling) return;
-    polling = true;
+function createWorker(printerOverride) {
+    const label = printerOverride || "auto";
+    const processedJobs = new Map(); // filename -> timestamp
+    const PROCESSED_TTL = 10 * 60 * 1000; // 10 min (must be < server's 15-min stale threshold)
+    let consecutiveErrors = 0;
+    let polling = false;
+    let timer = null;
+    let stopped = false;
 
-    try {
-        cleanupProcessedJobs();
-        const { status, data } = await request("GET", "/api/print-relay/jobs");
-        if (status !== 200) {
-            consecutiveErrors++;
-            log(`Poll failed: HTTP ${status} (retry in ${Math.min(POLL_INTERVAL * Math.pow(2, consecutiveErrors), 120000) / 1000}s)`);
-            return;
+    function cleanupProcessedJobs() {
+        const cutoff = Date.now() - PROCESSED_TTL;
+        for (const [key, ts] of processedJobs) {
+            if (ts < cutoff) processedJobs.delete(key);
         }
-        consecutiveErrors = 0;
+    }
 
-        const jobs = data.jobs || [];
-        if (jobs.length === 0) return;
+    async function pollOnce() {
+        if (polling || stopped) return;
+        polling = true;
 
-        // Find a printer once per poll cycle (skip in dry-run)
-        let printerName = "dry-run";
-        if (!DRY_RUN) {
-            try {
-                printerName = await findPrinter();
-            } catch (err) {
-                log(`Printer error: ${err.message}`);
+        try {
+            cleanupProcessedJobs();
+            const { status, data } = await request("GET", "/api/print-relay/jobs");
+            if (status !== 200) {
+                consecutiveErrors++;
+                log(`[${label}] Poll failed: HTTP ${status} (retry in ${Math.min(POLL_INTERVAL * Math.pow(2, consecutiveErrors), 120000) / 1000}s)`);
                 return;
             }
-        }
+            consecutiveErrors = 0;
 
-        for (const job of jobs) {
-            if (processedJobs.has(job.filename)) continue;
+            const jobs = data.jobs || [];
+            if (jobs.length === 0) return;
 
-
-            log(`Found job: ${job.filename} (event: ${job.eventName}, style: ${job.style})`);
-
-            // Claim the job
-            const ack = await request("POST", `/api/print-relay/jobs/${job.filename}/ack`, {
-                printerName,
-            });
-            if (ack.status !== 200) {
-                log(`Failed to claim ${job.filename}: ${JSON.stringify(ack.data)}`);
-                // Mark as processed so we don't retry every poll cycle
-                // (e.g. 400 = image missing on server — retrying won't help)
-                if (ack.status === 400 || ack.status === 404) {
-                    processedJobs.set(job.filename, Date.now());
+            // Find printer once per poll cycle (skip in dry-run)
+            let printerName = "dry-run";
+            if (!DRY_RUN) {
+                try {
+                    printerName = await findPrinter(printerOverride);
+                } catch (err) {
+                    log(`[${label}] Printer error: ${err.message}`);
+                    return;
                 }
-                continue;
             }
 
-            const ackData = ack.data.job;
-            const imageUrl = `/api/print-relay/image/${encodeURIComponent(ackData.eventName)}/${ackData.imageFile}`;
-            const localPath = path.join(TEMP_DIR, ackData.imageFile);
+            for (const job of jobs) {
+                if (stopped) break;
+                if (processedJobs.has(job.filename)) continue;
 
-            try {
-                // Download image
-                log(`Downloading ${ackData.imageFile}...`);
-                await downloadFile(imageUrl, localPath);
+                log(`[${label}] Found job: ${job.filename} (event: ${job.eventName}, style: ${job.style})`);
 
-                if (DRY_RUN) {
-                    log(`[DRY RUN] Would print: ${localPath}`);
-                    await request("POST", `/api/print-relay/jobs/${job.filename}/complete`, { success: true });
-                } else {
-                    // Print
-                    log(`Printing ${ackData.imageFile} on ${printerName}...`);
-                    await printImage(localPath, printerName);
-                    await request("POST", `/api/print-relay/jobs/${job.filename}/complete`, { success: true });
-                    log(`Job ${job.filename} completed successfully`);
+                // Claim the job
+                const ack = await request("POST", `/api/print-relay/jobs/${job.filename}/ack`, {
+                    printerName,
+                });
+                if (ack.status !== 200) {
+                    log(`[${label}] Failed to claim ${job.filename}: ${JSON.stringify(ack.data)}`);
+                    if (ack.status === 400 || ack.status === 404) {
+                        processedJobs.set(job.filename, Date.now());
+                    }
+                    continue;
                 }
 
-                processedJobs.set(job.filename, Date.now());
-            } catch (err) {
-                log(`Print failed for ${job.filename}: ${err.message}`);
-                const isPrinterError = /printer is |timed out/i.test(err.message);
-                if (isPrinterError) {
-                    // Printer issue — back off locally but DON'T tell server.
-                    // Job stays in server's printing/ dir; server will recover it
-                    // after 15 min if we don't retry in time (our TTL is 10 min).
+                const ackData = ack.data.job;
+                const imageUrl = `/api/print-relay/image/${encodeURIComponent(ackData.eventName)}/${ackData.imageFile}`;
+                const localPath = path.join(TEMP_DIR, `${label}_${ackData.imageFile}`);
+
+                try {
+                    // Download image
+                    log(`[${label}] Downloading ${ackData.imageFile}...`);
+                    await downloadFile(imageUrl, localPath);
+
+                    if (DRY_RUN) {
+                        log(`[${label}] [DRY RUN] Would print: ${localPath}`);
+                        await request("POST", `/api/print-relay/jobs/${job.filename}/complete`, { success: true });
+                    } else {
+                        // Print
+                        log(`[${label}] Printing ${ackData.imageFile} on ${printerName}...`);
+                        await printImage(localPath, printerName);
+                        await request("POST", `/api/print-relay/jobs/${job.filename}/complete`, { success: true });
+                        log(`[${label}] Job ${job.filename} completed successfully`);
+                    }
+
                     processedJobs.set(job.filename, Date.now());
-                } else {
-                    // Non-printer error (download fail, etc.) — report to server
-                    await request("POST", `/api/print-relay/jobs/${job.filename}/complete`, {
-                        success: false,
-                        error: err.message,
-                    }).catch(() => {});
+                } catch (err) {
+                    log(`[${label}] Print failed for ${job.filename}: ${err.message}`);
+                    const isPrinterError = /printer is |timed out/i.test(err.message);
+                    if (isPrinterError) {
+                        processedJobs.set(job.filename, Date.now());
+                        break; // Stop claiming more jobs — this printer is broken
+                    } else {
+                        await request("POST", `/api/print-relay/jobs/${job.filename}/complete`, {
+                            success: false,
+                            error: err.message,
+                        }).catch(() => {});
+                    }
+                } finally {
+                    try { fs.unlinkSync(localPath); } catch {}
                 }
-            } finally {
-                // Clean up temp file
-                try { fs.unlinkSync(localPath); } catch {}
             }
+        } catch (err) {
+            consecutiveErrors++;
+            log(`[${label}] Poll error: ${err.message} (retry in ${Math.min(POLL_INTERVAL * Math.pow(2, consecutiveErrors), 120000) / 1000}s)`);
+        } finally {
+            polling = false;
         }
-    } catch (err) {
-        consecutiveErrors++;
-        log(`Poll error: ${err.message} (retry in ${Math.min(POLL_INTERVAL * Math.pow(2, consecutiveErrors), 120000) / 1000}s)`);
-    } finally {
-        polling = false;
     }
+
+    function schedulePoll() {
+        if (stopped) return;
+        const delay = consecutiveErrors === 0
+            ? POLL_INTERVAL
+            : Math.min(POLL_INTERVAL * Math.pow(2, consecutiveErrors), 120000);
+        timer = setTimeout(() => {
+            pollOnce().finally(schedulePoll);
+        }, delay);
+    }
+
+    function stop() {
+        stopped = true;
+        if (timer) clearTimeout(timer);
+    }
+
+    return {
+        label,
+        start: () => pollOnce().finally(schedulePoll),
+        stop,
+    };
 }
 
 // ── Startup ──────────────────────────────────────────────────────────────────
@@ -343,7 +387,6 @@ async function pollOnce() {
     log(`  Cloud URL: ${BASE_URL}`);
     log(`  Poll interval: ${POLL_INTERVAL / 1000}s`);
     log(`  Dry run: ${DRY_RUN}`);
-    if (PRINTER_OVERRIDE) log(`  Printer: ${PRINTER_OVERRIDE}`);
 
     // Verify connectivity
     try {
@@ -357,36 +400,44 @@ async function pollOnce() {
         log(`Warning: Cannot reach cloud app — ${err.message}`);
     }
 
-    // Verify printer
-    try {
-        const printer = await findPrinter();
-        log(`Printer found: ${printer}`);
-    } catch (err) {
-        log(`Warning: ${err.message} — will retry on each poll`);
+    // Determine printer list
+    let printerNames = [];
+    if (PRINTERS_ARG) {
+        printerNames = PRINTERS_ARG.split(",").map(s => s.trim()).filter(Boolean);
+        log(`  Printers (from arg): ${printerNames.join(", ")}`);
+    } else if (PRINTER_OVERRIDE) {
+        printerNames = [PRINTER_OVERRIDE];
+        log(`  Printer: ${PRINTER_OVERRIDE}`);
+    } else {
+        // Auto-detect all healthy printers
+        try {
+            printerNames = await findAllPrinters();
+            if (printerNames.length === 0) {
+                log("Warning: No healthy printers found — will retry on each poll");
+                printerNames = [""]; // single worker with auto-detect
+            } else {
+                log(`  Auto-detected printers: ${printerNames.join(", ")}`);
+            }
+        } catch (err) {
+            log(`Warning: ${err.message} — will retry on each poll`);
+            printerNames = [""]; // single worker with auto-detect
+        }
     }
 
-    log("Polling for print jobs...\n");
+    // Create one worker per printer
+    const workers = printerNames.map(name => createWorker(name));
+    log(`Starting ${workers.length} worker${workers.length > 1 ? "s" : ""}...\n`);
 
-    let timer = null;
-    function schedulePoll() {
-        const delay = consecutiveErrors === 0
-            ? POLL_INTERVAL
-            : Math.min(POLL_INTERVAL * Math.pow(2, consecutiveErrors), 120000);
-        timer = setTimeout(() => {
-            pollOnce().finally(schedulePoll);
-        }, delay);
+    for (const w of workers) {
+        w.start();
     }
-    pollOnce().finally(schedulePoll);
 
     // Graceful shutdown
-    process.on("SIGINT", () => {
+    function shutdown() {
         log("Shutting down...");
-        clearTimeout(timer);
+        for (const w of workers) w.stop();
         process.exit(0);
-    });
-    process.on("SIGTERM", () => {
-        log("Shutting down...");
-        clearTimeout(timer);
-        process.exit(0);
-    });
+    }
+    process.on("SIGINT", shutdown);
+    process.on("SIGTERM", shutdown);
 })();

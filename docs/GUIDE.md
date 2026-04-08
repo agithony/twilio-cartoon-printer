@@ -67,6 +67,7 @@ This document covers all features and configuration in depth. For quick setup, s
 | `PRINT_RELAY_KEY` | No | Shared secret for the print relay agent. Set this to enable cloud-to-local printing. See [Print Relay](#print-relay-cloud-printing). |
 | `PRINT_RELAY_URL` | No | Cloud app URL for the relay agent (used by the local script only, not the server). |
 | `PRINT_RELAY_PRINTER` | No | Override printer name for the relay agent (default: auto-detect). |
+| `PRINT_RELAY_PRINTERS` | No | Comma-separated list of printer names for multi-printer relay (e.g. `EPSON_1,EPSON_2`). Overrides `PRINT_RELAY_PRINTER`. |
 | `PRINT_RELAY_INTERVAL` | No | Relay poll interval in seconds (default: `5`). |
 | `PRINT_RELAY_DRY_RUN` | No | Set to `true` to download images without printing (for testing). |
 
@@ -366,7 +367,7 @@ You do NOT need to enable the "Print + Digital" toggle -- the relay key alone is
 
 #### Print Station App (Recommended)
 
-The Print Station is a desktop app in the `relay-app/` directory. Event staff enter the Cloud URL and Relay Key in the UI, pick a printer from the dropdown, and click Connect. No terminal or `.env` files needed.
+The Print Station is a desktop app in the `relay-app/` directory. Event staff enter the Cloud URL and Relay Key in the UI, select one or more printers from the checklist, and click Connect. No terminal or `.env` files needed. When multiple printers are selected, jobs are distributed automatically across them.
 
 **Install and run:**
 
@@ -379,10 +380,12 @@ npm start
 **In the app UI:**
 1. Enter your **Cloud URL** (e.g. `https://your-app.azurecontainerapps.io`)
 2. Enter the **Relay Key** (same one you set in the cloud app's Settings)
-3. Select a **Printer** from the dropdown (or leave on Auto-detect)
+3. Select one or more **Printers** from the checklist (or leave all unchecked for auto-detect)
 4. Click **Connect**
 
-The status bar shows live indicators for cloud connection (green/yellow/red), printer status, and a printed job count. Jobs appear in the Recent Jobs list as users submit selfies.
+The status bar shows live indicators for cloud connection (green/yellow/red), per-printer status, and a printed job count. Jobs appear in the Recent Jobs list (showing which printer handled each job) as users submit selfies.
+
+**Multi-printer:** When two or more printers are selected, each gets its own independent worker. Jobs are distributed automatically — whichever printer finishes first grabs the next job from the queue. If one printer jams or goes offline, the other keeps printing. Each printer has its own status indicator so you can see at a glance which one needs attention.
 
 **Building for distribution** -- To create a standalone `.app` that event staff can run without Node.js installed:
 
@@ -434,7 +437,8 @@ Text a selfie to your Twilio number. The relay should claim the job, download th
 |------|---------|---------|-------------|
 | `--url` | `PRINT_RELAY_URL` | (required) | Cloud app base URL |
 | `--key` | `PRINT_RELAY_KEY` | (required) | Shared secret matching the cloud app |
-| `--printer` | `PRINT_RELAY_PRINTER` | auto-detect | Override printer name |
+| `--printer` | `PRINT_RELAY_PRINTER` | auto-detect | Override printer name (single printer) |
+| `--printers` | `PRINT_RELAY_PRINTERS` | auto-detect all | Comma-separated printer list for multi-printer |
 | `--interval` | `PRINT_RELAY_INTERVAL` | `5` | Poll interval in seconds |
 | `--dry-run` | `PRINT_RELAY_DRY_RUN` | `false` | Download images but skip printing |
 
@@ -443,6 +447,7 @@ Text a selfie to your Twilio number. The relay should claim the job, download th
 - **Network drops** -- The relay keeps polling. When the network comes back, it reconnects automatically. No manual intervention needed.
 - **Relay crash** -- If the relay crashes while a job is in the "printing" state, the cloud app detects the stale job after 15 minutes and moves it back to the ready queue. The relay picks it up on the next poll after restart.
 - **Printer offline** -- If the printer is offline or stopped, the relay detects this within seconds and reports failure. The cloud app re-queues the job for retry (up to 3 retries).
+- **Multiple printers** -- Select multiple printers in the Print Station app or use `--printers "A,B"` in the CLI to distribute jobs across printers automatically. Each printer gets its own worker. If neither is specified, the relay auto-detects all healthy printers.
 - **Multiple agents** -- You can run multiple relay agents with the same key for redundancy. They race to claim jobs; only one wins each job. The others gracefully skip it.
 - **Image missing** -- If the output image doesn't exist on the server (e.g. disk error), the relay is told to skip the job and it won't retry for 1 hour.
 - **Graceful shutdown** -- Press Ctrl+C to stop the relay cleanly.

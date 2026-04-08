@@ -199,7 +199,7 @@ There are two ways to run the relay. **The Print Station app is recommended** fo
 
 #### Option A: Print Station App (Recommended)
 
-The Print Station is a desktop app with a visual interface for managing printing. No terminal required -- event staff enter the Cloud URL and Relay Key in the UI, select a printer from a dropdown, and click Connect.
+The Print Station is a desktop app with a visual interface for managing printing. No terminal required -- event staff enter the Cloud URL and Relay Key in the UI, select one or more printers from the checklist, and click Connect. When multiple printers are selected, jobs are distributed automatically across them.
 
 ```sh
 cd relay-app
@@ -260,19 +260,23 @@ The relay polls the cloud every 5 seconds. When a portrait finishes generating, 
 ### CLI relay options
 
 ```sh
-pnpm relay                          # Uses .env settings
-pnpm relay --dry-run                # Download images but don't actually print
-pnpm relay --printer MyPrinter      # Override auto-detected printer
-pnpm relay --interval 2             # Poll every 2 seconds instead of 5
+pnpm relay                                       # Uses .env settings
+pnpm relay --dry-run                             # Download images but don't actually print
+pnpm relay --printer MyPrinter                   # Override auto-detected printer
+pnpm relay --printers "PrinterA,PrinterB"        # Use multiple printers
+pnpm relay --interval 2                          # Poll every 2 seconds instead of 5
 ```
 
 Or set these in `.env`:
 
 ```sh
-PRINT_RELAY_PRINTER=EPSON_ET_8550_Series
+PRINT_RELAY_PRINTER=EPSON_ET_8550_Series          # Single printer
+PRINT_RELAY_PRINTERS=EPSON_ET_8550,EPSON_ET_2850  # Multiple printers (comma-separated)
 PRINT_RELAY_INTERVAL=5
 PRINT_RELAY_DRY_RUN=true
 ```
+
+**Multi-printer mode:** When `--printers` or `PRINT_RELAY_PRINTERS` is set, the relay spawns one worker per printer. Each worker independently polls for jobs, and the server's atomic job claiming ensures each job goes to exactly one printer. Whichever printer finishes first grabs the next job. If neither flag is set, the relay auto-detects all healthy printers and creates a worker for each.
 
 ### Relay features
 
@@ -280,6 +284,7 @@ Both the Print Station app and CLI relay share these capabilities:
 
 - **Auto-reconnects** -- if the cloud app or network drops, the relay keeps polling and reconnects automatically
 - **Crash recovery** -- if the relay crashes mid-print, the cloud app detects the stale job after 15 minutes and re-queues it
+- **Multi-printer** -- select multiple printers (Print Station) or use `--printers` (CLI) to distribute jobs across printers automatically
 - **Race-safe** -- multiple relay agents can run with the same key; only one claims each job
 - **Printer error detection** -- detects offline/stopped printers and fails fast instead of hanging
 - **Graceful shutdown** -- Ctrl+C (CLI) or close window (app) stops cleanly

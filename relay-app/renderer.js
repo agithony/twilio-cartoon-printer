@@ -4,21 +4,20 @@ const DEFAULT_URL = "https://twilio-cartoon-printer.orangemeadow-7fe73fc6.centra
 const DEFAULT_KEY = "mySecretKey123";
 const urlInput = document.getElementById("url");
 const keyInput = document.getElementById("key");
-const printerSelect = document.getElementById("printer");
+const printerList = document.getElementById("printerList");
 const refreshBtn = document.getElementById("refreshPrinters");
 const dryRunCheck = document.getElementById("dryRun");
 const connectBtn = document.getElementById("connectBtn");
 
 const cloudDot = document.getElementById("cloudDot");
 const cloudLabel = document.getElementById("cloudLabel");
-const printerDot = document.getElementById("printerDot");
-const printerLabel = document.getElementById("printerLabel");
+const printerStatusList = document.getElementById("printerStatusList");
 const jobCountEl = document.getElementById("jobCount");
 const jobList = document.getElementById("jobList");
 const logBox = document.getElementById("logBox");
 
 let connected = false;
-const jobs = []; // { filename, style, status, time }
+const jobs = []; // { filename, style, status, time, printerName }
 const MAX_JOBS = 50;
 
 // ── Init ─────────────────────────────────────────────────────────────────
@@ -58,22 +57,46 @@ const keyEditBtn = document.getElementById("keyEditBtn");
         }
     });
 
-    await refreshPrinters(config.printer);
+    // Migrate old "printer" string to "printers" array
+    let selectedPrinters = config.printers || [];
+    if (!Array.isArray(selectedPrinters)) selectedPrinters = [];
+    if (config.printer && typeof config.printer === "string" && selectedPrinters.length === 0) {
+        selectedPrinters = [config.printer];
+    }
+
+    await refreshPrinters(selectedPrinters);
 })();
 
-async function refreshPrinters(selectedPrinter) {
+async function refreshPrinters(selectedPrinters) {
+    if (!Array.isArray(selectedPrinters)) {
+        // Read from current checkboxes
+        selectedPrinters = getSelectedPrinters();
+    }
     const printers = await window.relay.listPrinters();
-    printerSelect.innerHTML = '<option value="">Auto-detect</option>';
+    printerList.innerHTML = "";
+    if (printers.length === 0) {
+        printerList.innerHTML = '<div class="empty">No printers found</div>';
+        return;
+    }
     for (const p of printers) {
-        const opt = document.createElement("option");
-        opt.value = p;
-        opt.textContent = p;
-        if (p === selectedPrinter) opt.selected = true;
-        printerSelect.appendChild(opt);
+        const label = document.createElement("label");
+        label.className = "printer-check";
+        const cb = document.createElement("input");
+        cb.type = "checkbox";
+        cb.value = p;
+        cb.checked = selectedPrinters.includes(p);
+        label.appendChild(cb);
+        label.appendChild(document.createTextNode(" " + p));
+        printerList.appendChild(label);
     }
 }
 
-refreshBtn.addEventListener("click", () => refreshPrinters(printerSelect.value));
+function getSelectedPrinters() {
+    return Array.from(printerList.querySelectorAll('input[type="checkbox"]:checked'))
+        .map(cb => cb.value);
+}
+
+refreshBtn.addEventListener("click", () => refreshPrinters());
 
 // ── Connect / Disconnect ─────────────────────────────────────────────────
 
@@ -91,19 +114,21 @@ connectBtn.addEventListener("click", async () => {
         return;
     }
 
+    const printers = getSelectedPrinters();
+
     const config = {
         url,
         key,
-        printer: printerSelect.value,
+        printers,
         dryRun: dryRunCheck.checked,
     };
 
     await window.relay.saveConfig(config);
     await window.relay.start(config);
-    setConnected();
+    setConnected(printers);
 });
 
-function setConnected() {
+function setConnected(printers) {
     connected = true;
     connectBtn.textContent = "Disconnect";
     connectBtn.classList.add("active");
@@ -111,9 +136,28 @@ function setConnected() {
     urlEditBtn.disabled = true;
     keyInput.disabled = true;
     keyEditBtn.disabled = true;
-    printerSelect.disabled = true;
     dryRunCheck.disabled = true;
     refreshBtn.disabled = true;
+
+    // Disable printer checkboxes
+    printerList.querySelectorAll('input[type="checkbox"]').forEach(cb => cb.disabled = true);
+
+    // Build per-printer status cards
+    const activePrinters = (printers && printers.length > 0) ? printers : ["auto"];
+    printerStatusList.innerHTML = "";
+    for (const p of activePrinters) {
+        const card = document.createElement("div");
+        card.className = "status-card";
+        card.dataset.printer = p;
+        card.innerHTML = `
+            <span class="dot" id="pDot-${cssId(p)}"></span>
+            <div>
+                <div class="status-label">${escHtml(p || "Printer")}</div>
+                <div class="status-value" id="pLabel-${cssId(p)}">Unknown</div>
+            </div>
+        `;
+        printerStatusList.appendChild(card);
+    }
 }
 
 function setDisconnected() {
@@ -126,11 +170,26 @@ function setDisconnected() {
     keyInput.disabled = true;
     keyEditBtn.disabled = false;
     keyEditBtn.textContent = "Edit";
-    printerSelect.disabled = false;
     dryRunCheck.disabled = false;
     refreshBtn.disabled = false;
+
+    // Re-enable printer checkboxes
+    printerList.querySelectorAll('input[type="checkbox"]').forEach(cb => cb.disabled = false);
+
     setDot(cloudDot, cloudLabel, "disconnected", "Disconnected");
-    setDot(printerDot, printerLabel, "unknown", "Unknown");
+    printerStatusList.innerHTML = "";
+}
+
+// ── Helpers ──────────────────────────────────────────────────────────────
+
+function cssId(name) {
+    return (name || "auto").replace(/[^a-zA-Z0-9_-]/g, "_");
+}
+
+function escHtml(str) {
+    const d = document.createElement("div");
+    d.textContent = str;
+    return d.innerHTML;
 }
 
 // ── Status updates ───────────────────────────────────────────────────────
@@ -154,8 +213,13 @@ function setDot(dot, label, status, text) {
 window.relay.onStatus((s) => {
     if (s.cloud) setDot(cloudDot, cloudLabel, s.cloud);
     if (s.printer) {
-        const detail = s.printerDetail ? `Error: ${s.printerDetail}` : null;
-        setDot(printerDot, printerLabel, s.printer, detail);
+        const id = cssId(s.printerName);
+        const dot = document.getElementById(`pDot-${id}`);
+        const label = document.getElementById(`pLabel-${id}`);
+        if (dot && label) {
+            const detail = s.printerDetail ? `Error: ${s.printerDetail}` : null;
+            setDot(dot, label, s.printer, detail);
+        }
     }
 });
 
@@ -183,12 +247,14 @@ window.relay.onJob((j) => {
     let existing = jobs.find(x => x.filename === j.filename);
     if (existing) {
         existing.status = j.status;
+        if (j.printerName) existing.printerName = j.printerName;
     } else {
         jobs.unshift({
             filename: j.filename,
             style: j.style || "",
             status: j.status,
             time: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+            printerName: j.printerName || "",
         });
         if (jobs.length > MAX_JOBS) jobs.pop();
     }
@@ -207,8 +273,9 @@ function renderJobs() {
     jobList.innerHTML = jobs.map(j => `
         <div class="job-entry">
             <span class="job-time">${j.time}</span>
-            <span class="job-style">${j.style}</span>
-            <span class="job-status ${STATUS_CLASS[j.status] || ""}">${STATUS_LABELS[j.status] || j.status}</span>
+            <span class="job-printer">${escHtml(j.printerName || "")}</span>
+            <span class="job-style">${escHtml(j.style)}</span>
+            <span class="job-status ${STATUS_CLASS[j.status] || ""}">${STATUS_LABELS[j.status] || escHtml(j.status)}</span>
         </div>
     `).join("");
 }

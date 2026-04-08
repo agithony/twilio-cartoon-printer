@@ -4,11 +4,20 @@ const Store = require("electron-store");
 const { RelayEngine, listPrinters } = require("./relay");
 
 const store = new Store({
-    defaults: { url: "", key: "", printer: "", dryRun: false },
+    defaults: { url: "", key: "", printers: [], dryRun: false },
 });
 
+// Migrate old "printer" (string) → "printers" (array)
+if (store.has("printer") && typeof store.get("printer") === "string") {
+    const old = store.get("printer");
+    if (old && !store.get("printers")?.length) {
+        store.set("printers", [old]);
+    }
+    store.delete("printer");
+}
+
 let mainWindow = null;
-let relay = null;
+let relays = new Map(); // printerName -> RelayEngine
 
 function createWindow() {
     mainWindow = new BrowserWindow({
@@ -29,7 +38,8 @@ function createWindow() {
 
 app.whenReady().then(createWindow);
 app.on("window-all-closed", () => {
-    if (relay) relay.stop();
+    for (const r of relays.values()) r.stop();
+    relays.clear();
     app.quit();
 });
 
@@ -40,7 +50,7 @@ ipcMain.handle("get-config", () => store.store);
 ipcMain.handle("save-config", (_, config) => {
     store.set("url", config.url || "");
     store.set("key", config.key || "");
-    store.set("printer", config.printer || "");
+    store.set("printers", Array.isArray(config.printers) ? config.printers : []);
     store.set("dryRun", !!config.dryRun);
     return store.store;
 });
@@ -50,28 +60,49 @@ ipcMain.handle("list-printers", async () => {
 });
 
 ipcMain.handle("start-relay", (_, config) => {
-    if (relay) relay.stop();
-    relay = new RelayEngine();
+    // Stop existing relays
+    for (const r of relays.values()) r.stop();
+    relays.clear();
 
-    relay.on("log", (msg) => mainWindow?.webContents.send("relay-log", msg));
-    relay.on("status", (s) => mainWindow?.webContents.send("relay-status", s));
-    relay.on("job", (j) => mainWindow?.webContents.send("relay-job", j));
-    relay.on("stats", (s) => mainWindow?.webContents.send("relay-stats", s));
+    const printers = Array.isArray(config.printers) ? [...config.printers] : [];
+    if (printers.length === 0) {
+        // Auto-detect: single engine with no printer override (existing behavior)
+        printers.push("");
+    }
 
-    relay.start({
-        url: config.url,
-        key: config.key,
-        printer: config.printer || "",
-        dryRun: !!config.dryRun,
-        interval: 5,
-    });
+    for (const printer of printers) {
+        const engine = new RelayEngine();
+
+        engine.on("log", (msg) => mainWindow?.webContents.send("relay-log", msg));
+        engine.on("status", (s) => {
+            s.printerName = printer;
+            mainWindow?.webContents.send("relay-status", s);
+        });
+        engine.on("job", (j) => {
+            j.printerName = printer;
+            mainWindow?.webContents.send("relay-job", j);
+        });
+        engine.on("stats", () => {
+            // Aggregate job count across all engines
+            let total = 0;
+            for (const r of relays.values()) total += r.jobCount;
+            mainWindow?.webContents.send("relay-stats", { jobCount: total });
+        });
+
+        engine.start({
+            url: config.url,
+            key: config.key,
+            printer: printer,
+            dryRun: !!config.dryRun,
+            interval: 5,
+        });
+        relays.set(printer, engine);
+    }
     return true;
 });
 
 ipcMain.handle("stop-relay", () => {
-    if (relay) {
-        relay.stop();
-        relay = null;
-    }
+    for (const r of relays.values()) r.stop();
+    relays.clear();
     return true;
 });
