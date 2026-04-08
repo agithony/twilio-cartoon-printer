@@ -99,7 +99,7 @@ function markSid(sid) {
     if (_processedSids.has(sid)) return true; // duplicate
     _processedSids.add(sid);
     _sidQueue.push(sid);
-    if (_sidQueue.length > 500) _processedSids.delete(_sidQueue.shift());
+    if (_sidQueue.length > 2000) _processedSids.delete(_sidQueue.shift());
     return false;
 }
 
