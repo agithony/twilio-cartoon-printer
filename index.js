@@ -135,7 +135,8 @@ app.post("/sms", async (req, res) => {
 
     // Helper: confirm and enqueue a job with the chosen style (and optional background/brand)
     async function confirmAndEnqueue(style, imageUrl, messageSid, useTwiml, background, brand) {
-        const styleName = activeStyles[style].name;
+        if (!activeStyles[style]) style = activeStyleList[0] || settings.get("defaultStyle");
+        const styleName = activeStyles[style] ? activeStyles[style].name : style;
         const singleStyle = activeStyleList.length === 1;
         const confirmLabel = singleStyle ? "Your portrait" : `Your ${styleName} portrait`;
         console.log(`📩 Enqueuing portrait for ${userPhone} (style: ${styleName})`);
