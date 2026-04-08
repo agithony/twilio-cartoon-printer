@@ -7,7 +7,7 @@ DATA_MOUNT="${DATA_MOUNT:-/app/appdata}"
 
 if [ -d "$DATA_MOUNT" ]; then
   echo "Persistent storage detected at $DATA_MOUNT"
-  for dir in data queue downloads brand-references templates assets; do
+  for dir in data queue downloads brand-references style-references background-references templates assets; do
     mkdir -p "$DATA_MOUNT/$dir"
     # Queue has subdirectories
     if [ "$dir" = "queue" ]; then

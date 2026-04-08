@@ -3,6 +3,8 @@ downloads
 queue
 data
 brand-references
+style-references
+background-references
 .git
 .env
 npm-debug.log
