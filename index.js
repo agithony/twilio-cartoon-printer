@@ -395,8 +395,19 @@ app.post("/sms", async (req, res) => {
                     style: explicitStyle,
                     baseUrl,
                 });
+            } else if (activeStyleList.length === 1) {
+                // Auto-select the only style, but start lead survey instead of enqueuing
+                await leads.startSurvey(userPhone, appPhone, eventName, "before", {
+                    imageUrl: req.body.MediaUrl0,
+                    messageSid: req.body.MessageSid,
+                    body,
+                    style: activeStyleList[0],
+                    baseUrl,
+                });
             } else {
-                await showMenuAndHold(req.body.MediaUrl0, req.body.MessageSid);
+                // Multiple styles — show menu; section 3 will check lead capture when they pick
+                styleMenu.setPending(userPhone, { imageUrl: req.body.MediaUrl0, messageSid: req.body.MessageSid, body, appPhone, baseUrl });
+                twiml.message(styleMenu.buildMenu(activeStyles, activeStyleList));
             }
         } else {
             await leads.startSurvey(userPhone, appPhone, eventName, "before", null);
