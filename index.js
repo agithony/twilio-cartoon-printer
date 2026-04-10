@@ -38,6 +38,7 @@ const { mountReview } = require("./lib/review");
 const { mountHome } = require("./lib/home");
 const { mountPhotoGallery } = require("./lib/photogallery");
 const { mountOutreach } = require("./lib/outreach");
+const { mountShare } = require("./lib/share");
 const { mountPrintRelay } = require("./lib/print-relay");
 const leads = require("./lib/leads");
 const nps = require("./lib/nps");
@@ -511,6 +512,7 @@ const server = app.listen(port, "0.0.0.0", async () => {
     mountPhotoGallery(app);
     mountDashboard(app);
     mountOutreach(app);
+    mountShare(app);
     mountPrintRelay(app);
     mountReview(app);
     let genPollRunning = false;
