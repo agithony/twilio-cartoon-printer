@@ -30,6 +30,10 @@ This document covers all features and configuration in depth. For quick setup, s
 - [Configurable SMS Messages](#configurable-sms-messages)
 - [NPS Survey](#nps-survey)
 - [Social Sharing](#social-sharing)
+  - [Share Page](#share-page-sfileprefix)
+  - [URL Shortening (dub.co)](#url-shortening-dubco)
+  - [Share Page Only Mode](#share-page-only-mode)
+  - [Configuration](#configuration)
 - [BRB Screen](#brb-screen)
 - [Promotional Messages](#promotional-messages)
 - [Runtime Settings](#runtime-settings)
@@ -70,6 +74,9 @@ This document covers all features and configuration in depth. For quick setup, s
 | `PRINT_RELAY_PRINTERS` | No | Comma-separated list of printer names for multi-printer relay (e.g. `EPSON_1,EPSON_2`). Overrides `PRINT_RELAY_PRINTER`. |
 | `PRINT_RELAY_INTERVAL` | No | Relay poll interval in seconds (default: `5`). |
 | `PRINT_RELAY_DRY_RUN` | No | Set to `true` to download images without printing (for testing). |
+| `DUB_API_KEY` | No | dub.co API key for URL shortening. Leave blank to disable short links. |
+| `DUB_DOMAIN` | No | Custom short domain on dub.co (default: `twil.io`). |
+| `DUB_FOLDER_ID` | No | Optional dub.co folder ID for organizing short links. |
 
 ## Template Frames
 
@@ -600,15 +607,62 @@ Scores persist to `data/nps.json` across restarts. Admin phone numbers are exclu
 
 ## Social Sharing
 
-When enabled, delivery messages include clickable share links for X/Twitter and LinkedIn. The share text is configurable and supports `{eventName}` interpolation.
+When enabled, delivery messages include a single clean share link (e.g. `twil.io/signal-1`) that opens a branded share page. The share page displays the portrait with proper Open Graph meta tags for rich social media previews, and includes per-platform share buttons for X/Twitter, LinkedIn, and Instagram.
 
-Configure from the Settings panel under **Engagement & Messages**:
+### Share Page (`/s/:filePrefix`)
 
-- **Enable Share Links** toggle
-- **Twitter Handle** -- included in tweet text (default `@twilio`)
-- **LinkedIn Share Text** -- customizable template (default: "Check out my AI portrait from {eventName}, powered by Twilio!")
+Each portrait gets its own share page at `/s/:filePrefix?e=EventName`. The page is public (no auth required) and includes:
 
-The share URLs point to the portrait's MMS image on your server, so they only work while the server is accessible at the same URL.
+- **OG meta tags** -- `og:image`, `og:title`, `og:description`, `twitter:card: summary_large_image` for rich previews when the URL is shared on any platform
+- **Portrait image** -- displayed large and mobile-optimized
+- **Share buttons** -- X/Twitter (opens tweet intent), LinkedIn (opens share dialog), Instagram (downloads image for manual upload), and a generic download button
+- **Personalized title** -- if the user completed lead capture, the page title uses their first name (e.g. "Alex's AI Portrait"). Falls back to a default title otherwise.
+- **Twilio branding** -- custom fonts, brand colors, bug mark, builder shape
+
+### URL Shortening (dub.co)
+
+The app integrates with [dub.co](https://dub.co) to create short links for share pages. Each portrait gets a unique short link with a configurable per-event slug prefix and auto-incrementing counter (e.g. `twil.io/signal-1`, `twil.io/signal-2`).
+
+- Short links are created via the dub.co API when the portrait is delivered
+- If shortening fails or no API key is configured, the full share page URL is used as fallback
+- The `https://` prefix is stripped from short links in SMS for cleaner display
+- Short links are stored in the job JSON so the share page can use them in social share button intent URLs
+
+### Share Page Only Mode
+
+When the **Share Page Only** toggle is enabled, the delivery SMS sends only text with the share link -- no MMS image attachment. This avoids showing the portrait twice (once in the message, once on the share page) and saves on MMS costs.
+
+### Configuration
+
+Configure from the Settings panel under **Social Sharing**:
+
+**Global settings (infrastructure):**
+
+| Setting | Env var | Default | Description |
+|---------|---------|---------|-------------|
+| dub.co API Key | `DUB_API_KEY` | *(empty)* | dub.co API key for URL shortening. Leave blank to skip shortening. |
+| Short Domain | `DUB_DOMAIN` | `twil.io` | Custom short domain configured in dub.co |
+| Folder ID | `DUB_FOLDER_ID` | *(empty)* | Optional dub.co folder ID for organizing links |
+
+**Per-event settings:**
+
+| Setting | Default | Description |
+|---------|---------|-------------|
+| Enable Share Links | `true` | Master toggle for social sharing |
+| Share Page Only | `false` | Skip MMS image, send text-only SMS with share link |
+| Enable X/Twitter Share | `true` | Show/hide X/Twitter button on share page |
+| Enable LinkedIn Share | `true` | Show/hide LinkedIn button on share page |
+| Enable Instagram Share | `true` | Show/hide Instagram save button on share page |
+| X/Twitter Handle | `@twilio` | Handle included in pre-filled tweet text |
+| X/Twitter Share Text | `"Check out my AI portrait from {eventName}! Made with @twilio on X"` | Pre-filled tweet template |
+| LinkedIn Share Text | `"Check out my AI portrait from {eventName}, powered by Twilio!"` | Pre-filled LinkedIn text |
+| LinkedIn Company URL | `https://www.linkedin.com/company/twilio-inc-` | Company page URL |
+| Instagram Handle | `@twilio` | Shown on save button hint text |
+| Slug Prefix | `p` | Per-event prefix for short link slugs (e.g. `signal` → `twil.io/signal-1`) |
+| SMS Share Text | `"Share your portrait: {url}"` | Template for the share line in delivery SMS |
+| Share Page Title | `"My AI Portrait"` | Default page heading and og:title |
+| Share Page Title (Personalized) | `"{firstName}'s AI Portrait"` | Used when lead capture has the user's name |
+| Share Page Description | `"Check out my AI portrait, powered by Twilio!"` | og:description for social previews |
 
 ## BRB Screen
 
@@ -640,7 +694,9 @@ The settings panel is organized into seven sections:
 
 **Delivery & Display** -- Delivery Mode (Print + Digital or Digital Only), Printer selection, Print Size (4x6, 5x7, 8x10), Print Quality (Standard, High, Max), Custom Print Flags, Print Relay Key (for cloud-to-local printing), Booth Display Mode (Video / Static Page / None), Intro Video, Static Page settings (headline, subline, QR code, steps, legal text), Terms URL
 
-**Engagement & Messages** -- Lead Capture (enable/disable, before/after timing, survey messages and fields), Promotional Message, Social Share Links (X/Twitter and LinkedIn), NPS Survey toggle and delay, SMS Messages organized by category (Welcome & Onboarding, Style Selection, Brand Selection, Background Selection, Processing & Delivery, Error Responses, Lead Capture, NPS) with `{variable}` interpolation support. See [Lead Capture](#lead-capture) for details.
+**Engagement & Messages** -- Lead Capture (enable/disable, before/after timing, survey messages and fields), Promotional Message, NPS Survey toggle and delay, SMS Messages organized by category (Welcome & Onboarding, Style Selection, Brand Selection, Background Selection, Processing & Delivery, Error Responses, Lead Capture, NPS) with `{variable}` interpolation support. See [Lead Capture](#lead-capture) for details.
+
+**Social Sharing** -- Enable Share Links toggle, Share Page Only toggle, dub.co API Key and Short Domain (global), Slug Prefix (per-event), per-platform toggles and config (X/Twitter, LinkedIn, Instagram), SMS Share Text template, Share Page Title and Description, Personalized Title template. See [Social Sharing](#social-sharing) for details.
 
 **API Keys** -- Twilio credentials (Phone Number, Account SID, Auth Token) and OpenAI configuration (API Key, Orchestrator Model, Vision Light Model, Image Generation Model, Smart Reply Model). These override values from `.env`.
 
@@ -699,7 +755,8 @@ All creative and event-specific settings, including:
 - Template frame, frame border, video
 - Lead capture mode and fields
 - Delivery mode, print size/quality
-- NPS, social sharing, promo messages
+- NPS, promo messages
+- Social sharing (platform toggles, handles, share text, slug prefix/counter, share page title/description)
 - Max prints per user, terms URL, break message
 
 ### What stays global
@@ -711,6 +768,7 @@ All creative and event-specific settings, including:
 - Max concurrent generations
 - Queue pause state
 - Custom brands library (brand definitions are shared; per-event controls are disabled brands and prompt overrides)
+- dub.co credentials (API Key, Short Domain, Folder ID)
 
 ### Brand reference images
 
@@ -786,6 +844,8 @@ twilio-cartoon-printer/
 │   ├── nps.js            NPS survey engine and persistence
 │   ├── outreach.js       Outreach -- broadcast messaging, raffles, lead reports (mounted at /outreach)
 │   ├── photogallery.js   Photo book (mounted at /photogallery)
+│   ├── share.js          Shareable portrait page with OG meta tags (mounted at /s)
+│   ├── dub.js            dub.co URL shortening client with in-memory cache
 │   └── paper.js          Paper counter with file persistence
 ├── scripts/
 │   ├── print-relay.js    Local relay agent -- polls cloud, downloads images, prints via CUPS

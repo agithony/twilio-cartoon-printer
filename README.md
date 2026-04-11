@@ -301,6 +301,7 @@ Both the Print Station app and CLI relay share these capabilities:
 | `/photogallery` | Photo book with page-turn animations |
 | `/dashboard` | Real-time admin dashboard with metrics and monitoring |
 | `/outreach` | Broadcast messaging, raffles, lead capture reports |
+| `/s/:id` | Shareable portrait page with OG meta tags and social share buttons |
 
 ## Key Features
 
@@ -314,7 +315,7 @@ Both the Print Station app and CLI relay share these capabilities:
 - **NPS survey** -- 1-5 rating after last portrait, with dashboard stats and PDF report integration
 - **Booth display modes** -- video (looping intro), static instruction page (QR code + steps with Twilio branding), or none (photo book only)
 - **BRB screen** -- "We'll Be Right Back" overlay on all booth displays
-- **Social sharing** -- optional X/Twitter and LinkedIn share links
+- **Social sharing** -- branded share page with OG meta tags, per-platform share buttons (X/Twitter, LinkedIn, Instagram), dub.co URL shortening with custom domains, personalized titles via lead capture data
 - **Import style prompts** -- copy style prompt overrides from one event to another
 - **Per-event settings** -- save and restore complete settings profiles per event
 - **Runtime settings** -- all config changeable from `/home` without restarts
