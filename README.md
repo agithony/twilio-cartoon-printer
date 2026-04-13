@@ -289,6 +289,8 @@ Both the Print Station app and CLI relay share these capabilities:
 - **Printer error detection** -- detects offline/stopped printers and fails fast instead of hanging
 - **Failed printer avoidance** -- jobs that fail on one printer are routed to a different printer on retry; the relay API filters by `failedPrinters` so each relay only sees jobs it hasn't already failed
 - **Printer targeting** -- operators can direct a job to a specific printer from the dashboard; the relay API filters by `targetPrinter` so only the correct relay claims it
+- **Relay printer tracking** -- relay printers self-register when they poll, making them visible in the cloud dashboard for disable/enable/targeting even though the server has no local CUPS
+- **Stale target auto-clear** -- if a relay printer goes offline for 2+ minutes, jobs targeted to it are automatically released to any available printer
 - **Graceful shutdown** -- Ctrl+C (CLI) or close window (app) stops cleanly
 
 ## Web UI
@@ -325,9 +327,10 @@ Both the Print Station app and CLI relay share these capabilities:
 - **Outreach** -- broadcast SMS, animated raffle draws, lead reports
 - **Photo book** -- realistic page-turn gallery for booth displays
 - **Immediate digital delivery** -- in Print + Digital mode, users get their portrait via SMS immediately after generation instead of waiting for the print to finish
-- **Printer failure resilience** -- jobs track which printers failed them and smart dispatch routes retries to different printers; operators can disable/enable printers from the dashboard
-- **Printer targeting** -- retry or reprint a job to a specific printer from the dashboard
+- **Printer failure resilience** -- jobs track which printers failed them and smart dispatch routes retries to different printers; operators can disable/enable printers from the dashboard (works for both local and relay printers)
+- **Printer targeting** -- retry or reprint a job to a specific printer from the dashboard; relay printers are auto-discovered from check-ins
 - **Reprint completed jobs** -- reprint any completed portrait from the dashboard with optional printer targeting (no SMS sent, no usage quota impact)
+- **Dashboard printer warnings** -- alerts when jobs are waiting but no printers are connected or all printers are disabled
 - **Crash recovery** -- file-based queue survives server restarts, auto-retries failed jobs
 - **Print relay** -- cloud-to-local printing via polling agent for cloud deployments
 

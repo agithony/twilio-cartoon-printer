@@ -209,10 +209,10 @@ The dashboard shows:
 - **Job health** -- completed vs failed counts, overall success rate, content rejection rate, and average generation/print times
 - **Failure breakdown** -- bar chart categorizing failures by reason (moderation, face detection, generation/API errors, printer errors, crash recovery)
 - **User geography** -- bar chart showing where users are located based on phone number country codes
-- **Queue status** -- live counts for each pipeline stage (pending, generating, ready, printing) and printer status with disable/enable buttons. Stuck job detection alerts when a job has been generating for over 5 minutes or printing for over 10 minutes.
+- **Queue status** -- live counts for each pipeline stage (pending, generating, ready, printing) and printer status with disable/enable buttons. Stuck job detection alerts when a job has been generating for over 5 minutes or printing for over 10 minutes. Shows warnings when jobs are waiting but no printers are connected or all printers are disabled.
 - **Failed jobs** -- lists all failed jobs with fail reason badges. Printer-failure jobs show a printer dropdown and "Retry Print" button to re-queue directly to the print queue (skips re-generation). Other failures have a "Retry" button for full re-generation.
-- **Completed jobs** -- lists recently completed jobs with a "Reprint" button and printer dropdown. Reprints go back through the print queue without sending SMS or affecting usage quota.
-- **Printer management** -- disable/enable individual printers from the queue status panel. Disabled printers receive no new jobs. Jobs that fail on a printer are automatically routed to a different printer on retry.
+- **Completed jobs** -- lists recently completed jobs with a "Reprint" button and printer dropdown (defaults to "Any printer"). Reprints go back through the print queue without sending SMS or affecting usage quota.
+- **Printer management** -- disable/enable individual printers from the queue status panel. Disabled printers receive no new jobs and disabling clears targeting on queued jobs aimed at that printer. In cloud mode, relay printers auto-register and appear alongside local printers. Jobs that fail on a printer are automatically routed to a different printer on retry.
 - **Paper counter** -- estimated remaining sheets based on prints sent, with a visual progress bar. Configurable capacity and warning threshold. Alerts when paper is low or empty. Click "Reset" after reloading the tray.
 
 The dashboard auto-refreshes every 3 seconds. No external dependencies -- it's a single self-contained HTML page with inline CSS and JavaScript.
@@ -844,7 +844,17 @@ This works for both local printing and relay mode:
 - **Local:** The `processPrintQueue` dispatcher reads each job's metadata and pairs it with an idle printer not in its `failedPrinters` list.
 - **Relay:** The `GET /jobs` API filters out jobs where the requesting printer is in `failedPrinters` (with a last-retry fallback so jobs don't get stuck).
 
-Operators can also **disable a printer** from the dashboard's queue status panel. Disabled printers are excluded from `getActivePrinters()` and receive no new jobs until re-enabled.
+Operators can also **disable a printer** from the dashboard's queue status panel. Disabled printers are excluded from `getActivePrinters()` and receive no new jobs until re-enabled. Disabling a printer also clears `targetPrinter` on any queued jobs aimed at it, so they immediately become available to working printers.
+
+#### Relay Printer Tracking
+
+In cloud deployments, the server has no local CUPS printers. Relay printers self-register when they poll for jobs -- the server records the printer name from the `?printer=` query parameter and tracks when it last checked in. Printers that haven't polled in 60 seconds are considered offline and pruned.
+
+This means the cloud dashboard shows relay printers just like local ones:
+- **Disable/Enable** -- disabling a relay printer returns an empty job list to that relay agent, effectively pausing it
+- **Printer targeting** -- retry or reprint jobs to specific relay printers from the dashboard dropdowns
+- **Stale target auto-clear** -- if a job is targeted to a relay printer that goes offline for 2+ minutes, the targeting is automatically cleared so any available printer can claim it
+- **Dashboard warnings** -- the dashboard shows alerts when jobs are waiting but no printers are connected or all printers are disabled (with an additional warning if `immediateDigitalDelivery` is off, meaning users won't receive their portraits at all)
 
 ### Reprints
 
@@ -852,7 +862,7 @@ Completed jobs can be reprinted from the dashboard's **Completed Jobs** panel. C
 
 - **No SMS:** The reprint preserves the original `smsSentAt` flag, so no duplicate SMS is sent on print completion.
 - **No usage impact:** Reprints don't call `incrementUsage`, and the `reprint: true` flag prevents `decrementUsage` on failure. The usage cache rebuild also skips reprint jobs.
-- **Printer targeting:** Select a specific printer from the dropdown, or leave it on "Same printer" / "Any printer".
+- **Printer targeting:** Select a specific printer from the dropdown, or leave it on "Any printer" (default). In cloud mode, relay printer names appear in the dropdown automatically.
 - **If the reprint fails:** It follows the standard retry logic (up to 3 retries, failed printer avoidance). If all retries exhaust, the job moves to `failed/` and can be retried again from the failed jobs panel.
 
 ## Project Structure
