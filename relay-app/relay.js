@@ -98,7 +98,8 @@ class RelayEngine extends EventEmitter {
 
         try {
             this._cleanupProcessedJobs();
-            const { status, data } = await this._request("GET", "/api/print-relay/jobs");
+            const printerParam = this.config.printer ? `?printer=${encodeURIComponent(this.config.printer)}` : "";
+            const { status, data } = await this._request("GET", `/api/print-relay/jobs${printerParam}`);
             if (status !== 200) {
                 this.consecutiveErrors++;
                 this.log(`Poll failed: HTTP ${status} (retry in ${Math.min(this.basePollMs * Math.pow(2, this.consecutiveErrors), 120000) / 1000}s)`);

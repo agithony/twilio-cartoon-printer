@@ -273,7 +273,8 @@ function createWorker(printerOverride) {
 
         try {
             cleanupProcessedJobs();
-            const { status, data } = await request("GET", "/api/print-relay/jobs");
+            const printerParam = printerOverride ? `?printer=${encodeURIComponent(printerOverride)}` : "";
+            const { status, data } = await request("GET", `/api/print-relay/jobs${printerParam}`);
             if (status !== 200) {
                 consecutiveErrors++;
                 log(`[${label}] Poll failed: HTTP ${status} (retry in ${Math.min(POLL_INTERVAL * Math.pow(2, consecutiveErrors), 120000) / 1000}s)`);
