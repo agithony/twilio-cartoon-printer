@@ -43,6 +43,7 @@ const { mountShare } = require("./lib/share");
 const { mountPrintRelay } = require("./lib/print-relay");
 const leads = require("./lib/leads");
 const nps = require("./lib/nps");
+const contacts = require("./lib/contacts");
 
 const app = express();
 const port = parseInt(process.env.PORT || "3000", 10);
@@ -129,6 +130,9 @@ app.post("/sms", async (req, res) => {
     const activeStyleList = settings.getActiveStyleList();
     const leadMode = settings.get("leadCaptureMode");
     const eventName = settings.get("eventName");
+
+    // Track first contact for drop-off detection
+    contacts.recordContact(userPhone, appPhone, eventName);
 
     // Testing mode: admins experience the full regular-user flow (intro, promo,
     // status messages, lead capture) but with unlimited quota.
@@ -507,6 +511,7 @@ const server = app.listen(port, "0.0.0.0", async () => {
     await buildUsageCache();
     leads.load();
     nps.load();
+    contacts.load();
     settings.onEventNameChange(() => buildUsageCache());
     await recoverStaleJobs();
     mountHome(app);
