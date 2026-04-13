@@ -23,6 +23,7 @@ This document covers all features and configuration in depth. For quick setup, s
   - [Multi-Brand Selection](#multi-brand-selection)
 - [Background Selection](#background-selection)
 - [Delivery Mode](#delivery-mode)
+  - [Immediate Digital Delivery](#immediate-digital-delivery)
 - [Print Relay (Cloud Printing)](#print-relay-cloud-printing)
 - [Cloud Deployment](#cloud-deployment)
 - [Lead Capture](#lead-capture)
@@ -43,6 +44,8 @@ This document covers all features and configuration in depth. For quick setup, s
   - [Crash Recovery](#crash-recovery)
   - [Permanent Failures](#permanent-failures)
   - [Retry Logic](#retry-logic)
+  - [Printer Failure Resilience](#printer-failure-resilience)
+  - [Reprints](#reprints)
 - [Project Structure](#project-structure)
 
 ---
@@ -206,7 +209,10 @@ The dashboard shows:
 - **Job health** -- completed vs failed counts, overall success rate, content rejection rate, and average generation/print times
 - **Failure breakdown** -- bar chart categorizing failures by reason (moderation, face detection, generation/API errors, printer errors, crash recovery)
 - **User geography** -- bar chart showing where users are located based on phone number country codes
-- **Queue status** -- live counts for each pipeline stage (pending, generating, ready, printing) and printer status. Stuck job detection alerts when a job has been generating for over 5 minutes or printing for over 10 minutes.
+- **Queue status** -- live counts for each pipeline stage (pending, generating, ready, printing) and printer status with disable/enable buttons. Stuck job detection alerts when a job has been generating for over 5 minutes or printing for over 10 minutes.
+- **Failed jobs** -- lists all failed jobs with fail reason badges. Printer-failure jobs show a printer dropdown and "Retry Print" button to re-queue directly to the print queue (skips re-generation). Other failures have a "Retry" button for full re-generation.
+- **Completed jobs** -- lists recently completed jobs with a "Reprint" button and printer dropdown. Reprints go back through the print queue without sending SMS or affecting usage quota.
+- **Printer management** -- disable/enable individual printers from the queue status panel. Disabled printers receive no new jobs. Jobs that fail on a printer are automatically routed to a different printer on retry.
 - **Paper counter** -- estimated remaining sheets based on prints sent, with a visual progress bar. Configurable capacity and warning threshold. Alerts when paper is low or empty. Click "Reset" after reloading the tray.
 
 The dashboard auto-refreshes every 3 seconds. No external dependencies -- it's a single self-contained HTML page with inline CSS and JavaScript.
@@ -328,6 +334,16 @@ The app supports three delivery modes, configurable from the Settings panel unde
 - **Digital Only** -- Portraits are sent via MMS immediately after AI generation. No printer required. Use this for demos, remote events, or setups without a physical printer. Set `ENABLE_PRINTING=false` and leave the Print Relay Key blank.
 
 The delivery mode affects the SMS messages users receive (e.g. "head to the booth to pick up your print" vs "we'll text it to you").
+
+### Immediate Digital Delivery
+
+When **Print + Digital** mode is active, the **Send digital copy immediately** checkbox (enabled by default) sends the user their portrait via SMS right after AI generation -- without waiting for the print to finish. The print still happens in the background.
+
+This ensures users always get their digital portrait within seconds, even if the printer is slow, offline, or broken. If the immediate SMS fails (e.g. Twilio is down), the system falls back to sending the MMS after print completion.
+
+The setting uses the `deliveryDigital` SMS template (the same one used for digital-only delivery). Social sharing (`sharePageOnly`) is fully respected: when enabled, the share page URL is sent as text instead of the MMS image.
+
+Disable this checkbox to restore the original behavior where SMS is gated on print completion.
 
 ## Print Relay (Cloud Printing)
 
@@ -798,7 +814,7 @@ downloads/YourEventName/20260211_143000_output.png
 The pipeline is split into two independent workers:
 
 - **Generation worker** -- Processes up to `MAX_CONCURRENT_GENERATION` jobs at the same time. Each job goes through download, moderation, face detection, scene analysis, AI generation, compositing, and print prep. The scene analysis step describes the subjects in the photo (number of people, positions, pets) so the generation model includes everyone. Multiple images generate in parallel so users don't wait in a long single-threaded queue.
-- **Print worker** -- Processes one job at a time from the `ready/` queue. In local mode, sends the image directly to the printer. In relay mode, the cloud app exposes the ready queue via API and a remote agent handles printing. In both cases, the user is notified via SMS when their print is ready.
+- **Print worker** -- Processes jobs from the `ready/` queue, one per printer. In local mode with multiple printers, smart dispatch reads each job's metadata and pairs it with an idle printer that hasn't failed it before (see [Printer Failure Resilience](#printer-failure-resilience)). Jobs with a `targetPrinter` are only dispatched to that specific printer. In relay mode, the cloud app exposes the ready queue via API and remote agents handle printing.
 - **Stale relay recovery** -- Periodically scans `printing/` for jobs older than 15 minutes. If a relay agent crashes mid-print, these jobs are moved back to `ready/` for retry.
 
 Each job tracks timestamps for every state transition (`pendingAt`, `generatingAt`, `readyAt`, `printingAt`, `completedAt`) which are used by the dashboard to compute average generation/print times and detect stuck jobs.
@@ -818,6 +834,26 @@ Jobs flagged by content moderation or rejected by face detection are moved direc
 ### Retry Logic
 
 Failed jobs retry up to 3 times. Each pipeline step is skipped on retry if its output already exists on disk, so only the failed step re-runs.
+
+### Printer Failure Resilience
+
+When a print fails, the job tracks which printer failed it in a `failedPrinters` array. On the next dispatch cycle, the smart dispatcher routes the job to a different printer, avoiding all previously failed printers. If all available printers have failed the job, any printer is allowed to retry as a last resort.
+
+This works for both local printing and relay mode:
+
+- **Local:** The `processPrintQueue` dispatcher reads each job's metadata and pairs it with an idle printer not in its `failedPrinters` list.
+- **Relay:** The `GET /jobs` API filters out jobs where the requesting printer is in `failedPrinters` (with a last-retry fallback so jobs don't get stuck).
+
+Operators can also **disable a printer** from the dashboard's queue status panel. Disabled printers are excluded from `getActivePrinters()` and receive no new jobs until re-enabled.
+
+### Reprints
+
+Completed jobs can be reprinted from the dashboard's **Completed Jobs** panel. Click "Reprint" to send the job back through the print queue.
+
+- **No SMS:** The reprint preserves the original `smsSentAt` flag, so no duplicate SMS is sent on print completion.
+- **No usage impact:** Reprints don't call `incrementUsage`, and the `reprint: true` flag prevents `decrementUsage` on failure. The usage cache rebuild also skips reprint jobs.
+- **Printer targeting:** Select a specific printer from the dropdown, or leave it on "Same printer" / "Any printer".
+- **If the reprint fails:** It follows the standard retry logic (up to 3 retries, failed printer avoidance). If all retries exhaust, the job moves to `failed/` and can be retried again from the failed jobs panel.
 
 ## Project Structure
 

@@ -287,6 +287,8 @@ Both the Print Station app and CLI relay share these capabilities:
 - **Multi-printer** -- select multiple printers (Print Station) or use `--printers` (CLI) to distribute jobs across printers automatically
 - **Race-safe** -- multiple relay agents can run with the same key; only one claims each job
 - **Printer error detection** -- detects offline/stopped printers and fails fast instead of hanging
+- **Failed printer avoidance** -- jobs that fail on one printer are routed to a different printer on retry; the relay API filters by `failedPrinters` so each relay only sees jobs it hasn't already failed
+- **Printer targeting** -- operators can direct a job to a specific printer from the dashboard; the relay API filters by `targetPrinter` so only the correct relay claims it
 - **Graceful shutdown** -- Ctrl+C (CLI) or close window (app) stops cleanly
 
 ## Web UI
@@ -322,6 +324,10 @@ Both the Print Station app and CLI relay share these capabilities:
 - **Dashboard** -- job health, failure breakdown, queue status, NPS scores, stuck job alerts, paper counter, PDF reports
 - **Outreach** -- broadcast SMS, animated raffle draws, lead reports
 - **Photo book** -- realistic page-turn gallery for booth displays
+- **Immediate digital delivery** -- in Print + Digital mode, users get their portrait via SMS immediately after generation instead of waiting for the print to finish
+- **Printer failure resilience** -- jobs track which printers failed them and smart dispatch routes retries to different printers; operators can disable/enable printers from the dashboard
+- **Printer targeting** -- retry or reprint a job to a specific printer from the dashboard
+- **Reprint completed jobs** -- reprint any completed portrait from the dashboard with optional printer targeting (no SMS sent, no usage quota impact)
 - **Crash recovery** -- file-based queue survives server restarts, auto-retries failed jobs
 - **Print relay** -- cloud-to-local printing via polling agent for cloud deployments
 
