@@ -323,7 +323,7 @@ Both the Print Station app and CLI relay share these capabilities:
 - **Import style prompts** -- copy style prompt overrides from one event to another
 - **Per-event settings** -- save and restore complete settings profiles per event
 - **Runtime settings** -- all config changeable from `/home` without restarts
-- **Dashboard** -- job health, failure breakdown, combined jobs panel (failed + completed with filter tabs), queue status, NPS scores, stuck job alerts, paper counter, PDF reports
+- **Dashboard** -- job health, failure breakdown, combined jobs panel (failed + completed with filter tabs), queue status, NPS scores, stuck job alerts, PDF reports
 - **Outreach** -- broadcast SMS, animated raffle draws, lead reports
 - **Photo book** -- realistic page-turn gallery for booth displays
 - **Immediate digital delivery** -- in Print + Digital mode, users get their portrait via SMS immediately after generation instead of waiting for the print to finish

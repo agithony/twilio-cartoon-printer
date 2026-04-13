@@ -15,7 +15,6 @@ This document covers all features and configuration in depth. For quick setup, s
   - [Photo Book](#photo-book)
 - [Admin Dashboard](#admin-dashboard)
   - [Event Report](#event-report)
-  - [Paper Counter](#paper-counter)
 - [Style Selection](#style-selection)
 - [Adding or Changing Styles](#adding-or-changing-styles)
 - [Branding](#branding)
@@ -212,8 +211,6 @@ The dashboard shows:
 - **Queue status** -- live counts for each pipeline stage (pending, generating, ready, printing) and printer status with disable/enable buttons. Stuck job detection alerts when a job has been generating for over 5 minutes or printing for over 10 minutes. Shows warnings when jobs are waiting but no printers are connected or all printers are disabled.
 - **Jobs panel** -- combined view of all failed and completed jobs with filter tabs (All / Failed / Completed) and color-coded status badges. Printer-failure jobs show a printer dropdown and "Retry Print" button. Generation failures have a "Retry" button for re-generation. Completed jobs have a "Reprint" button with printer targeting. Sorted by time, most recent first.
 - **Printer management** -- disable/enable individual printers from the queue status panel. Disabled printers receive no new jobs and disabling clears targeting on queued jobs aimed at that printer. In cloud mode, relay printers auto-register and appear alongside local printers. Jobs that fail on a printer are automatically routed to a different printer on retry.
-- **Paper counter** -- estimated remaining sheets based on prints sent, with a visual progress bar. Configurable capacity and warning threshold. Alerts when paper is low or empty. Click "Reset" after reloading the tray.
-
 The dashboard auto-refreshes every 3 seconds. No external dependencies -- it's a single self-contained HTML page with inline CSS and JavaScript.
 
 ### Event Report
@@ -229,16 +226,6 @@ Click **Generate Report** on the dashboard to download a PDF summarizing key eve
 - User geography (top 10 countries)
 
 The report respects the currently selected event filter. AI summaries are cached in memory so repeated downloads don't re-call the API.
-
-### Paper Counter
-
-The paper counter is a software estimate -- it decrements automatically each time a print completes. Most consumer/prosumer printers (including the Epson ET-8550) don't expose paper tray level via CUPS or any standard API, so this counter tracks it for you based on prints sent.
-
-- Default capacity: 20 sheets, warning at 2 remaining
-- Both values are adjustable from the dashboard
-- Console logs warnings when paper is low or empty
-- State persists across server restarts (saved to `data/paper.json`)
-- Press "Reset" after reloading the paper tray to reset the count
 
 ## Style Selection
 
@@ -503,7 +490,7 @@ The startup script (`scripts/start.sh`) automatically symlinks these directories
 
 | Directory | Contents |
 |-----------|----------|
-| `data/` | Settings, leads, NPS scores, raffle history, paper counter |
+| `data/` | Settings, leads, NPS scores, raffle history |
 | `queue/` | Job files in all pipeline stages |
 | `downloads/` | Input photos and generated portraits |
 | `brand-references/` | Brand reference images for AI generation |
@@ -891,7 +878,6 @@ twilio-cartoon-printer/
 │   ├── photogallery.js   Photo book (mounted at /photogallery)
 │   ├── share.js          Shareable portrait page with OG meta tags (mounted at /s)
 │   ├── dub.js            dub.co URL shortening client with in-memory cache
-│   └── paper.js          Paper counter with file persistence
 ├── scripts/
 │   ├── print-relay.js    Local relay agent -- polls cloud, downloads images, prints via CUPS
 │   └── start.sh          Docker entrypoint -- symlinks dirs to persistent storage
@@ -919,7 +905,6 @@ twilio-cartoon-printer/
 │   │       └── settings.json  Saved per-event overrides
 │   ├── leads.json        Captured leads — keyed by phone:event (gitignored)
 │   ├── nps.json          NPS survey scores — keyed by phone:event (gitignored)
-│   ├── paper.json        Paper counter state
 │   ├── raffle.json       Raffle winner history
 │   └── settings.json     Active runtime settings overrides
 ├── .env                  API keys, printer config, event settings
