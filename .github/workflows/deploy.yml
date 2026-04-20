@@ -126,6 +126,26 @@ jobs:
             --account-name ${{ env.STORAGE_ACCOUNT }} \
             --query '[0].value' -o tsv)" >> $GITHUB_OUTPUT
 
+      - name: Ensure required tags on Container App (tenant policy)
+        run: |
+          # The tenant 'tag-enforcement-policy' blocks any write to the Container
+          # App resource unless required tags are present. Merge them in before
+          # 'secret set' runs. Skip cleanly if the app doesn't exist yet — it
+          # will be created with tags in the Deploy step below.
+          APP_ID=$(az containerapp show \
+            --name ${{ env.APP_NAME }} \
+            --resource-group ${{ env.RESOURCE_GROUP }} \
+            --query "id" -o tsv 2>/dev/null || true)
+          if [ -n "$APP_ID" ]; then
+            az tag update \
+              --operation merge \
+              --resource-id "$APP_ID" \
+              --tags created_by=github-actions managed_by=twilio-cartoon-printer-ci \
+              --output none
+          else
+            echo "Container App does not exist yet — tags will be applied on create."
+          fi
+
       - name: Set secrets
         run: |
           # Set app secrets first (does NOT create a new revision, preserves registry secret)
@@ -181,6 +201,7 @@ jobs:
               --registry-server ${{ steps.acr-creds.outputs.server }} \
               --registry-username ${{ steps.acr-creds.outputs.username }} \
               --registry-password "${{ steps.acr-creds.outputs.password }}" \
+              --tags created_by=github-actions managed_by=twilio-cartoon-printer-ci \
               --output none
           fi
 
