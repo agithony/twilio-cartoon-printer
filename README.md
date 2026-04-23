@@ -13,7 +13,7 @@ flowchart TB
     M["Content moderation (OpenAI)"]
     F["Face detection (rejects no-face photos)"]
     A["Scene analysis (counts subjects & pets)"]
-    I["Image generation (gpt-5.2 + gpt-image-1.5)"]
+    I["Image generation (gpt-5.4 + gpt-image-2)"]
     C["Template frame composited (optional)"]
     R["Resized for print (5x7 @ 300 DPI)"]
     M --> F --> A --> I --> C --> R
@@ -46,7 +46,7 @@ See [Quick Start](#quick-start) for local setup, or [Cloud Deployment](#cloud-de
 - **Node.js** v18+
 - **pnpm** -- install with `npm install -g pnpm` ([docs](https://pnpm.io/installation))
 - **Twilio account** with a phone number that has SMS/MMS enabled
-- **OpenAI API key** with access to gpt-5.2 and gpt-image-1.5
+- **OpenAI API key** with access to gpt-5.4 and gpt-image-2
 - **Printer** (optional) -- Epson EcoTank ET-8550 recommended, connected via USB/WiFi and registered in CUPS
 
 ## Quick Start
