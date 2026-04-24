@@ -71,3 +71,64 @@ test("each menu entry has { key, name, prompt }", () => {
         assert.equal(typeof entry.prompt, "string");
     }
 });
+
+const { buildComboFragments } = require("../lib/prompt-assembler");
+
+const cartoon = { behavior: "normal", acceptsColorPalette: true };
+const actionFigure = {
+    behavior: "themed-container",
+    acceptsColorPalette: true,
+    containerDescription: "Subject rendered as a collectible action figure sealed in a themed toy box.",
+};
+const bronze = { behavior: "normal", acceptsColorPalette: false };
+const twilioBrand = {
+    category: "wardrobe-plus-scene",
+    wardrobe: "Twilio-branded apparel",
+    colorPalette: "Recolor everything to Twilio red and white.",
+};
+const laKingsBrand = {
+    category: "wardrobe-only",
+    wardrobe: "LA Kings hockey jersey",
+};
+
+test("buildComboFragments: no brand, normal style — container=null, palette=null", () => {
+    const frags = buildComboFragments({ style: cartoon, brand: null, background: null });
+    assert.equal(frags.containerDescription, null);
+    assert.equal(frags.colorPalette, null);
+});
+
+test("buildComboFragments: themed-container style contributes containerDescription", () => {
+    const frags = buildComboFragments({ style: actionFigure, brand: laKingsBrand, background: null });
+    assert.match(frags.containerDescription, /toy box/);
+});
+
+test("buildComboFragments: normal style does not contribute containerDescription", () => {
+    const frags = buildComboFragments({ style: cartoon, brand: laKingsBrand, background: null });
+    assert.equal(frags.containerDescription, null);
+});
+
+test("buildComboFragments: brand colorPalette included when style accepts it", () => {
+    const frags = buildComboFragments({ style: cartoon, brand: twilioBrand, background: null });
+    assert.match(frags.colorPalette, /Twilio red/);
+});
+
+test("buildComboFragments: brand colorPalette suppressed when style rejects it (Bronze × Twilio)", () => {
+    const frags = buildComboFragments({ style: bronze, brand: twilioBrand, background: null });
+    assert.equal(frags.colorPalette, null);
+});
+
+test("buildComboFragments: no brand means no palette", () => {
+    const frags = buildComboFragments({ style: cartoon, brand: null, background: null });
+    assert.equal(frags.colorPalette, null);
+});
+
+test("buildComboFragments: brand without colorPalette field means no palette", () => {
+    const frags = buildComboFragments({ style: cartoon, brand: laKingsBrand, background: null });
+    assert.equal(frags.colorPalette, null);
+});
+
+test("buildComboFragments: themed-container style without containerDescription returns null", () => {
+    const incomplete = { behavior: "themed-container", acceptsColorPalette: true };
+    const frags = buildComboFragments({ style: incomplete, brand: null, background: null });
+    assert.equal(frags.containerDescription, null);
+});
