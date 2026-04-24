@@ -232,15 +232,32 @@ app.post("/sms", async (req, res) => {
 
     // Helper: show background menu or enqueue directly
     async function showBackgroundMenuOrEnqueue(style, imageUrl, messageSid, useTwiml, brand) {
-        const bgChoices = settings.get("backgroundChoices") || [];
-        if (settings.get("enableBackgroundMenu") && bgChoices.length > 0) {
-            if (bgChoices.length === 1) {
-                // Auto-select if only one background
-                await confirmAndEnqueue(style, imageUrl, messageSid, useTwiml, bgChoices[0].key, brand);
+        const { resolveBackgroundMenu } = require("./lib/prompt-assembler");
+
+        // Legacy mode: the event configured a flat backgroundChoices list.
+        // Keep serving it verbatim for existing events.
+        const legacyChoices = settings.get("backgroundChoices") || [];
+
+        // Resolve from style + brand config (new combo-driven menu).
+        const styleObj = activeStyles[style] || {};
+        const activeBrands = getActiveBrands();
+        const brandObj = brand ? activeBrands[brand] : null;
+        const resolved = resolveBackgroundMenu(styleObj, brandObj);
+
+        // Prefer the resolved menu when non-empty; fall back to legacy otherwise.
+        const useResolved = resolved.length > 0;
+        const choices = useResolved ? resolved : legacyChoices;
+
+        if (settings.get("enableBackgroundMenu") && choices.length > 0) {
+            if (choices.length === 1) {
+                await confirmAndEnqueue(style, imageUrl, messageSid, useTwiml, choices[0].key, brand);
                 return;
             }
-            backgroundMenu.setPending(userPhone, { imageUrl, messageSid, style, brand, body, appPhone, baseUrl });
-            const menuMsg = backgroundMenu.buildMenu(bgChoices);
+            backgroundMenu.setPending(userPhone, {
+                imageUrl, messageSid, style, brand, body, appPhone, baseUrl,
+                resolvedChoices: choices,
+            });
+            const menuMsg = backgroundMenu.buildMenu(choices);
             if (useTwiml) {
                 twiml.message(menuMsg);
             } else {
@@ -288,7 +305,10 @@ app.post("/sms", async (req, res) => {
             // New selfie replaces old pending — clear and fall through
             backgroundMenu.clearPending(userPhone);
         } else {
-            const bgChoices = settings.get("backgroundChoices") || [];
+            const bgPendingState = backgroundMenu.getPending(userPhone);
+            const bgChoices = bgPendingState && bgPendingState.resolvedChoices
+                ? bgPendingState.resolvedChoices
+                : (settings.get("backgroundChoices") || []);
             const matched = backgroundMenu.matchReply(body, bgChoices);
             if (!matched) {
                 twiml.message(backgroundMenu.buildRetryMenu(bgChoices));
