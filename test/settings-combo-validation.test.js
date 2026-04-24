@@ -86,3 +86,86 @@ test("customStyles invalid behavior value is dropped", () => {
     assert.ok(!("behavior" in stored) || stored.behavior === undefined,
         `Invalid behavior "banana" should have been dropped; got ${stored.behavior}`);
 });
+
+test("customBrands accepts category, scenes, allowOriginal, wardrobe, colorPalette", () => {
+    const settings = freshSettings();
+    settings.update({
+        customBrands: {
+            "test-brand": {
+                name: "Test Brand",
+                brandPrompt: "legacy prompt",
+                category: "wardrobe-plus-scene",
+                wardrobe: "test wardrobe fragment",
+                allowOriginal: false,
+                colorPalette: "Recolor everything red.",
+                scenes: [
+                    { key: "scene-a", name: "Scene A", prompt: "Scene A prompt." },
+                    { key: "scene-b", name: "Scene B", prompt: "Scene B prompt." },
+                ],
+            },
+        },
+    });
+    const stored = settings.get("customBrands")["test-brand"];
+    assert.equal(stored.category, "wardrobe-plus-scene");
+    assert.equal(stored.wardrobe, "test wardrobe fragment");
+    assert.equal(stored.allowOriginal, false);
+    assert.equal(stored.colorPalette, "Recolor everything red.");
+    assert.equal(stored.scenes.length, 2);
+    assert.equal(stored.scenes[0].key, "scene-a");
+    assert.equal(stored.scenes[0].name, "Scene A");
+    assert.equal(stored.scenes[0].prompt, "Scene A prompt.");
+});
+
+test("customBrands legacy shape loads cleanly (backward compat)", () => {
+    const settings = freshSettings();
+    settings.update({
+        customBrands: {
+            "legacy-brand": {
+                name: "Legacy",
+                brandPrompt: "legacy text",
+                files: ["ref1.png"],
+            },
+        },
+    });
+    const stored = settings.get("customBrands")["legacy-brand"];
+    assert.equal(stored.name, "Legacy");
+    assert.equal(stored.brandPrompt, "legacy text");
+    assert.deepEqual(stored.files, ["ref1.png"]);
+});
+
+test("customBrands invalid category is dropped", () => {
+    const settings = freshSettings();
+    settings.update({
+        customBrands: {
+            "bad-brand": {
+                name: "Bad",
+                brandPrompt: "x",
+                category: "banana",
+            },
+        },
+    });
+    const stored = settings.get("customBrands")["bad-brand"];
+    assert.ok(!("category" in stored) || stored.category === undefined,
+        `Invalid category "banana" should be dropped; got ${stored.category}`);
+});
+
+test("customBrands invalid scene entries are filtered out", () => {
+    const settings = freshSettings();
+    settings.update({
+        customBrands: {
+            "filter-brand": {
+                name: "Filter",
+                brandPrompt: "x",
+                scenes: [
+                    { key: "ok", name: "OK scene", prompt: "ok." },
+                    { name: "missing key" },
+                    "not an object",
+                    { key: "nokey-no-name" },
+                ],
+            },
+        },
+    });
+    const stored = settings.get("customBrands")["filter-brand"];
+    assert.equal(stored.scenes.length, 1, "only the valid scene should survive");
+    assert.equal(stored.scenes[0].key, "ok");
+});
