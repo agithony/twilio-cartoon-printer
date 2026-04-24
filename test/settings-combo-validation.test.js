@@ -4,11 +4,16 @@ const fs = require("fs");
 const path = require("path");
 
 const SETTINGS_FILE = path.join(__dirname, "..", "data", "settings.json");
+const EVENT_PROFILE_FILE = path.join(__dirname, "..", "data", "events", "default", "settings.json");
 let _originalSettings = null;
+let _originalEventProfile = null;
 
 before(() => {
     if (fs.existsSync(SETTINGS_FILE)) {
         _originalSettings = fs.readFileSync(SETTINGS_FILE, "utf-8");
+    }
+    if (fs.existsSync(EVENT_PROFILE_FILE)) {
+        _originalEventProfile = fs.readFileSync(EVENT_PROFILE_FILE, "utf-8");
     }
 });
 
@@ -17,6 +22,11 @@ after(() => {
         fs.writeFileSync(SETTINGS_FILE, _originalSettings);
     } else if (fs.existsSync(SETTINGS_FILE)) {
         fs.unlinkSync(SETTINGS_FILE);
+    }
+    if (_originalEventProfile !== null) {
+        fs.writeFileSync(EVENT_PROFILE_FILE, _originalEventProfile);
+    } else if (fs.existsSync(EVENT_PROFILE_FILE)) {
+        fs.unlinkSync(EVENT_PROFILE_FILE);
     }
 });
 
