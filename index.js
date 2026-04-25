@@ -207,8 +207,8 @@ app.post("/sms", async (req, res) => {
                 await showBackgroundMenuOrEnqueue(style, imageUrl, messageSid, useTwiml, activeBrandList[0]);
                 return;
             }
-            brandMenu.setPending(userPhone, { imageUrl, messageSid, style, body, appPhone, baseUrl });
-            const menuMsg = brandMenu.buildMenu(activeBrands, activeBrandList);
+            brandMenu.setPending(userPhone, { imageUrl, messageSid, style, body, appPhone, baseUrl, includeNone: true });
+            const menuMsg = brandMenu.buildMenu(activeBrands, activeBrandList, { includeNone: true });
             if (useTwiml) {
                 twiml.message(menuMsg);
             } else {
@@ -345,14 +345,16 @@ app.post("/sms", async (req, res) => {
         } else {
             const activeBrands = getActiveBrands();
             const activeBrandList = Object.keys(activeBrands);
-            const matched = brandMenu.matchReply(body, activeBrands, activeBrandList);
+            const brPending = brandMenu.getPending(userPhone);
+            const includeNone = brPending && brPending.includeNone;
+            const matched = brandMenu.matchReply(body, activeBrands, activeBrandList, { includeNone });
             if (!matched) {
-                twiml.message(brandMenu.buildRetryMenu(activeBrands, activeBrandList));
+                twiml.message(brandMenu.buildRetryMenu(activeBrands, activeBrandList, { includeNone }));
                 return res.type("text/xml").send(twiml.toString());
             }
 
-            const brPending = brandMenu.getPending(userPhone);
             brandMenu.clearPending(userPhone);
+            const effectiveBrand = matched === "__none__" ? null : matched;
 
             // Check if lead capture "before" is needed
             if (leadMode === "before" && !treatAsAdmin && !leads.isCompleted(userPhone, eventName)) {
@@ -361,14 +363,14 @@ app.post("/sms", async (req, res) => {
                     messageSid: brPending.messageSid,
                     body: brPending.body || "",
                     style: brPending.style,
-                    brand: matched,
+                    brand: effectiveBrand,
                     baseUrl,
                 });
                 return res.type("text/xml").send(twiml.toString());
             }
 
             // Background menu or enqueue (with brand)
-            await showBackgroundMenuOrEnqueue(brPending.style, brPending.imageUrl, brPending.messageSid, false, matched);
+            await showBackgroundMenuOrEnqueue(brPending.style, brPending.imageUrl, brPending.messageSid, false, effectiveBrand);
             return res.type("text/xml").send(twiml.toString());
         }
     }
