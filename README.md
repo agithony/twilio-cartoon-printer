@@ -335,3 +335,23 @@ Both the Print Station app and CLI relay share these capabilities:
 - **Print relay** -- cloud-to-local printing via polling agent for cloud deployments
 
 For detailed documentation on all features, see **[docs/GUIDE.md](docs/GUIDE.md)**.
+
+## Style × Brand × Background combos (per-event config)
+
+Each event can configure nine art styles × five brand wardrobes × a contextual set of backgrounds. The background menu is assembled at runtime from the chosen style and brand — no static list per event. See `docs/superpowers/specs/2026-04-24-style-brand-background-combos-design.md` for the full design.
+
+### Custom style fields
+
+- `behavior` — `"normal"` (default) or `"themed-container"`. Use `themed-container` when the style wraps the subject in a physical object like a toy box or trading card, whose interior/art themes to the chosen background.
+- `acceptsColorPalette` — boolean (default `true`). Set to `false` on material-defined styles (e.g., bronze sculpture) so a brand's color palette override does not recolor them.
+- `containerDescription` — string, required when `behavior === "themed-container"`.
+
+### Custom brand fields
+
+- `category` — `"wardrobe-only"` (default) or `"wardrobe-plus-scene"`.
+- `wardrobe` — prompt fragment describing clothing/accessories.
+- `scenes` — array of `{ key, name, prompt, files? }`. Wardrobe-only brands typically define one scene; wardrobe-plus-scene brands define at least two.
+- `allowOriginal` — boolean (default `true`). Set to `false` to hide the "Original scene" option (appropriate for brands that force a themed scene).
+- `colorPalette` — optional prompt fragment. When set, applied as a final recoloring instruction unless the chosen style sets `acceptsColorPalette: false`.
+
+Users now see a "None" option at the bottom of the brand menu so they can skip the brand layer entirely.
