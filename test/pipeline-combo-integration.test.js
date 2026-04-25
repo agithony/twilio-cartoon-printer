@@ -42,3 +42,28 @@ test("fragments for Cartoon × LA Kings — both null", () => {
     assert.equal(frags.containerDescription, null);
     assert.equal(frags.colorPalette, null);
 });
+
+test("resolved menu's keys carry a prompt that the pipeline will apply", () => {
+    const style = { behavior: "normal", acceptsColorPalette: true };
+    const brand = {
+        category: "wardrobe-only",
+        scenes: [{ key: "ice-rink", name: "Ice rink", prompt: "ice rink with bright arena lighting", files: [] }],
+        allowOriginal: true,
+        wardrobe: "LA Kings jersey",
+    };
+    const { resolveBackgroundMenu } = require("../lib/prompt-assembler");
+    const menu = resolveBackgroundMenu(style, brand);
+
+    // User-selected key from the SMS flow
+    const chosen = menu.find((c) => c.key === "ice-rink");
+    assert.ok(chosen, "brand scene should appear in resolved menu");
+    assert.equal(chosen.key, "ice-rink");
+    assert.ok(chosen.prompt && chosen.prompt.length > 0, "resolved choice must carry a prompt for the pipeline to apply");
+
+    // And the synthesized entries too
+    const original = menu.find((c) => c.key === "original");
+    assert.ok(original && original.prompt, "synthesized 'original' must carry a default prompt");
+
+    const plainWhite = menu.find((c) => c.key === "plain-white");
+    assert.ok(plainWhite && plainWhite.prompt, "synthesized 'plain-white' must carry a default prompt");
+});
