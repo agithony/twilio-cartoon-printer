@@ -1,12 +1,14 @@
 const { test } = require("node:test");
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
+const fsp = fs.promises;
 const path = require("node:path");
 const crypto = require("node:crypto");
 
 const {
     buildEntries, makeId,
     addPhoto, removePhoto, loadPhotos, ensureDirs, TEST_PHOTOS_DIR,
+    experimentDir, saveManifest, loadManifest, runEntry, runExperiment,
 } = require("../lib/experiments");
 
 test("makeId: produces sortable, slug-safe IDs", () => {
@@ -90,5 +92,89 @@ test("addPhoto rejects duplicate filenames", async () => {
         await assert.rejects(() => addPhoto({ filename, displayName: "Two", buffer: buf }), /already exists/);
     } finally {
         await removePhoto(filename).catch(() => {});
+    }
+});
+
+function makeManifest(overrides = {}) {
+    return {
+        id: `test-${crypto.randomUUID()}`,
+        name: "runner-test",
+        createdAt: new Date().toISOString(),
+        status: "pending",
+        config: { styles: ["cartoon"], brands: [null], backgrounds: [null], photos: ["a.jpg"], reps: 1, variants: [{ name: "v" }] },
+        entries: [{
+            photo: "a.jpg", style: "cartoon", brand: null, background: null,
+            variant: "v", rep: 1, status: "pending",
+            outputPath: "a_cartoon_none_none_v_1.png",
+            promptText: null, generationMs: null, error: null,
+            startedAt: null, completedAt: null,
+        }],
+        ...overrides,
+    };
+}
+
+test("runEntry: success writes PNG and marks completed", async () => {
+    const manifest = makeManifest();
+    await fsp.mkdir(experimentDir(manifest.id), { recursive: true });
+    const flushed = [];
+    const deps = {
+        flushManifest: async (m) => { flushed.push(JSON.stringify(m.entries[0].status)); },
+        buildPromptForEntry: async () => "the-prompt",
+        callImageEdit: async () => Buffer.from([0x89, 0x50, 0x4e, 0x47]), // PNG magic bytes
+        ensurePhotoSceneCache: async () => {},
+    };
+    try {
+        await runEntry(manifest.entries[0], manifest, deps);
+        assert.equal(manifest.entries[0].status, "completed");
+        assert.equal(manifest.entries[0].promptText, "the-prompt");
+        assert.ok(fs.existsSync(path.join(experimentDir(manifest.id), manifest.entries[0].outputPath)));
+        // Two flushes: once at start (running), once at end (completed).
+        assert.deepEqual(flushed, [`"running"`, `"completed"`]);
+    } finally {
+        await fsp.rm(experimentDir(manifest.id), { recursive: true, force: true });
+    }
+});
+
+test("runEntry: first failure retries, second marks failed", async () => {
+    const manifest = makeManifest();
+    await fsp.mkdir(experimentDir(manifest.id), { recursive: true });
+    let calls = 0;
+    const deps = {
+        flushManifest: async () => {},
+        buildPromptForEntry: async () => "p",
+        callImageEdit: async () => { calls++; throw new Error("boom"); },
+        ensurePhotoSceneCache: async () => {},
+    };
+    try {
+        await runEntry(manifest.entries[0], manifest, deps);
+        assert.equal(calls, 2); // one initial + one retry
+        assert.equal(manifest.entries[0].status, "failed");
+        assert.equal(manifest.entries[0].error, "boom");
+    } finally {
+        await fsp.rm(experimentDir(manifest.id), { recursive: true, force: true });
+    }
+});
+
+test("runExperiment: completes all entries and computes cost", async () => {
+    const manifest = makeManifest({
+        entries: [
+            { photo: "a.jpg", style: "cartoon", brand: null, background: null, variant: "v", rep: 1, status: "pending", outputPath: "a1.png", promptText: null, generationMs: null, error: null, startedAt: null, completedAt: null },
+            { photo: "a.jpg", style: "cartoon", brand: null, background: null, variant: "v", rep: 2, status: "pending", outputPath: "a2.png", promptText: null, generationMs: null, error: null, startedAt: null, completedAt: null },
+        ],
+    });
+    await saveManifest(manifest);
+    const deps = {
+        flushManifest: saveManifest,
+        buildPromptForEntry: async () => "p",
+        callImageEdit: async () => Buffer.from([0x89]),
+        ensurePhotoSceneCache: async () => {},
+    };
+    try {
+        await runExperiment(manifest, deps);
+        assert.equal(manifest.status, "completed");
+        assert.equal(manifest.entries.every((e) => e.status === "completed"), true);
+        assert.ok(manifest.totalCostUsd > 0);
+    } finally {
+        await fsp.rm(experimentDir(manifest.id), { recursive: true, force: true });
     }
 });
