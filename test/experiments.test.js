@@ -229,3 +229,20 @@ test("POST /api/photos rejects non-JPEG filename", async () => {
     // Either 400 (filename rejected) or 415 (express.raw won't accept application/json)
     assert.ok(status === 400 || status === 415);
 });
+
+test("GET / returns the experiments landing page HTML", async () => {
+    const app = express();
+    app.use(buildRouter());
+    const { status, body } = await new Promise((resolve, reject) => {
+        const server = app.listen(0, () => {
+            const port = server.address().port;
+            http.get({ port, path: "/" }, (res) => {
+                let chunks = ""; res.on("data", (c) => chunks += c);
+                res.on("end", () => { server.close(); resolve({ status: res.statusCode, body: chunks }); });
+            }).on("error", reject);
+        });
+    });
+    assert.equal(status, 200);
+    assert.match(body, /Prompt Experiments/);
+    assert.match(body, /New experiment/);
+});
