@@ -1,5 +1,4 @@
 const { test } = require("node:test");
-const assert = require("node:assert/strict");
 const { __assemblePromptForTest } = require("../lib/pipeline");
 const { STYLES, DEFAULT_PRESERVE, DEFAULT_COMPOSITION } = require("../lib/styles");
 
