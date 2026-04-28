@@ -289,6 +289,10 @@ app.post("/sms", async (req, res) => {
             const style = pi.style || parseStyle(pi.body, activeStyles, settings.get("defaultStyle"));
             if (pi.background) {
                 await confirmAndEnqueue(style, pi.imageUrl, pi.messageSid, false, pi.background, pi.brand);
+            } else if (pi.brandPicked) {
+                // User already chose a brand (possibly "None" → null) before lead capture.
+                // Don't re-ask; proceed to background.
+                await showBackgroundMenuOrEnqueue(style, pi.imageUrl, pi.messageSid, false, pi.brand);
             } else if (pi.brand) {
                 await showBackgroundMenuOrEnqueue(style, pi.imageUrl, pi.messageSid, false, pi.brand);
             } else {
@@ -364,6 +368,7 @@ app.post("/sms", async (req, res) => {
                     body: brPending.body || "",
                     style: brPending.style,
                     brand: effectiveBrand,
+                    brandPicked: true,
                     baseUrl,
                 });
                 return res.type("text/xml").send(twiml.toString());
