@@ -1,0 +1,81 @@
+const { test } = require("node:test");
+const assert = require("node:assert/strict");
+const { brandWarnings, styleWarnings } = require("../lib/config-warnings");
+
+// Brand warnings
+
+test("brand: wardrobe-plus-scene with no scenes warns loudly", () => {
+    const b = { name: "Foo", category: "wardrobe-plus-scene", scenes: [] };
+    const warnings = brandWarnings(b);
+    assert.ok(warnings.some((w) => w.includes("scene")), "should warn about missing scenes");
+});
+
+test("brand: wardrobe-plus-scene with allowOriginal=true flags no-op", () => {
+    const b = { name: "Foo", category: "wardrobe-plus-scene", scenes: [{ key: "a", name: "A" }], allowOriginal: true };
+    const warnings = brandWarnings(b);
+    assert.ok(warnings.some((w) => /Original.*no effect|no-op|ignored/i.test(w)));
+});
+
+test("brand: scenes without wardrobe-plus-scene category is quiet", () => {
+    // A brand can have scenes without being wardrobe-plus-scene — they just
+    // appear alongside Original/Plain white. Not actionable.
+    const b = { name: "Foo", category: "wardrobe-only", scenes: [{ key: "a", name: "A", prompt: "a scene" }] };
+    assert.equal(brandWarnings(b).length, 0);
+});
+
+test("brand: wardrobe and brandPrompt both set warns about dead brandPrompt", () => {
+    const b = { name: "Foo", wardrobe: "LA Kings jersey", brandPrompt: "legacy text" };
+    const warnings = brandWarnings(b);
+    assert.ok(warnings.some((w) => /brandPrompt.*overridden|legacy|unused/i.test(w)));
+});
+
+test("brand: scene with empty prompt warns", () => {
+    const b = { name: "Foo", scenes: [{ key: "ice", name: "Ice Rink", prompt: "" }] };
+    const warnings = brandWarnings(b);
+    assert.ok(warnings.some((w) => /empty prompt|prompt is empty|Ice Rink/i.test(w)));
+});
+
+test("brand: clean config returns no warnings", () => {
+    const b = {
+        name: "LA Kings",
+        category: "wardrobe-plus-scene",
+        wardrobe: "LA Kings jersey",
+        scenes: [{ key: "ice", name: "Ice Rink", prompt: "hockey rink with stadium lights" }],
+        allowOriginal: false,
+    };
+    assert.deepEqual(brandWarnings(b), []);
+});
+
+test("brand: null/undefined is safely empty", () => {
+    assert.deepEqual(brandWarnings(null), []);
+    assert.deepEqual(brandWarnings(undefined), []);
+});
+
+// Style warnings
+
+test("style: themed-container with no containerDescription warns", () => {
+    const s = { name: "Shaker", behavior: "themed-container", containerDescription: "" };
+    const warnings = styleWarnings(s);
+    assert.ok(warnings.some((w) => /container description|containerDescription/i.test(w)));
+});
+
+test("style: containerDescription on non-container behavior warns about dead field", () => {
+    const s = { name: "Cartoon", behavior: "normal", containerDescription: "inside a snow globe" };
+    const warnings = styleWarnings(s);
+    assert.ok(warnings.some((w) => /only.*themed-container|unused|no effect/i.test(w)));
+});
+
+test("style: themed-container with description is quiet", () => {
+    const s = { name: "Shaker", behavior: "themed-container", containerDescription: "inside a snow globe" };
+    assert.deepEqual(styleWarnings(s), []);
+});
+
+test("style: plain normal style is quiet", () => {
+    const s = { name: "Cartoon", behavior: "normal" };
+    assert.deepEqual(styleWarnings(s), []);
+});
+
+test("style: null/undefined is safely empty", () => {
+    assert.deepEqual(styleWarnings(null), []);
+    assert.deepEqual(styleWarnings(undefined), []);
+});

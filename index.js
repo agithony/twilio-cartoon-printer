@@ -207,8 +207,8 @@ app.post("/sms", async (req, res) => {
                 await showBackgroundMenuOrEnqueue(style, imageUrl, messageSid, useTwiml, activeBrandList[0]);
                 return;
             }
-            brandMenu.setPending(userPhone, { imageUrl, messageSid, style, body, appPhone, baseUrl });
-            const menuMsg = brandMenu.buildMenu(activeBrands, activeBrandList);
+            brandMenu.setPending(userPhone, { imageUrl, messageSid, style, body, appPhone, baseUrl, includeNone: true });
+            const menuMsg = brandMenu.buildMenu(activeBrands, activeBrandList, { includeNone: true });
             if (useTwiml) {
                 twiml.message(menuMsg);
             } else {
@@ -232,15 +232,32 @@ app.post("/sms", async (req, res) => {
 
     // Helper: show background menu or enqueue directly
     async function showBackgroundMenuOrEnqueue(style, imageUrl, messageSid, useTwiml, brand) {
-        const bgChoices = settings.get("backgroundChoices") || [];
-        if (settings.get("enableBackgroundMenu") && bgChoices.length > 0) {
-            if (bgChoices.length === 1) {
-                // Auto-select if only one background
-                await confirmAndEnqueue(style, imageUrl, messageSid, useTwiml, bgChoices[0].key, brand);
+        const { resolveBackgroundMenu } = require("./lib/prompt-assembler");
+
+        // Legacy mode: the event configured a flat backgroundChoices list.
+        // Keep serving it verbatim for existing events.
+        const legacyChoices = settings.get("backgroundChoices") || [];
+
+        // Resolve from style + brand config (new combo-driven menu).
+        const styleObj = activeStyles[style] || {};
+        const activeBrands = getActiveBrands();
+        const brandObj = brand ? activeBrands[brand] : null;
+        const resolved = resolveBackgroundMenu(styleObj, brandObj);
+
+        // Prefer the resolved menu when non-empty; fall back to legacy otherwise.
+        const useResolved = resolved.length > 0;
+        const choices = useResolved ? resolved : legacyChoices;
+
+        if (settings.get("enableBackgroundMenu") && choices.length > 0) {
+            if (choices.length === 1) {
+                await confirmAndEnqueue(style, imageUrl, messageSid, useTwiml, choices[0].key, brand);
                 return;
             }
-            backgroundMenu.setPending(userPhone, { imageUrl, messageSid, style, brand, body, appPhone, baseUrl });
-            const menuMsg = backgroundMenu.buildMenu(bgChoices);
+            backgroundMenu.setPending(userPhone, {
+                imageUrl, messageSid, style, brand, body, appPhone, baseUrl,
+                resolvedChoices: choices,
+            });
+            const menuMsg = backgroundMenu.buildMenu(choices);
             if (useTwiml) {
                 twiml.message(menuMsg);
             } else {
@@ -272,6 +289,10 @@ app.post("/sms", async (req, res) => {
             const style = pi.style || parseStyle(pi.body, activeStyles, settings.get("defaultStyle"));
             if (pi.background) {
                 await confirmAndEnqueue(style, pi.imageUrl, pi.messageSid, false, pi.background, pi.brand);
+            } else if (pi.brandPicked) {
+                // User already chose a brand (possibly "None" → null) before lead capture.
+                // Don't re-ask; proceed to background.
+                await showBackgroundMenuOrEnqueue(style, pi.imageUrl, pi.messageSid, false, pi.brand);
             } else if (pi.brand) {
                 await showBackgroundMenuOrEnqueue(style, pi.imageUrl, pi.messageSid, false, pi.brand);
             } else {
@@ -288,7 +309,10 @@ app.post("/sms", async (req, res) => {
             // New selfie replaces old pending — clear and fall through
             backgroundMenu.clearPending(userPhone);
         } else {
-            const bgChoices = settings.get("backgroundChoices") || [];
+            const bgPendingState = backgroundMenu.getPending(userPhone);
+            const bgChoices = bgPendingState && bgPendingState.resolvedChoices
+                ? bgPendingState.resolvedChoices
+                : (settings.get("backgroundChoices") || []);
             const matched = backgroundMenu.matchReply(body, bgChoices);
             if (!matched) {
                 twiml.message(backgroundMenu.buildRetryMenu(bgChoices));
@@ -325,14 +349,16 @@ app.post("/sms", async (req, res) => {
         } else {
             const activeBrands = getActiveBrands();
             const activeBrandList = Object.keys(activeBrands);
-            const matched = brandMenu.matchReply(body, activeBrands, activeBrandList);
+            const brPending = brandMenu.getPending(userPhone);
+            const includeNone = brPending && brPending.includeNone;
+            const matched = brandMenu.matchReply(body, activeBrands, activeBrandList, { includeNone });
             if (!matched) {
-                twiml.message(brandMenu.buildRetryMenu(activeBrands, activeBrandList));
+                twiml.message(brandMenu.buildRetryMenu(activeBrands, activeBrandList, { includeNone }));
                 return res.type("text/xml").send(twiml.toString());
             }
 
-            const brPending = brandMenu.getPending(userPhone);
             brandMenu.clearPending(userPhone);
+            const effectiveBrand = matched === "__none__" ? null : matched;
 
             // Check if lead capture "before" is needed
             if (leadMode === "before" && !treatAsAdmin && !leads.isCompleted(userPhone, eventName)) {
@@ -341,14 +367,15 @@ app.post("/sms", async (req, res) => {
                     messageSid: brPending.messageSid,
                     body: brPending.body || "",
                     style: brPending.style,
-                    brand: matched,
+                    brand: effectiveBrand,
+                    brandPicked: true,
                     baseUrl,
                 });
                 return res.type("text/xml").send(twiml.toString());
             }
 
             // Background menu or enqueue (with brand)
-            await showBackgroundMenuOrEnqueue(brPending.style, brPending.imageUrl, brPending.messageSid, false, matched);
+            await showBackgroundMenuOrEnqueue(brPending.style, brPending.imageUrl, brPending.messageSid, false, effectiveBrand);
             return res.type("text/xml").send(twiml.toString());
         }
     }
