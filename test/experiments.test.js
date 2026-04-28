@@ -1,7 +1,13 @@
 const { test } = require("node:test");
 const assert = require("node:assert/strict");
+const fs = require("node:fs");
+const path = require("node:path");
+const crypto = require("node:crypto");
 
-const { buildEntries, makeId, MAX_ENTRIES_PER_EXPERIMENT } = require("../lib/experiments");
+const {
+    buildEntries, makeId,
+    addPhoto, removePhoto, loadPhotos, ensureDirs, TEST_PHOTOS_DIR,
+} = require("../lib/experiments");
 
 test("makeId: produces sortable, slug-safe IDs", () => {
     const id = makeId("Cartoon Length V2", new Date("2026-04-28T14:30:00Z"));
@@ -52,4 +58,37 @@ test("buildEntries: every entry starts as pending with no error", () => {
     assert.equal(entries[0].status, "pending");
     assert.equal(entries[0].error, null);
     assert.equal(entries[0].promptText, null);
+});
+
+// Photo helpers need a real filesystem — use the temp dir and override the
+// module's EXPERIMENTS_DIR via a symlink trick isn't clean, so we just run
+// against the real data/experiments/ and clean up afterwards.
+
+test("addPhoto / loadPhotos / removePhoto roundtrip", async () => {
+    await ensureDirs();
+    const filename = `__unit_test_${crypto.randomUUID()}.jpg`;
+    const buf = Buffer.from("not-a-real-jpg-but-bytes-suffice-for-the-test");
+    try {
+        const added = await addPhoto({ filename, displayName: "Unit Test", buffer: buf });
+        assert.equal(added.filename, filename);
+        assert.equal(added.sceneDescription, null);
+
+        const photos = await loadPhotos();
+        assert.ok(photos.photos.find((p) => p.filename === filename));
+        assert.ok(fs.existsSync(path.join(TEST_PHOTOS_DIR, filename)));
+    } finally {
+        await removePhoto(filename).catch(() => {});
+    }
+});
+
+test("addPhoto rejects duplicate filenames", async () => {
+    await ensureDirs();
+    const filename = `__unit_test_dup_${crypto.randomUUID()}.jpg`;
+    const buf = Buffer.from("x");
+    try {
+        await addPhoto({ filename, displayName: "One", buffer: buf });
+        await assert.rejects(() => addPhoto({ filename, displayName: "Two", buffer: buf }), /already exists/);
+    } finally {
+        await removePhoto(filename).catch(() => {});
+    }
 });
