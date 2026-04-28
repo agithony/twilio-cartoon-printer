@@ -262,3 +262,16 @@ test("GET /new renders the form", async () => {
     assert.match(body, /New experiment/);
     assert.match(body, /Run experiment/);
 });
+
+test("GET /run/:id returns 404 for unknown id", async () => {
+    const app = express();
+    app.use(buildRouter());
+    const { status } = await new Promise((resolve, reject) => {
+        const server = app.listen(0, () => {
+            http.get({ port: server.address().port, path: "/run/does-not-exist" }, (res) => {
+                res.on("data", () => {}); res.on("end", () => { server.close(); resolve({ status: res.statusCode }); });
+            }).on("error", reject);
+        });
+    });
+    assert.equal(status, 404);
+});
