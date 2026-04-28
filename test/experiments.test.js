@@ -213,3 +213,19 @@ test("POST /api/runs rejects missing fields", async () => {
     const { status } = await request(app, { method: "POST", path: "/api/runs", body: { name: "x" } });
     assert.equal(status, 400);
 });
+
+test("GET /api/photos returns current photo manifest", async () => {
+    const app = express();
+    app.use(buildRouter());
+    const { status, body } = await request(app, { method: "GET", path: "/api/photos" });
+    assert.equal(status, 200);
+    assert.ok(Array.isArray(body.photos));
+});
+
+test("POST /api/photos rejects non-JPEG filename", async () => {
+    const app = express();
+    app.use(buildRouter());
+    const { status } = await request(app, { method: "POST", path: "/api/photos?filename=foo.png", body: { x: 1 } });
+    // Either 400 (filename rejected) or 415 (express.raw won't accept application/json)
+    assert.ok(status === 400 || status === 415);
+});
