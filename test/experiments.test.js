@@ -178,3 +178,38 @@ test("runExperiment: completes all entries and computes cost", async () => {
         await fsp.rm(experimentDir(manifest.id), { recursive: true, force: true });
     }
 });
+
+const express = require("express");
+const http = require("http");
+const { buildRouter } = require("../lib/experiments");
+
+function request(app, { method, path: p, body }) {
+    return new Promise((resolve, reject) => {
+        const server = app.listen(0, () => {
+            const port = server.address().port;
+            const req = http.request({ port, method, path: p, headers: body ? { "content-type": "application/json" } : {} }, (res) => {
+                let chunks = "";
+                res.on("data", (c) => chunks += c);
+                res.on("end", () => { server.close(); resolve({ status: res.statusCode, body: chunks ? JSON.parse(chunks) : null }); });
+            });
+            req.on("error", (err) => { server.close(); reject(err); });
+            if (body) req.write(JSON.stringify(body));
+            req.end();
+        });
+    });
+}
+
+test("GET /api/runs returns an array", async () => {
+    const app = express();
+    app.use(buildRouter());
+    const { status, body } = await request(app, { method: "GET", path: "/api/runs" });
+    assert.equal(status, 200);
+    assert.ok(Array.isArray(body.runs));
+});
+
+test("POST /api/runs rejects missing fields", async () => {
+    const app = express();
+    app.use(buildRouter());
+    const { status } = await request(app, { method: "POST", path: "/api/runs", body: { name: "x" } });
+    assert.equal(status, 400);
+});
