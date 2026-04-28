@@ -275,3 +275,18 @@ test("GET /run/:id returns 404 for unknown id", async () => {
     });
     assert.equal(status, 404);
 });
+
+test("GET /photos renders the photo manager", async () => {
+    const app = express();
+    app.use(buildRouter());
+    const { status, body } = await new Promise((resolve, reject) => {
+        const server = app.listen(0, () => {
+            http.get({ port: server.address().port, path: "/photos" }, (res) => {
+                let chunks = ""; res.on("data", (c) => chunks += c);
+                res.on("end", () => { server.close(); resolve({ status: res.statusCode, body: chunks }); });
+            }).on("error", reject);
+        });
+    });
+    assert.equal(status, 200);
+    assert.match(body, /Test photos/);
+});
