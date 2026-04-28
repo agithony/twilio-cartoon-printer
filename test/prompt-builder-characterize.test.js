@@ -125,3 +125,50 @@ test("characterize: themed-container style (action figure) with brand", async (t
     }));
     t.assert.snapshot(prompt);
 });
+
+// ─── Scenarios 5-8 ──────────────────────────────────────────────────────────
+
+test("characterize: sketch (rejects color palette) + palette-bearing brand", async (t) => {
+    // Twilio brand has a colorPalette, but sketch has acceptsColorPalette:false,
+    // so the palette must be suppressed. This pins that behavior.
+    const prompt = await __assemblePromptForTest(baseInput({
+        styleKey: "sketch",
+        styleObj: sketchStyleObj,
+        stylePrompt: sketchStyleObj.prompt,
+        brandKey: "twilio",
+        brandObj: wardrobePlusSceneBrand,
+        brandPrompt: "Wear Signal conference apparel.",
+        brandAnalysis: "A red Signal conference jacket with white lanyard.",
+        brandRefBuffers: [Buffer.from("fake-ref-1")],
+    }));
+    t.assert.snapshot(prompt);
+});
+
+test("characterize: multi-subject (2 people) cartoon, no brand, caricature mode", async (t) => {
+    const prompt = await __assemblePromptForTest(baseInput({
+        scene: { subjects: 2, pets: "none", positions: "side-by-side" },
+        sceneLine: "This photo has exactly 2 HUMAN subjects. Include ALL of them positioned as shown. The output must contain exactly 2 people — no more, no fewer.",
+        multiSubjectMode: "caricature",
+    }));
+    t.assert.snapshot(prompt);
+});
+
+test("characterize: solo cartoon + pet (dog), no brand", async (t) => {
+    const prompt = await __assemblePromptForTest(baseInput({
+        scene: { subjects: 1, pets: "dog", positions: "centered" },
+        sceneLine: "This photo has exactly 1 person and a dog. The dog is an animal, NOT a person — do not turn the dog into a human. The output must contain exactly 1 person and the dog — no other people.",
+    }));
+    t.assert.snapshot(prompt);
+});
+
+test("characterize: reviewer feedback override (skips final lock + reminder)", async (t) => {
+    const prompt = await __assemblePromptForTest(baseInput({
+        brandKey: "laKings",
+        brandObj: wardrobeOnlyBrand,
+        brandPrompt: "Wear an LA Kings hockey jersey.",
+        brandAnalysis: "A black hockey jersey with silver LA Kings crest on the chest.",
+        brandRefBuffers: [Buffer.from("fake-ref-1")],
+        reviewFeedback: "The subject is wearing a blue shirt in the original, not an LA Kings jersey. Please do not alter their original clothing.",
+    }));
+    t.assert.snapshot(prompt);
+});
