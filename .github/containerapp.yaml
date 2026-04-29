@@ -9,7 +9,7 @@ properties:
         image: ${CONTAINER_IMAGE}
         resources:
           cpu: 1.0
-          memory: 2Gi
+          memory: 4Gi
         env:
           - name: PORT
             value: "8080"
