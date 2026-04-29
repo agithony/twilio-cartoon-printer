@@ -36,6 +36,7 @@ const backgroundMenu = require("./lib/background-menu");
 const { getActiveBrands } = require("./lib/brands");
 const { mountDashboard } = require("./lib/dashboard");
 const { mountReview } = require("./lib/review");
+const { mountExperiments } = require("./lib/experiments");
 const { mountHome } = require("./lib/home");
 const { mountPhotoGallery } = require("./lib/photogallery");
 const { mountOutreach } = require("./lib/outreach");
@@ -548,6 +549,7 @@ const server = app.listen(port, "0.0.0.0", async () => {
     mountShare(app);
     mountPrintRelay(app);
     mountReview(app);
+    await mountExperiments(app);
     let genPollRunning = false;
     setInterval(async () => {
         if (genPollRunning || settings.get("queuePaused")) return;

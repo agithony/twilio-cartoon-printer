@@ -12,3 +12,4 @@ data/contacts.json
 relay-app/out/
 data/settings.json
 data/events/
+data/experiments/
