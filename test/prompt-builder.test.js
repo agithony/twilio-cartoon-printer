@@ -128,16 +128,15 @@ test("bgMode=ai without bgAnalysis: emits Match-the-background fallback", () => 
     assert.match(out, /Background: Match the background shown in the reference images\./);
 });
 
-test("bgMode=exact: instructs pure magenta chroma-key fill for post-processing composite", () => {
+test("bgMode=exact: instructs fully transparent background for post-processing composite", () => {
     const out = build(makeInput({
         bgChoice: { key: "plain", prompt: "" },
         bgMode: "exact",
         bgRefBuffers: [Buffer.from("bg1")],
     }));
-    assert.match(out, /Background: Fill the entire area around the subject with a flat, solid, pure magenta color/);
-    assert.match(out, /#FF00FF/);
-    assert.match(out, /chroma-key fill that will be removed in post-processing/);
-    assert.match(out, /Do not include magenta anywhere on the subject/);
+    assert.match(out, /The area around the subject must be fully transparent/);
+    assert.match(out, /Render only the subject as a cut-out/);
+    assert.match(out, /replaced with the actual background image in post-processing/);
 });
 
 test("bgChoice with prompt (no refs): prompt is appended verbatim", () => {
