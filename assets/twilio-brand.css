@@ -214,34 +214,45 @@ html[data-theme="light"] .theme-toggle .icon-moon { display: block; }
 
 /* ── Pending-review glow (fixed overlay, all admin pages) ────────────────────
    Body class toggled by each admin page's review-count polling: whenever
-   count > 0, <body> gets class "review-pending" and a fixed inset-shadow
-   overlay pulses softly at the viewport edges. Does NOT appear when count
-   is 0. Brand red works on both themes; light mode uses slightly higher
-   alpha so the edges still pop against a white background. Respects
-   prefers-reduced-motion (static medium alpha, no animation). */
-body.review-pending::after {
-  content: ''; position: fixed; inset: 0; pointer-events: none; z-index: 9998;
-  box-shadow: inset 0 0 60px 10px rgba(239, 34, 58, 0.22);
-  animation: pendingReviewPulse 2s ease-in-out infinite;
-  /* Use CSS containment so this overlay never triggers layout/paint of
-     underlying content during the animation. */
-  contain: strict;
-  width: 100vw; height: 100vh;
-}
-html[data-theme="light"] body.review-pending::after {
-  box-shadow: inset 0 0 60px 10px rgba(239, 34, 58, 0.30);
+   count > 0, <body> gets class "review-pending" and a fixed-position overlay
+   paints a thick pulsing border around the entire viewport. Visible across
+   dark/light modes and respects prefers-reduced-motion. Only appears when
+   count > 0.
+
+   Implementation: a fixed pseudo-element covers the viewport with a solid
+   inner-ring via box-shadow (inset, very thick, opaque red). The pulse
+   animates both the spread and the alpha so the eye catches it in
+   peripheral vision without being strobe-level annoying. */
+body.review-pending::before {
+  content: '';
+  position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+  pointer-events: none; z-index: 999999;
+  /* A thick red ring that pulses. Inset shadow spread of 12px gives a
+     solid 12-px-wide colored band along the viewport edge; the 24px blur
+     feathers it inward so it doesn't look like a hard rectangle. */
+  box-shadow:
+    inset 0 0 0 12px rgba(239, 34, 58, 0.65),
+    inset 0 0 36px 12px rgba(239, 34, 58, 0.35);
+  animation: pendingReviewPulse 1.6s ease-in-out infinite;
+  will-change: box-shadow, opacity;
 }
 @keyframes pendingReviewPulse {
-  0%, 100% { box-shadow: inset 0 0 40px 6px rgba(239, 34, 58, 0.10); }
-  50%      { box-shadow: inset 0 0 80px 14px rgba(239, 34, 58, 0.32); }
-}
-html[data-theme="light"] body.review-pending::after {
-  animation-name: pendingReviewPulseLight;
-}
-@keyframes pendingReviewPulseLight {
-  0%, 100% { box-shadow: inset 0 0 40px 6px rgba(239, 34, 58, 0.16); }
-  50%      { box-shadow: inset 0 0 80px 14px rgba(239, 34, 58, 0.40); }
+  0%, 100% {
+    box-shadow:
+      inset 0 0 0 8px rgba(239, 34, 58, 0.50),
+      inset 0 0 24px 8px rgba(239, 34, 58, 0.22);
+  }
+  50% {
+    box-shadow:
+      inset 0 0 0 14px rgba(239, 34, 58, 0.85),
+      inset 0 0 48px 16px rgba(239, 34, 58, 0.45);
+  }
 }
 @media (prefers-reduced-motion: reduce) {
-  body.review-pending::after { animation: none; }
+  body.review-pending::before {
+    animation: none;
+    box-shadow:
+      inset 0 0 0 10px rgba(239, 34, 58, 0.60),
+      inset 0 0 32px 10px rgba(239, 34, 58, 0.30);
+  }
 }
