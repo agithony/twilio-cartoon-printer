@@ -7,6 +7,7 @@ assets/*.webm
 .env
 data/leads.json
 data/contacts.json
+data/*.jsonl
 .DS_Store
 .relay-temp/
 relay-app/out/
