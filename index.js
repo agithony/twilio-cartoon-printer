@@ -144,8 +144,9 @@ app.post("/sms", async (req, res) => {
     async function confirmAndEnqueue(style, imageUrl, messageSid, useTwiml, background, brand) {
         if (!activeStyles[style]) style = activeStyleList[0] || settings.get("defaultStyle");
         const styleName = activeStyles[style] ? activeStyles[style].name : style;
+        const styleNameLower = typeof styleName === "string" ? styleName.toLowerCase() : styleName;
         const singleStyle = activeStyleList.length === 1;
-        const confirmLabel = singleStyle ? "Your portrait" : `Your ${styleName} portrait`;
+        const confirmLabel = singleStyle ? "Your portrait" : `Your ${styleNameLower} portrait`;
         console.log(`📩 Enqueuing portrait for ${userPhone} (style: ${styleName})`);
 
         const printingEnabled = settings.get("enablePrinting");
@@ -166,11 +167,13 @@ app.post("/sms", async (req, res) => {
                 await sendSms(userPhone, appPhone, msg);
             }
             enqueueJob(imageUrl, messageSid, userPhone, appPhone, style, baseUrl, background, brand);
+            require("./lib/still-working").arm(userPhone, appPhone, eventName);
         } else {
             const used = getUsageCount(userPhone);
             const maxPrints = settings.get("maxPrints");
+            const quotaUnlimited = settings.isUnlimitedQuota(maxPrints);
             const remaining = maxPrints - used;
-            const unlimited = isAdmin(userPhone) && testingMode;
+            const unlimited = (isAdmin(userPhone) && testingMode) || quotaUnlimited;
 
             if (remaining <= 0 && !unlimited) {
                 const quotaMsg = settings.getMsg("quotaExceeded", { maxPrints, units, eventName });
@@ -195,6 +198,7 @@ app.post("/sms", async (req, res) => {
                 await sendSms(userPhone, appPhone, msg);
             }
             enqueueJob(imageUrl, messageSid, userPhone, appPhone, style, baseUrl, background, brand);
+            require("./lib/still-working").arm(userPhone, appPhone, eventName);
         }
     }
 
@@ -457,7 +461,8 @@ app.post("/sms", async (req, res) => {
         if (!treatAsAdmin) {
             const used = getUsageCount(userPhone);
             const maxPrints = settings.get("maxPrints");
-            const unlimited = isAdmin(userPhone) && testingMode;
+            const quotaUnlimited = settings.isUnlimitedQuota(maxPrints);
+            const unlimited = (isAdmin(userPhone) && testingMode) || quotaUnlimited;
             const printingEnabled = settings.get("enablePrinting");
             const units = printingEnabled ? "prints" : "portraits";
             if (used >= maxPrints && !unlimited) {
@@ -495,21 +500,30 @@ app.post("/sms", async (req, res) => {
         } else {
             const used = getUsageCount(userPhone);
             const maxPrints = settings.get("maxPrints");
+            const quotaUnlimited = settings.isUnlimitedQuota(maxPrints);
             const remaining = maxPrints - used;
-            if (remaining <= 0) {
+            if (remaining <= 0 && !quotaUnlimited) {
                 twiml.message(settings.getMsg("quotaExceeded", { maxPrints, units: unit + "s", eventName }));
             } else {
                 if (conversational) {
                     const { generateSmartReply } = require("./lib/helpers");
-                    const reply = await generateSmartReply(body, { eventName, styleChoices, remaining, unit });
+                    const reply = await generateSmartReply(body, {
+                        eventName, styleChoices,
+                        remaining: quotaUnlimited ? null : remaining, unit,
+                    });
                     if (reply) {
                         twiml.message(reply);
                         return res.type("text/xml").send(twiml.toString());
                     }
                 }
-                const countNote = used === 0
-                    ? ` ${settings.getMsg("welcomeCount", { maxPrints, unit: maxPrints === 1 ? unit : unit + "s", eventName })}`
-                    : ` ${settings.getMsg("remainingCount", { remaining, unit: remaining === 1 ? unit : unit + "s" })}`;
+                // Unlimited: no welcome/remaining counts. Otherwise first-time
+                // gets welcomeCount, subsequent messages get remainingCount.
+                var countNote = "";
+                if (!quotaUnlimited) {
+                    countNote = used === 0
+                        ? ` ${settings.getMsg("welcomeCount", { maxPrints, unit: maxPrints === 1 ? unit : unit + "s", eventName })}`
+                        : ` ${settings.getMsg("remainingCount", { remaining, unit: remaining === 1 ? unit : unit + "s" })}`;
+                }
                 twiml.message(`${settings.getMsg("welcome")}${countNote}`);
             }
         }
