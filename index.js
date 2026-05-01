@@ -79,7 +79,18 @@ app.use((req, res, next) => {
 });
 
 app.get("/", (req, res) => res.redirect("/home"));
-app.use("/assets", express.static(path.join(__dirname, "assets"), { maxAge: "1d" }));
+// CSS changes often in this project (admin UI polish, pulse animations, etc.)
+// so cache stylesheets briefly (5 minutes) while still letting fonts and
+// images stay cached for a day. Otherwise admins see stale visuals until a
+// manual hard-refresh on every CSS deploy.
+app.use("/assets", express.static(path.join(__dirname, "assets"), {
+    maxAge: "1d",
+    setHeaders: (res, filePath) => {
+        if (filePath.endsWith(".css")) {
+            res.setHeader("Cache-Control", "public, max-age=300"); // 5 min
+        }
+    },
+}));
 
 // Staging images (for review previews in dashboard)
 app.use("/images/staging", (req, res, next) => {
