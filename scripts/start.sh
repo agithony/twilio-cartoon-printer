@@ -7,7 +7,15 @@ DATA_MOUNT="${DATA_MOUNT:-/app/appdata}"
 
 if [ -d "$DATA_MOUNT" ]; then
   echo "Persistent storage detected at $DATA_MOUNT"
-  for dir in data queue downloads brand-references style-references background-references templates assets; do
+  # Only directories that hold runtime-mutable state (uploads, jobs, user
+  # uploads, per-event config) belong on the persistent share. Directories
+  # shipped in the image — like assets/ — MUST NOT be included: the seed
+  # step uses "cp -rn" which refuses to overwrite, so once a file lands
+  # on the share it sticks forever and newer image versions are never
+  # picked up. (assets/ previously was in this list; a stale
+  # twilio-brand.css from early April masked every CSS change shipped
+  # since then.)
+  for dir in data queue downloads brand-references style-references background-references templates; do
     mkdir -p "$DATA_MOUNT/$dir"
     # Queue has subdirectories
     if [ "$dir" = "queue" ]; then
