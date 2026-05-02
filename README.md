@@ -335,7 +335,7 @@ Both the Print Station app and CLI relay share these capabilities:
 - **Crash recovery** -- file-based queue survives server restarts, auto-retries failed jobs
 - **Print relay** -- cloud-to-local printing via polling agent for cloud deployments
 
-For detailed documentation on all features, see **[docs/GUIDE.md](docs/GUIDE.md)**.
+For detailed documentation on all features, see **[docs/GUIDE.md](docs/GUIDE.md)**. To understand how the app is designed and built (tech stack, architecture, decisions, FAQ), see **[docs/BUILDER-GUIDE.md](docs/BUILDER-GUIDE.md)**.
 
 ## Style × Brand × Background combos (per-event config)
 
