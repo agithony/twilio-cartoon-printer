@@ -24,6 +24,7 @@ const {
     getUsageCount,
     enqueueJob,
     recoverStaleJobs,
+    sweepStaleGenerating,
     processGenerationQueue,
     processPrintQueue,
     recoverStaleRelayJobs,
@@ -579,8 +580,12 @@ const server = app.listen(port, "0.0.0.0", async () => {
     setInterval(async () => {
         if (genPollRunning || settings.get("queuePaused")) return;
         genPollRunning = true;
-        try { await processGenerationQueue(); }
-        finally { genPollRunning = false; }
+        try {
+            // Rescue jobs stuck in GENERATING_DIR before claiming new work —
+            // otherwise a hung worker blocks a concurrency slot indefinitely.
+            await sweepStaleGenerating();
+            await processGenerationQueue();
+        } finally { genPollRunning = false; }
     }, POLL_INTERVAL);
     let printPollRunning = false;
     setInterval(async () => {
