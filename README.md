@@ -283,7 +283,7 @@ PRINT_RELAY_DRY_RUN=true
 Both the Print Station app and CLI relay share these capabilities:
 
 - **Auto-reconnects** -- if the cloud app or network drops, the relay keeps polling and reconnects automatically
-- **Crash recovery** -- if the relay crashes mid-print, the cloud app detects the stale job after 15 minutes and re-queues it
+- **Crash recovery** -- Print Station v1.1+ heartbeats the cloud every 20s while holding a job; if beats stop for >60s the cloud re-queues the job. (Older v1.0 relays without heartbeats fall back to a 15-minute `printingAt`-age threshold.)
 - **Multi-printer** -- select multiple printers (Print Station) or use `--printers` (CLI) to distribute jobs across printers automatically
 - **Race-safe** -- multiple relay agents can run with the same key; only one claims each job
 - **Printer error detection** -- detects offline/stopped printers and fails fast instead of hanging
@@ -309,6 +309,7 @@ Both the Print Station app and CLI relay share these capabilities:
 
 ## Key Features
 
+- **Review modes** -- portraits can be delivered automatically (`off`), held for human approval (`human`, with multi-variant side-by-side picking and per-variant regen), or auto-reviewed by an LLM (`ai`, best-of-N picker). See [Review Modes](docs/GUIDE.md#review-modes).
 - **Style selection menu** -- numbered list sent after selfie, reply by number or name
 - **Brand selection menu** -- optional SMS menu for choosing a brand/team (e.g. LA Kings, Chelsea FC), each with its own reference images and brand prompt
 - **AI smart replies** -- conversational responses to text-only messages

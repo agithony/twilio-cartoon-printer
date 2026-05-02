@@ -60,7 +60,7 @@ npm run make
 
 This produces:
 - `out/Twilio Print Station-darwin-arm64/` -- the app bundle
-- `out/make/zip/darwin/arm64/Twilio Print Station-darwin-arm64-1.0.0.zip` -- distributable zip (~99 MB)
+- `out/make/zip/darwin/arm64/Twilio Print Station-darwin-arm64-<version>.zip` -- distributable zip (~99 MB; version matches `package.json`)
 
 Send the `.zip` to event staff. They unzip it, open the app, enter the Cloud URL and Relay Key, and they're printing.
 
@@ -98,7 +98,10 @@ Expandable section with timestamped messages for debugging. Shows connection eve
 - **Dark/light theme** -- Toggle in the header, persists via localStorage
 - **Dry-run mode** -- Download and process images without printing (for testing or demos)
 - **Job deduplication** -- Won't re-print a job it already handled
-- **Graceful shutdown** -- Close the window to stop cleanly; in-progress jobs are recovered by the cloud app after 15 minutes
+- **Heartbeats for fast crash recovery** -- While holding a job, the app pings the cloud every 20s. If beats stop for >60s (crash, force-quit, network drop), the cloud re-queues the job within seconds. Older v1.0 relays without heartbeats fall back to the 15-minute printing-age threshold.
+- **Download validation** -- Verifies `Content-Length` on the image fetch to catch mid-stream truncation instead of silently printing partial pages.
+- **Status caching** -- Fetches cloud print settings (size, quality) at startup and refreshes every 60s in the background instead of before every print, so transient cloud hiccups don't fail prints mid-job.
+- **Graceful shutdown** -- Close the window to stop cleanly.
 
 ## Project Structure
 
