@@ -22,6 +22,19 @@ class RelayEngine extends EventEmitter {
         this.basePollMs = 5000;
         this.tempDir = path.join(require("os").tmpdir(), "print-relay-temp");
         if (!fs.existsSync(this.tempDir)) fs.mkdirSync(this.tempDir, { recursive: true });
+        // Heartbeat timer active while the relay holds a claimed job. Pings
+        // the cloud every HEARTBEAT_MS so the cloud can recover the job
+        // within seconds if the relay crashes or hangs, instead of waiting
+        // the 15-minute printingAt-based stale threshold.
+        this.heartbeatTimer = null;
+        this.HEARTBEAT_MS = 20 * 1000;
+        // Cached cloud settings (refreshed in background every STATUS_REFRESH_MS).
+        // Avoids a blocking /status fetch before every single print — makes
+        // prints resilient to brief cloud hiccups and drops per-print latency.
+        this.cachedStatus = null;
+        this.cachedStatusAt = 0;
+        this.statusRefreshTimer = null;
+        this.STATUS_REFRESH_MS = 60 * 1000;
     }
 
     start(config) {
@@ -42,15 +55,22 @@ class RelayEngine extends EventEmitter {
             clearTimeout(this.interval);
             this.interval = null;
         }
+        this._stopHeartbeat();
+        if (this.statusRefreshTimer) {
+            clearInterval(this.statusRefreshTimer);
+            this.statusRefreshTimer = null;
+        }
         this.log("Relay stopped.");
         this.emit("status", { cloud: "disconnected", printer: "unknown" });
     }
 
     async _verifyAndStart() {
-        // Check cloud
+        // Check cloud + seed the status cache in one call
         try {
             const { status, data } = await this._request("GET", "/api/print-relay/status");
             if (status === 200) {
+                this.cachedStatus = data;
+                this.cachedStatusAt = Date.now();
                 this.log(`Connected to cloud (size: ${data.printSize}, quality: ${data.printQuality})`);
                 this.emit("status", { cloud: "connected" });
             } else {
@@ -80,6 +100,18 @@ class RelayEngine extends EventEmitter {
         if (!this.running) return;
         this.log("Polling for print jobs...");
         this.basePollMs = (this.config.interval || 5) * 1000;
+        // Background-refresh the cloud status cache so printSize/printQuality
+        // stay fresh without blocking any individual print. If the refresh
+        // errors, we silently keep serving the last known values — a transient
+        // cloud hiccup won't cause a print to fail.
+        this.statusRefreshTimer = setInterval(() => {
+            this._request("GET", "/api/print-relay/status").then(({ status, data }) => {
+                if (status === 200 && this.running) {
+                    this.cachedStatus = data;
+                    this.cachedStatusAt = Date.now();
+                }
+            }).catch(() => { /* keep stale cache */ });
+        }, this.STATUS_REFRESH_MS);
         // First poll immediate, then schedule subsequent polls
         this._pollOnce().finally(() => this._schedulePoll());
     }
@@ -145,6 +177,12 @@ class RelayEngine extends EventEmitter {
                 const imageUrl = `/api/print-relay/image/${encodeURIComponent(ackData.eventName)}/${ackData.imageFile}`;
                 const localPath = path.join(this.tempDir, ackData.imageFile);
 
+                // Start heartbeating for this job. If the relay crashes,
+                // hangs, or the operator closes the window, the timer dies
+                // with the process and the cloud sees missing heartbeats
+                // and recovers the job within ~60s instead of 15 minutes.
+                this._startHeartbeat(job.filename);
+
                 try {
                     this.log(`Downloading ${ackData.imageFile}...`);
                     this.emit("job", { filename: job.filename, status: "downloading" });
@@ -179,6 +217,7 @@ class RelayEngine extends EventEmitter {
                         this.processedJobs.set(job.filename, Date.now());
                         const reason = err.message.replace(/^Printer is /i, "").replace(/^Print job timed out.*/, "offline or stuck");
                         this.emit("status", { printer: "error", printerDetail: reason });
+                        this._stopHeartbeat();
                         break; // Stop claiming more jobs — this printer is broken
                     } else {
                         // Non-printer error (download fail, etc.) — report to server
@@ -187,6 +226,7 @@ class RelayEngine extends EventEmitter {
                         }).catch(() => {});
                     }
                 } finally {
+                    this._stopHeartbeat();
                     try { fs.unlinkSync(localPath); } catch {}
                 }
             }
@@ -202,6 +242,37 @@ class RelayEngine extends EventEmitter {
     log(msg) {
         const ts = new Date().toLocaleTimeString();
         this.emit("log", `[${ts}] ${msg}`);
+    }
+
+    _startHeartbeat(filename) {
+        // Defensive: clear any previous timer first. Should never happen
+        // (heartbeats are scoped to one job at a time by the serial
+        // job loop), but if it ever does we'd rather leak the old
+        // filename than double-beat.
+        this._stopHeartbeat();
+        const beat = () => {
+            this._request("POST", `/api/print-relay/jobs/${filename}/heartbeat`, {})
+                .then(({ status }) => {
+                    // 404 means the cloud already recovered this job (we
+                    // went AWOL long enough for stale recovery to fire,
+                    // and now we're back). Nothing to do — the main loop
+                    // will stop the timer when the print finishes or
+                    // fails. Silent is correct here.
+                    if (status !== 200 && status !== 404) {
+                        // Other errors are noisy in the logs but not fatal.
+                        // The cloud will recover on missing beats.
+                    }
+                })
+                .catch(() => { /* network blip, next beat will retry */ });
+        };
+        this.heartbeatTimer = setInterval(beat, this.HEARTBEAT_MS);
+    }
+
+    _stopHeartbeat() {
+        if (this.heartbeatTimer) {
+            clearInterval(this.heartbeatTimer);
+            this.heartbeatTimer = null;
+        }
     }
 
     // ── HTTP helpers ─────────────────────────────────────────────────────────
@@ -256,9 +327,32 @@ class RelayEngine extends EventEmitter {
                     res.resume();
                     return;
                 }
+                // Track bytes so we can verify the download completed.
+                // Without this check, a mid-stream network drop would
+                // write a truncated file to disk and we'd happily send
+                // it to CUPS to print a partial/garbage page.
+                const expected = parseInt(res.headers["content-length"] || "0", 10);
+                let received = 0;
+                res.on("data", (chunk) => { received += chunk.length; });
                 const ws = fs.createWriteStream(dest);
                 res.pipe(ws);
-                ws.on("finish", () => ws.close(resolve));
+                ws.on("finish", () => {
+                    ws.close(() => {
+                        if (expected > 0 && received !== expected) {
+                            // Kill the bad file so it can't accidentally
+                            // be printed by a later code path.
+                            try { fs.unlinkSync(dest); } catch {}
+                            return reject(new Error(
+                                `Download truncated: expected ${expected} bytes, got ${received}`,
+                            ));
+                        }
+                        if (received === 0) {
+                            try { fs.unlinkSync(dest); } catch {}
+                            return reject(new Error("Download produced an empty file"));
+                        }
+                        resolve();
+                    });
+                });
                 ws.on("error", reject);
             });
             req.on("timeout", () => { req.destroy(); reject(new Error("Download timed out")); });
@@ -291,7 +385,12 @@ class RelayEngine extends EventEmitter {
 
     _printImage(filepath, printerName) {
         return new Promise((resolve, reject) => {
-            this._request("GET", "/api/print-relay/status").then(({ data }) => {
+            // Read printSize/printQuality from the cached /status response
+            // rather than making a fresh HTTP call per print. The cache is
+            // seeded at startup and refreshed every STATUS_REFRESH_MS by
+            // the background timer in _verifyAndStart. Falls through to
+            // safe defaults if the cache is somehow empty.
+            Promise.resolve({ data: this.cachedStatus || {} }).then(({ data }) => {
                 const printSize = data.printSize || "5x7";
                 const printQuality = data.printQuality || "high";
                 const PRINT_SIZES = {
