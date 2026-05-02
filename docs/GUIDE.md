@@ -21,6 +21,7 @@ This document covers all features and configuration in depth. For quick setup, s
   - [Single Brand Mode](#single-brand-mode)
   - [Multi-Brand Selection](#multi-brand-selection)
 - [Background Selection](#background-selection)
+- [Review Modes](#review-modes)
 - [Delivery Mode](#delivery-mode)
   - [Immediate Digital Delivery](#immediate-digital-delivery)
 - [Print Relay (Cloud Printing)](#print-relay-cloud-printing)
@@ -311,6 +312,28 @@ If only one background option is configured, it's auto-selected (no menu shown).
 
 Background menu SMS messages (intro, footer, retry) are configurable under **Engagement & Messages**.
 
+## Review Modes
+
+Before a generated portrait reaches the user, it can pass through an optional review step. Configure **Review Mode** in the Settings panel under **Event & Operations**:
+
+| Mode | Behavior | When to use |
+|---|---|---|
+| `off` | Portraits are delivered automatically as soon as generation finishes | Low-stakes events, demos |
+| `human` | Portraits park in `queue/review/` until an admin explicitly approves each one from the dashboard or the mobile review URL (guarded by a PIN) | Brand-sensitive events where every output needs eyes |
+| `ai` | The orchestrator model reviews each portrait; clean ones pass, problematic ones are auto-rejected with a "try again" SMS to the user | Medium-trust events — catches obvious failures without requiring a human |
+
+When `reviewMode` is `human` or `ai`, the **Variants Per Review** setting (default `1`, max `4`) controls how many portraits are generated per request. With variants >1, each request fans out to N parallel generations sharing a `parentJobId`, and they surface to the reviewer as a single card showing all variants side by side.
+
+- In `human` mode, the reviewer picks one of the N variants (the winner goes to the user, losing siblings are marked `SUPERSEDED` and discarded).
+- In `ai` mode, a best-of-N coordinator picks the winner automatically once all siblings are terminal.
+
+The reviewer can also:
+
+- **Regenerate a single variant** without touching siblings (cost: one additional OpenAI call per regen). Limited by the per-event **Regeneration Limit** setting.
+- **Reject the whole parent** (with optional "try again" SMS to the user) or **Re-analyze** to queue a fresh batch of variants from scratch (preserves lineage via `reanalyzedFrom`).
+
+Flipping review mode **off** while items sit in the queue does NOT auto-approve them — they remain in `queue/review/` until a human acts on them. Review mode only affects newly generated portraits.
+
 ## Delivery Mode
 
 The app supports three delivery modes, configurable from the Settings panel under **Delivery & Display**:
@@ -454,7 +477,7 @@ Text a selfie to your Twilio number. The relay should claim the job, download th
 ### Reliability
 
 - **Network drops** -- The relay keeps polling. When the network comes back, it reconnects automatically. No manual intervention needed.
-- **Relay crash** -- If the relay crashes while a job is in the "printing" state, the cloud app detects the stale job after 15 minutes and moves it back to the ready queue. The relay picks it up on the next poll after restart.
+- **Relay crash** -- Print Station v1.1+ posts a heartbeat to the cloud every 20s while it holds a job. If the cloud sees no heartbeat for >60s, it moves the job back to `ready/` immediately. Older v1.0 relays (no heartbeats) fall back to a 15-minute `printingAt`-age threshold. Either way, the next relay to poll claims the recovered job.
 - **Printer offline** -- If the printer is offline or stopped, the relay detects this within seconds and reports failure. The cloud app re-queues the job for retry (up to 3 retries).
 - **Multiple printers** -- Select multiple printers in the Print Station app or use `--printers "A,B"` in the CLI to distribute jobs across printers automatically. Each printer gets its own worker. If neither is specified, the relay auto-detects all healthy printers.
 - **Multiple agents** -- You can run multiple relay agents with the same key for redundancy. They race to claim jobs; only one wins each job. The others gracefully skip it.
@@ -463,7 +486,7 @@ Text a selfie to your Twilio number. The relay should claim the job, download th
 
 ### Print settings
 
-The relay fetches print settings (size, quality) from the cloud app on each print. Changing print size or quality in the Settings panel takes effect on the next job without restarting the relay.
+The relay reads print settings (size, quality) from a cached `/status` response. On startup it fetches once; a background timer refreshes every 60 seconds. Admin changes to print size or quality in the Settings panel take effect on the relay within ~60s -- no relay restart needed, and transient cloud outages don't block prints mid-job.
 
 ## Cloud Deployment
 
@@ -801,7 +824,8 @@ The pipeline is split into two independent workers:
 
 - **Generation worker** -- Processes up to `MAX_CONCURRENT_GENERATION` jobs at the same time. Each job goes through download, moderation, face detection, scene analysis, AI generation, compositing, and print prep. The scene analysis step describes the subjects in the photo (number of people, positions, pets) so the generation model includes everyone. Multiple images generate in parallel so users don't wait in a long single-threaded queue.
 - **Print worker** -- Processes jobs from the `ready/` queue, one per printer. In local mode with multiple printers, smart dispatch reads each job's metadata and pairs it with an idle printer that hasn't failed it before (see [Printer Failure Resilience](#printer-failure-resilience)). Jobs with a `targetPrinter` are only dispatched to that specific printer. In relay mode, the cloud app exposes the ready queue via API and remote agents handle printing.
-- **Stale relay recovery** -- Periodically scans `printing/` for jobs older than 15 minutes. If a relay agent crashes mid-print, these jobs are moved back to `ready/` for retry.
+- **Stale relay recovery** -- Periodically scans `printing/`. For v1.1+ relays (which heartbeat every 20s while holding a job), recovery fires when the last heartbeat is >60s old. For v1.0 relays without heartbeats, falls back to a 15-minute `printingAt`-age threshold. Recovered jobs go back to `ready/` for retry.
+- **Stale generation recovery** -- Separately, `sweepStaleGenerating` runs each generation-poll tick and rescues jobs stuck in `generating/` for >5 min (worker crashed, OpenAI call hung, etc.) using the same retry/failover path as boot-time recovery.
 
 Each job tracks timestamps for every state transition (`pendingAt`, `generatingAt`, `readyAt`, `printingAt`, `completedAt`) which are used by the dashboard to compute average generation/print times and detect stuck jobs.
 
