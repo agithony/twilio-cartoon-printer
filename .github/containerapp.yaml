@@ -25,6 +25,8 @@ properties:
             secretRef: twilio-sid
           - name: TWILIO_AUTH_TOKEN
             secretRef: twilio-token
+          - name: TWILIO_MESSAGING_SERVICE_SID
+            secretRef: twilio-mssid
           - name: OPENAI_API_KEY
             secretRef: openai-key
           - name: GOOGLE_CLIENT_ID
