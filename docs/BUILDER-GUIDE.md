@@ -227,6 +227,8 @@ A few things that came from specific pain and are worth keeping in mind if you'r
 
 **10. Every error surface has a path back.** Failed generations can be retried from the dashboard. Printer failures avoid the failed printer on retry. Disabled printers auto-release targeted jobs. The goal is: no job silently dies. Worst case it ends up in `failed/` with a readable `failReason`.
 
+**11. Twilio Messaging Service over a single From number.** When `twilioMessagingServiceSid` is set, outbound messages use that service instead of a specific `from` number. Twilio picks the right sender from the pool per destination (10DLC for US, toll-free for international) and handles sender-pool retries automatically. The app doesn't decide per-country routing — the Messaging Service does. Leaving the SID blank falls back to the direct `from` behaviour for local dev.
+
 ## FAQ
 
 Common questions people ask when they encounter the app for the first time.

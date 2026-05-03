@@ -155,6 +155,7 @@ jobs:
             --secrets \
               "twilio-sid=${{ secrets.TWILIO_ACCOUNT_SID }}" \
               "twilio-token=${{ secrets.TWILIO_AUTH_TOKEN }}" \
+              "twilio-mssid=${{ secrets.TWILIO_MESSAGING_SERVICE_SID }}" \
               "openai-key=${{ secrets.OPENAI_API_KEY }}" \
               "google-client-id=${{ secrets.GOOGLE_CLIENT_ID }}" \
               "google-client-secret=${{ secrets.GOOGLE_CLIENT_SECRET }}" \

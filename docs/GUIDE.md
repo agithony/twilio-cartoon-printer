@@ -55,6 +55,7 @@ This document covers all features and configuration in depth. For quick setup, s
 | Variable | Required | Description |
 |---|---|---|
 | `TWILIO_ACCOUNT_SID` | Yes | Your Twilio Account SID |
+| `TWILIO_MESSAGING_SERVICE_SID` | No | Messaging Service SID (starts with `MG`). When set, outbound messages route through this service — Twilio auto-picks the right sender from the pool (e.g. 10DLC for US, toll-free for international) and retries across senders on failure. Leave blank to send directly from `TWILIO_PHONE_NUMBER`. |
 | `TWILIO_AUTH_TOKEN` | Yes | Your Twilio Auth Token |
 | `OPENAI_API_KEY` | Yes | Your OpenAI API key |
 | `PRINTER_NAME` | Yes | CUPS printer name prefix (find with `lpstat -p`). The app matches any printer starting with this name, so `EPSON_ET_8550_Series` matches `EPSON_ET_8550_Series_2`, etc. |
@@ -723,7 +724,7 @@ The settings panel is organized into seven sections:
 
 **Social Sharing** -- Enable Share Links toggle, Share Page Only toggle, dub.co API Key and Short Domain (global), Slug Prefix (per-event), per-platform toggles and config (X/Twitter, LinkedIn, Instagram), SMS Share Text template, Share Page Title and Description, Personalized Title template. See [Social Sharing](#social-sharing) for details.
 
-**API Keys** -- Twilio credentials (Phone Number, Account SID, Auth Token) and OpenAI configuration (API Key, Orchestrator Model, Vision Light Model, Image Generation Model, Smart Reply Model). These override values from `.env`.
+**API Keys** -- Twilio credentials (Phone Number, Messaging Service SID, Account SID, Auth Token) and OpenAI configuration (API Key, Orchestrator Model, Vision Light Model, Image Generation Model, Smart Reply Model). These override values from `.env`. Setting a Messaging Service SID switches outbound routing from the direct Phone Number to the service's sender pool.
 
 Settings are stored as overrides on top of `.env` defaults. Per-event settings are saved automatically when switching events (see [Switching Events](#switching-events)). Click "Reset to Defaults" to revert all overrides for the current event.
 
