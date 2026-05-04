@@ -5,6 +5,7 @@ data
 brand-references
 style-references
 background-references
+booth-uploads
 .git
 .env
 npm-debug.log

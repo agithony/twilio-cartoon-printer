@@ -15,7 +15,7 @@ if [ -d "$DATA_MOUNT" ]; then
   # picked up. (assets/ previously was in this list; a stale
   # twilio-brand.css from early April masked every CSS change shipped
   # since then.)
-  for dir in data queue downloads brand-references style-references background-references templates; do
+  for dir in data queue downloads brand-references style-references background-references templates booth-uploads; do
     mkdir -p "$DATA_MOUNT/$dir"
     # Queue has subdirectories
     if [ "$dir" = "queue" ]; then
