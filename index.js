@@ -36,6 +36,8 @@ const brandMenu = require("./lib/brand-menu");
 const backgroundMenu = require("./lib/background-menu");
 const { getActiveBrands } = require("./lib/brands");
 const { mountDashboard } = require("./lib/dashboard");
+const { mountApiGenerate } = require("./lib/api-generate");
+const { mountKiosk } = require("./lib/kiosk");
 const { mountReview } = require("./lib/review");
 const { mountExperiments } = require("./lib/experiments");
 const { mountHome } = require("./lib/home");
@@ -575,6 +577,8 @@ const server = app.listen(port, "0.0.0.0", async () => {
     mountShare(app);
     mountPrintRelay(app);
     mountReview(app);
+    mountApiGenerate(app);
+    mountKiosk(app);
     await mountExperiments(app);
     let genPollRunning = false;
     setInterval(async () => {
