@@ -246,8 +246,15 @@ const STATUS_CLASS = {
 window.relay.onJob((j) => {
     let existing = jobs.find(x => x.filename === j.filename);
     if (existing) {
-        existing.status = j.status;
+        // Partial updates arrive on state transitions (claiming → downloading →
+        // printing → done). Merge each new field rather than overwriting, so
+        // a later emit that only carries status: "done" doesn't blank out the
+        // thumbnail or masked phone we captured earlier.
+        if (j.status !== undefined) existing.status = j.status;
         if (j.printerName) existing.printerName = j.printerName;
+        if (j.userPhone) existing.userPhone = j.userPhone;
+        if (j.style) existing.style = j.style;
+        if (j.thumbPath) existing.thumbPath = j.thumbPath;
     } else {
         jobs.unshift({
             filename: j.filename,
@@ -255,6 +262,8 @@ window.relay.onJob((j) => {
             status: j.status,
             time: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
             printerName: j.printerName || "",
+            userPhone: j.userPhone || "",
+            thumbPath: j.thumbPath || "",
         });
         if (jobs.length > MAX_JOBS) jobs.pop();
     }
@@ -266,18 +275,71 @@ window.relay.onStats((s) => {
 });
 
 function renderJobs() {
+    // Build via DOM methods (not innerHTML) so caller-supplied strings
+    // like printerName or style can never inject markup, even though
+    // they're currently controlled server-side. Matches the safety
+    // posture of tw-modal.js.
     if (jobs.length === 0) {
-        jobList.innerHTML = '<div class="empty">No jobs yet</div>';
+        while (jobList.firstChild) jobList.removeChild(jobList.firstChild);
+        const empty = document.createElement("div");
+        empty.className = "empty";
+        empty.textContent = "No jobs yet";
+        jobList.appendChild(empty);
         return;
     }
-    jobList.innerHTML = jobs.map(j => `
-        <div class="job-entry">
-            <span class="job-time">${j.time}</span>
-            <span class="job-printer">${escHtml(j.printerName || "")}</span>
-            <span class="job-style">${escHtml(j.style)}</span>
-            <span class="job-status ${STATUS_CLASS[j.status] || ""}">${STATUS_LABELS[j.status] || escHtml(j.status)}</span>
-        </div>
-    `).join("");
+    const frag = document.createDocumentFragment();
+    for (const j of jobs) {
+        const row = document.createElement("div");
+        row.className = "job-entry";
+
+        const time = document.createElement("span");
+        time.className = "job-time";
+        time.textContent = j.time;
+        row.appendChild(time);
+
+        // Thumbnail: file:// URL to the relay's temp dir (the engine
+        // downloads it via auth'd HTTP after claim). If we haven't received
+        // thumbPath yet the first render shows the empty placeholder;
+        // the next emit with thumbPath re-renders with the real <img>.
+        if (j.thumbPath) {
+            const img = document.createElement("img");
+            img.className = "job-thumb";
+            // encodeURI preserves path separators but escapes spaces/etc.
+            img.src = "file://" + encodeURI(j.thumbPath);
+            img.alt = "";
+            img.onerror = () => { img.remove(); };
+            row.appendChild(img);
+        } else {
+            const placeholder = document.createElement("span");
+            placeholder.className = "job-thumb-empty";
+            row.appendChild(placeholder);
+        }
+
+        const phone = document.createElement("span");
+        phone.className = "job-phone" + (j.userPhone ? "" : " job-phone-empty");
+        phone.textContent = j.userPhone || "—";
+        row.appendChild(phone);
+
+        const style = document.createElement("span");
+        style.className = "job-style";
+        style.textContent = j.style || "";
+        row.appendChild(style);
+
+        const printer = document.createElement("span");
+        printer.className = "job-printer";
+        printer.title = j.printerName || "";
+        printer.textContent = j.printerName || "";
+        row.appendChild(printer);
+
+        const status = document.createElement("span");
+        status.className = "job-status" + (STATUS_CLASS[j.status] ? " " + STATUS_CLASS[j.status] : "");
+        status.textContent = STATUS_LABELS[j.status] || j.status || "";
+        row.appendChild(status);
+
+        frag.appendChild(row);
+    }
+    while (jobList.firstChild) jobList.removeChild(jobList.firstChild);
+    jobList.appendChild(frag);
 }
 
 // ── Log ──────────────────────────────────────────────────────────────────
