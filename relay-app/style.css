@@ -438,9 +438,15 @@ html[data-theme="light"] .theme-toggle .icon-moon { display: block; }
   font-style: italic;
 }
 
+/* Row columns: time | thumb | phone | style | printer | status.
+   Grid keeps columns aligned across rows even when some cells are empty
+   (e.g., thumb still downloading, no phone for legacy pre-update jobs).
+   Matches the dashboard's recent-jobs layout intent. */
 .job-entry {
-  display: flex;
+  display: grid;
+  grid-template-columns: 48px 36px 108px 1fr auto 90px;
   align-items: center;
+  gap: 10px;
   padding: 8px 10px;
   border-radius: 6px;
   transition: background 0.1s;
@@ -450,27 +456,54 @@ html[data-theme="light"] .theme-toggle .icon-moon { display: block; }
 .job-time {
   color: var(--th-text-muted);
   font-family: 'Twilio Sans Mono', monospace;
-  width: 55px;
   font-size: 11px;
   font-variant-numeric: tabular-nums;
 }
+
+/* Thumbnail square — serves the _output_mms.jpg the engine downloaded
+   to temp dir. Empty placeholder has a dashed border so rows with no
+   thumb yet (download still in flight) still look deliberate. */
+.job-thumb, .job-thumb-empty {
+  width: 36px; height: 36px; border-radius: 4px; display: block;
+}
+.job-thumb {
+  object-fit: cover;
+  background: var(--th-input);
+  border: 1px solid var(--th-card-border);
+}
+.job-thumb-empty {
+  background: var(--th-bg-subtle, var(--th-input));
+  border: 1px dashed var(--th-card-border);
+}
+
+.job-phone {
+  color: var(--th-text-secondary, var(--th-text));
+  font-family: 'Twilio Sans Mono', monospace;
+  font-size: 11px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.job-phone-empty { color: var(--th-text-muted); }
+
+.job-style {
+  color: var(--th-text);
+  font-weight: 700;
+  min-width: 0; /* let ellipsis kick in when long */
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+
+/* No more 80px cap — printer names like "Canon_SELPHY_CP1500" were being
+   cut mid-name. Grid column is `auto`-width so the printer expands as
+   needed; long names still get the title attr as a tooltip. */
 .job-printer {
   color: var(--th-text-muted);
   font-size: 10px;
   font-family: 'Twilio Sans Mono', monospace;
-  max-width: 80px;
-  overflow: hidden;
-  text-overflow: ellipsis;
   white-space: nowrap;
-  margin-right: 6px;
+  max-width: 220px;
+  overflow: hidden; text-overflow: ellipsis;
 }
-.job-style {
-  flex: 1;
-  color: var(--th-text);
-  font-weight: 700;
-}
+
 .job-status {
-  width: 90px;
   text-align: right;
   font-weight: 700;
   font-size: 11px;

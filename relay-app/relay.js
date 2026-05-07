@@ -161,7 +161,17 @@ class RelayEngine extends EventEmitter {
                 if (this.processedJobs.has(job.filename)) continue;
 
                 this.log(`Found job: ${job.filename} (${job.style})`);
-                this.emit("job", { filename: job.filename, style: job.style, event: job.eventName, status: "claiming" });
+                // Include userPhone (already masked server-side) on every emit
+                // so the renderer can show a dashboard-style row without
+                // looking up metadata on state changes. filename is the key;
+                // additional fields here are additive for older renderers.
+                this.emit("job", {
+                    filename: job.filename,
+                    style: job.style,
+                    event: job.eventName,
+                    userPhone: job.userPhone || null,
+                    status: "claiming",
+                });
 
                 const ack = await this._request("POST", `/api/print-relay/jobs/${job.filename}/ack`, { printerName });
                 if (ack.status !== 200) {
@@ -183,9 +193,25 @@ class RelayEngine extends EventEmitter {
                 // and recovers the job within ~60s instead of 15 minutes.
                 this._startHeartbeat(job.filename);
 
+                // Fire-and-forget MMS thumbnail download. Non-blocking so it
+                // never slows the print path; if it fails we just don't
+                // show a thumbnail for this row. The renderer shows an
+                // empty placeholder when thumbPath isn't delivered.
+                if (ackData.mmsFile) {
+                    const mmsUrl = `/api/print-relay/image-mms/${encodeURIComponent(ackData.eventName)}/${ackData.mmsFile}`;
+                    const thumbPath = path.join(this.tempDir, ackData.mmsFile);
+                    this._downloadFile(mmsUrl, thumbPath).then(() => {
+                        this.emit("job", { filename: job.filename, thumbPath });
+                    }).catch(() => { /* no thumb, no row update — harmless */ });
+                }
+
                 try {
                     this.log(`Downloading ${ackData.imageFile}...`);
-                    this.emit("job", { filename: job.filename, status: "downloading" });
+                    this.emit("job", {
+                        filename: job.filename,
+                        userPhone: ackData.userPhone || job.userPhone || null,
+                        status: "downloading",
+                    });
                     await this._downloadFile(imageUrl, localPath);
 
                     if (this.config.dryRun) {
