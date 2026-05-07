@@ -1,0 +1,68 @@
+/* Themed modal — shared by every admin page for prompt/confirm/alert.
+   Uses the --th-* theme tokens from twilio-brand.css so it follows the
+   light/dark toggle. Include via <link rel="stylesheet"> in any page
+   that wants the twModal API. */
+.tw-modal-backdrop {
+  position: fixed; inset: 0; z-index: 10000;
+  background: rgba(0,0,0,0.55); backdrop-filter: blur(4px);
+  display: flex; align-items: center; justify-content: center;
+  padding: 24px; animation: tw-modal-fade .15s ease;
+}
+html[data-theme="light"] .tw-modal-backdrop { background: rgba(0,13,37,0.35); }
+
+@keyframes tw-modal-fade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes tw-modal-rise { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+
+.tw-modal {
+  width: 100%; max-width: 440px;
+  background: var(--th-card); border: 1px solid var(--th-card-border); border-radius: 14px;
+  padding: 22px; box-shadow: 0 20px 60px var(--th-card-shadow, rgba(0,0,0,0.3));
+  animation: tw-modal-rise .18s ease;
+  font-family: 'Twilio Sans Text', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+}
+.tw-modal-title {
+  font-family: 'Twilio Sans Display', 'Twilio Sans Text', sans-serif;
+  font-size: 17px; font-weight: 800; color: var(--th-text); margin-bottom: 6px;
+}
+.tw-modal-msg {
+  font-size: 13px; color: var(--th-text-dim); line-height: 1.5;
+  margin-bottom: 14px; white-space: pre-line;
+}
+.tw-modal input.tw-modal-input {
+  width: 100%; padding: 10px 13px; border-radius: 9px;
+  border: 1px solid var(--th-card-border); background: var(--th-input);
+  color: var(--th-text); font-size: 14px; font-family: inherit;
+  transition: border-color .15s, box-shadow .15s;
+}
+.tw-modal input.tw-modal-input:focus {
+  outline: none; border-color: var(--blue-400, #2188EF);
+  box-shadow: 0 0 0 3px rgba(33,136,239,0.1);
+}
+.tw-modal-error {
+  font-size: 12px; color: var(--brand-red, #EF223A);
+  margin-top: 8px; min-height: 16px;
+}
+.tw-modal-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 16px; }
+.tw-modal-actions .tw-btn {
+  font-family: inherit; font-size: 13px; font-weight: 700;
+  padding: 8px 16px; border-radius: 8px; cursor: pointer;
+  border: 1px solid var(--th-card-border);
+  background: var(--th-bg); color: var(--th-text-dim);
+  transition: background .15s, border-color .15s, color .15s;
+}
+.tw-modal-actions .tw-btn:hover {
+  background: var(--th-raised, var(--th-card-hover));
+  color: var(--th-text); border-color: var(--th-text-muted);
+}
+.tw-modal-actions .tw-btn-primary {
+  background: var(--blue-400, #2188EF); color: #fff; border-color: var(--blue-400, #2188EF);
+}
+.tw-modal-actions .tw-btn-primary:hover {
+  background: var(--blue-500, #1866EE); border-color: var(--blue-500, #1866EE); color: #fff;
+}
+.tw-modal-actions .tw-btn-danger {
+  background: var(--brand-red, #EF223A); color: #fff; border-color: var(--brand-red, #EF223A);
+}
+.tw-modal-actions .tw-btn-danger:hover {
+  background: var(--brand-red-hover, #DB132A); border-color: var(--brand-red-hover, #DB132A);
+}
