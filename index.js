@@ -161,7 +161,8 @@ app.post("/sms", async (req, res) => {
         const styleNameLower = typeof styleName === "string" ? styleName.toLowerCase() : styleName;
         const singleStyle = activeStyleList.length === 1;
         const confirmLabel = singleStyle ? "Your portrait" : `Your ${styleNameLower} portrait`;
-        console.log(`📩 Enqueuing portrait for ${userPhone} (style: ${styleName})`);
+        const { maskPhone } = require("./lib/helpers");
+        console.log(`📩 Enqueuing portrait for ${maskPhone(userPhone)} (style: ${styleName})`);
 
         const printingEnabled = settings.get("enablePrinting");
         const twilioBlurb = settings.getMsg("twilioBlurb");
