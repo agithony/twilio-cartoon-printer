@@ -31,6 +31,12 @@ flowchart TB
 
 After sending a selfie, users receive a numbered style menu and reply with a number or style name. The bot also responds conversationally to questions via AI. All SMS messages are fully configurable from the admin Settings panel at runtime.
 
+## Resources
+
+- 📓 **[NotebookLM walkthrough](https://notebooklm.google.com/notebook/01d7b255-12fb-4936-9f50-44d7047b4da4)** — interactive notebook with deep-dive details, architecture overviews, and a chat interface you can ask questions about the project.
+- 📖 [Detailed Guide](docs/GUIDE.md) — full feature reference and configuration walkthrough.
+- 🛠 [Builder Guide](docs/BUILDER-GUIDE.md) — architecture, design decisions, and FAQ.
+
 ## Deployment Options
 
 | Mode | Server runs | Printer | Best for |
