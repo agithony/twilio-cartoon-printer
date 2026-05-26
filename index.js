@@ -48,6 +48,7 @@ const { mountPrintRelay } = require("./lib/print-relay");
 const leads = require("./lib/leads");
 const nps = require("./lib/nps");
 const contacts = require("./lib/contacts");
+const slack = require("./lib/slack");
 
 const app = express();
 const port = parseInt(process.env.PORT || "3000", 10);
@@ -578,6 +579,7 @@ const server = app.listen(port, "0.0.0.0", async () => {
     mountShare(app);
     mountPrintRelay(app);
     mountReview(app);
+    slack.mountReceiver(app);
     mountApiGenerate(app);
     mountKiosk(app);
     await mountExperiments(app);
