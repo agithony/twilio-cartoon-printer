@@ -92,7 +92,7 @@ A few are worth explaining because they drive everything else.
 
 This is the single most useful mental model. Follow one photo from text message to delivery.
 
-1. **Inbound SMS/MMS.** User texts a selfie to the Twilio number. Twilio POSTs to `/sms`.
+1. **Inbound SMS/MMS.** User texts a selfie to the Twilio number. Twilio POSTs to `/inbound`.
 2. **Message routing.** The webhook handler decides what kind of message this is:
    - Pure text with no image → route to style menu logic, smart reply, or menu response
    - Image + text → check if caption picks a style directly, else show menu
@@ -362,7 +362,7 @@ A: The admin UI is a handful of low-traffic pages. Adding a framework would mean
 A: Simplicity. Webhook, workers, dashboard, all share memory. You can see the state by looking at one PID. If you split workers into separate services you'd add deployment complexity and inter-service communication for questionable gain. The in-process approach limits horizontal scale, but that's a concession, not an oversight.
 
 **Q: Is the app safe to expose to the internet?**
-A: The `/sms` webhook is; Twilio authenticates requests. The admin pages (`/home`, `/dashboard`, `/outreach`) have no login. In cloud deployments, the public URL should be treated as semi-secret. For stricter setups, put it behind a VPN, reverse proxy with basic auth, or IP allowlist. Adding real auth is on the "nice to have" list, not "required."
+A: The `/inbound` webhook is; Twilio authenticates requests. The admin pages (`/home`, `/dashboard`, `/outreach`) have no login. In cloud deployments, the public URL should be treated as semi-secret. For stricter setups, put it behind a VPN, reverse proxy with basic auth, or IP allowlist. Adding real auth is on the "nice to have" list, not "required."
 
 **Q: Are user phone numbers and photos stored permanently?**
 A: Photos yes — `downloads/<eventName>/<prefix>_input.jpg` and `<prefix>_output.png` stick around. Phone numbers are stored in job files, lead data, raffle data, NPS scores. Nothing is auto-deleted. For a production-grade retention policy, you'd need to add explicit cleanup — not implemented.

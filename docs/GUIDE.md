@@ -529,7 +529,7 @@ Set `DATA_MOUNT` to customize the mount path (defaults to `/app/appdata`).
 2. Create an Azure Container App with the image
 3. Set environment variables (Twilio, OpenAI credentials) in the container app configuration
 4. Create an Azure Files share and mount it at `/app/appdata` for persistent storage
-5. Point your Twilio webhook to `https://your-app.azurecontainerapps.io/sms`
+5. Point your Twilio webhook to `https://your-app.azurecontainerapps.io/inbound`
 6. (Optional) Set up the [print relay](#print-relay-cloud-printing) for physical printing at events
 
 ### Twilio webhook
@@ -537,7 +537,7 @@ Set `DATA_MOUNT` to customize the mount path (defaults to `/app/appdata`).
 Point your Twilio phone number's Messaging webhook (POST) to:
 
 ```
-https://your-cloud-app.example.com/sms
+https://your-cloud-app.example.com/inbound
 ```
 
 No ngrok needed for cloud deployments -- the app is already publicly accessible.
