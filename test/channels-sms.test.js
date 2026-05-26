@@ -40,3 +40,8 @@ test("sms.senderId: falls back to from when no MSSID", () => {
     settingsStub._data = { twilioPhoneNumber: "+12065551234" };
     assert.deepEqual(sms.senderId(), { from: "+12065551234" });
 });
+
+test("sms.senderId: throws when phone number missing", () => {
+    settingsStub._data = {};
+    assert.throws(() => sms.senderId(), /twilioPhoneNumber not configured/);
+});
