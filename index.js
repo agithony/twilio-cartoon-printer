@@ -53,6 +53,25 @@ const contacts = require("./lib/contacts");
 const app = express();
 const port = parseInt(process.env.PORT || "3000", 10);
 
+// Boot-time channel validation
+{
+    const { channelWarnings } = require("./lib/config-warnings");
+    const _bootWarnings = channelWarnings({
+        twilioPhoneNumber: settings.get("twilioPhoneNumber"),
+        twilioMessagingServiceSid: settings.get("twilioMessagingServiceSid"),
+        twilioWhatsappNumber: settings.get("twilioWhatsappNumber"),
+        twilioWhatsappMessagingServiceSid: settings.get("twilioWhatsappMessagingServiceSid"),
+    });
+    for (const w of _bootWarnings) {
+        if (w.fatal) {
+            console.error(`FATAL config error: ${w.message}`);
+            process.exit(1);
+        } else {
+            console.warn(`Config warning: ${w.message}`);
+        }
+    }
+}
+
 // Storage diagnostics
 const dataMount = process.env.DATA_MOUNT || "";
 if (dataMount) {
