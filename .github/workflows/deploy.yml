@@ -248,7 +248,7 @@ jobs:
               echo "  App URL:        https://${FQDN}"
               echo "  Admin Console:  https://${FQDN}/home"
               echo "  Dashboard:      https://${FQDN}/dashboard"
-              echo "  Twilio Webhook: https://${FQDN}/sms"
+              echo "  Twilio Webhook: https://${FQDN}/inbound"
               echo "=========================================="
               exit 0
             fi
