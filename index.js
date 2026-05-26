@@ -53,25 +53,6 @@ const contacts = require("./lib/contacts");
 const app = express();
 const port = parseInt(process.env.PORT || "3000", 10);
 
-// Boot-time channel validation
-{
-    const { channelWarnings } = require("./lib/config-warnings");
-    const _bootWarnings = channelWarnings({
-        twilioPhoneNumber: settings.get("twilioPhoneNumber"),
-        twilioMessagingServiceSid: settings.get("twilioMessagingServiceSid"),
-        twilioWhatsappNumber: settings.get("twilioWhatsappNumber"),
-        twilioWhatsappMessagingServiceSid: settings.get("twilioWhatsappMessagingServiceSid"),
-    });
-    for (const w of _bootWarnings) {
-        if (w.fatal) {
-            console.error(`FATAL config error: ${w.message}`);
-            process.exit(1);
-        } else {
-            console.warn(`Config warning: ${w.message}`);
-        }
-    }
-}
-
 // Storage diagnostics
 const dataMount = process.env.DATA_MOUNT || "";
 if (dataMount) {
@@ -198,8 +179,8 @@ app.post("/sms", async (req, res) => {
             if (useTwiml) {
                 twiml.message(msg);
             } else {
-                const { sendSms } = require("./lib/helpers");
-                await sendSms(userPhone, appPhone, msg);
+                const messaging = require("./lib/messaging");
+                await messaging.send(userPhone, "_raw", {}, { _body: msg });
             }
             enqueueJob(imageUrl, messageSid, userPhone, appPhone, style, baseUrl, background, brand);
             require("./lib/still-working").arm(userPhone, appPhone, eventName);
@@ -215,8 +196,8 @@ app.post("/sms", async (req, res) => {
                 if (useTwiml) {
                     twiml.message(quotaMsg);
                 } else {
-                    const { sendSms } = require("./lib/helpers");
-                    await sendSms(userPhone, appPhone, quotaMsg);
+                    const messaging = require("./lib/messaging");
+                    await messaging.send(userPhone, "_raw", {}, { _body: quotaMsg });
                 }
                 return;
             }
@@ -229,8 +210,8 @@ app.post("/sms", async (req, res) => {
             if (useTwiml) {
                 twiml.message(msg);
             } else {
-                const { sendSms } = require("./lib/helpers");
-                await sendSms(userPhone, appPhone, msg);
+                const messaging = require("./lib/messaging");
+                await messaging.send(userPhone, "_raw", {}, { _body: msg });
             }
             enqueueJob(imageUrl, messageSid, userPhone, appPhone, style, baseUrl, background, brand);
             require("./lib/still-working").arm(userPhone, appPhone, eventName);
@@ -252,8 +233,8 @@ app.post("/sms", async (req, res) => {
             if (useTwiml) {
                 twiml.message(menuMsg);
             } else {
-                const { sendSms } = require("./lib/helpers");
-                await sendSms(userPhone, appPhone, menuMsg);
+                const messaging = require("./lib/messaging");
+                await messaging.send(userPhone, "_raw", {}, { _body: menuMsg });
             }
             return;
         }
@@ -302,8 +283,8 @@ app.post("/sms", async (req, res) => {
             if (useTwiml) {
                 twiml.message(menuMsg);
             } else {
-                const { sendSms } = require("./lib/helpers");
-                await sendSms(userPhone, appPhone, menuMsg);
+                const messaging = require("./lib/messaging");
+                await messaging.send(userPhone, "_raw", {}, { _body: menuMsg });
             }
             return;
         }
