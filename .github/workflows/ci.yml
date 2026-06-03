@@ -1,51 +1,124 @@
 name: CI
 
 on:
-  push:
-    branches: [main]
   pull_request:
     branches: [main]
-  workflow_call:
+  workflow_call: # deploy.yml reuses this as the post-merge gate
 
-concurrency:
-  group: ci-${{ github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+# NO top-level `concurrency:` and NO `permissions:` blocks anywhere in this file.
+# deploy.yml invokes it via `workflow_call` under a read-only caller token, and
+# ANY concurrency or permissions block makes a reusable workflow fail at STARTUP
+# in that context (see setup-ci lessons #11). Concurrency lives on the caller
+# (deploy.yml has its own group); gitleaks runs via the Docker CLI so it needs
+# no `pull-requests` scope and thus no permissions block.
 
 jobs:
-  validate:
-    name: Validate
+  test-node:
+    name: Node Tests
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
-      - name: Checkout
-        uses: actions/checkout@v6
-
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v5
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v6
+      - uses: actions/checkout@v6
+      - uses: pnpm/action-setup@v5
+      - uses: actions/setup-node@v6
         with:
-          node-version: 20
+          node-version: 20 # matches the Dockerfile (node:20-bullseye-slim)
           cache: pnpm
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-
-      - name: Smoke test
+      - run: pnpm install --frozen-lockfile
+      # `pnpm test` runs `node --test --test-force-exit`. --test-force-exit
+      # (Node 20.14+) is REQUIRED: axios opens a keep-alive socket on require,
+      # so without it the runner hangs after tests pass (the event loop never
+      # drains). The app server also boots in the smoke step below.
+      - name: Unit tests
+        run: pnpm test
+      # Boot the production server and confirm /healthz on the prod port (8080).
+      # Doubles as a build/boot-integrity gate before the deploy ever runs.
+      - name: Server smoke test (/healthz)
+        env:
+          PORT: "8080"
+          NODE_ENV: production
         run: |
           node index.js &
           SERVER_PID=$!
-          for i in 1 2 3 4 5 6; do
-            if curl -sf http://localhost:3000/healthz > /dev/null 2>&1; then
-              echo "Server started successfully"
-              kill $SERVER_PID
-              exit 0
+          ok=0
+          for i in $(seq 1 10); do
+            if curl -sf "http://localhost:8080/healthz" >/dev/null 2>&1; then
+              echo "Server healthy after ${i} attempt(s)"; ok=1; break
             fi
             sleep 2
           done
-          echo "Server failed to start within 12 seconds"
           kill $SERVER_PID 2>/dev/null || true
-          exit 1
+          [ "$ok" = "1" ] || { echo "::error::Server did not become healthy on :8080"; exit 1; }
 
-      - name: Audit dependencies
+  relay-app:
+    name: Relay App
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: relay-app/package-lock.json
+      # relay-app is a standalone npm project (Electron GUI, not deployed via
+      # this pipeline). We verify its lockfile installs cleanly and its source
+      # parses — Electron itself can't run headless in CI, so no `start`/`make`.
+      - name: Install (lockfile integrity)
+        working-directory: relay-app
+        run: npm ci
+      - name: Syntax check sources
+        working-directory: relay-app
+        run: |
+          for f in main.js preload.js renderer.js relay.js; do
+            node --check "$f"
+          done
+
+  security:
+    name: Security
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0 # gitleaks scans full history
+      - uses: pnpm/action-setup@v5
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 20
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      # Audits are ADVISORY (|| true) — a transitive CVE shouldn't block every
+      # PR; Dependabot alerts are the real dependency gate.
+      - name: pnpm audit (root)
         run: pnpm audit --audit-level=high || true
+      - name: npm audit (relay-app)
+        working-directory: relay-app
+        run: npm audit --audit-level=high || true
+      # gitleaks is a HARD gate (no || true). Run via the Docker CLI, NOT
+      # gitleaks-action: the action needs a `pull-requests` scope → a
+      # permissions block → uncallable via workflow_call (lessons #11).
+      - name: gitleaks (secret scan)
+        run: |
+          docker run --rm -v "$PWD:/repo" ghcr.io/gitleaks/gitleaks:v8.21.2 \
+            detect --source=/repo --redact --verbose
+
+  Validate:
+    name: Validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    needs: [test-node, relay-app, security]
+    if: ${{ !cancelled() }}
+    steps:
+      - name: Confirm all required jobs passed
+        run: |
+          echo "test-node: ${{ needs.test-node.result }}"
+          echo "relay-app: ${{ needs.relay-app.result }}"
+          echo "security:  ${{ needs.security.result }}"
+          if [ "${{ needs.test-node.result }}" != "success" ] || \
+             [ "${{ needs.relay-app.result }}" != "success" ] || \
+             [ "${{ needs.security.result }}" != "success" ]; then
+            echo "::error::One or more CI jobs failed — Validate fails."
+            exit 1
+          fi
+          echo "All CI jobs passed."

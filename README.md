@@ -129,6 +129,14 @@ PRINTER_NAME=EPSON_ET_8550_Series
 
 The app is built for the **Epson EcoTank ET-8550** but works with any CUPS printer. Non-Epson printers may need custom print flags. See [docs/GUIDE.md](docs/GUIDE.md#printer-setup) for details.
 
+## CI/CD
+
+Every PR runs lint-free unit tests, a `/healthz` server smoke test, relay-app
+install/syntax checks, and a gitleaks secret scan, aggregated into a `Validate`
+check; merges to `main` re-run that suite as a gate before deploying. Dependabot
+keeps dependencies patched with auto-merge for minor/patch updates. See
+[docs/CICD.md](docs/CICD.md) for the full pipeline.
+
 ## Cloud Deployment
 
 The app runs in any Docker-compatible cloud platform. The examples below use Azure Container Apps, but the same approach works with AWS ECS, Google Cloud Run, Railway, Fly.io, etc.

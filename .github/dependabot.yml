@@ -20,6 +20,23 @@ updates:
     labels:
       - dependencies
 
+  # relay-app is a standalone npm project (Electron print-relay GUI) with its
+  # own package-lock.json — its deps are tracked separately from the root app.
+  - package-ecosystem: npm
+    directory: /relay-app
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 10
+    groups:
+      relay-minor-patch:
+        update-types:
+          - minor
+          - patch
+    labels:
+      - dependencies
+      - relay-app
+
   - package-ecosystem: github-actions
     directory: /
     schedule:
