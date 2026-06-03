@@ -6,7 +6,7 @@
   "scripts": {
     "start": "node index.js",
     "relay": "node scripts/print-relay.js",
-    "test": "node --test"
+    "test": "node --test --test-force-exit test/*.test.js"
   },
   "keywords": [],
   "author": "",

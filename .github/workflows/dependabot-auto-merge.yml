@@ -1,24 +1,27 @@
 name: Auto-merge Dependabot
 
-# pull_request_target is required because Dependabot PRs have read-only
-# tokens under the regular pull_request trigger. pull_request_target runs
-# in the context of the base branch and has write permissions.
-on: pull_request_target
+# `on: pull_request` + an explicit permissions block (NOT pull_request_target,
+# which is a documented "pwn request" risk). The permissions block elevates the
+# otherwise read-only Dependabot token so `gh review`/`gh merge` work.
+on: pull_request
 
 permissions:
   contents: write
   pull-requests: write
 
+concurrency:
+  group: automerge-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
 jobs:
   auto-merge:
     runs-on: ubuntu-latest
+    timeout-minutes: 25
     if: github.actor == 'dependabot[bot]'
     steps:
       - name: Fetch Dependabot metadata
         id: metadata
-        uses: dependabot/fetch-metadata@v2
-        with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
+        uses: dependabot/fetch-metadata@v3
 
       - name: Approve minor/patch updates
         if: steps.metadata.outputs.update-type != 'version-update:semver-major'
@@ -27,35 +30,35 @@ jobs:
           PR_URL: ${{ github.event.pull_request.html_url }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      # Without GitHub Pro, branch protection/rulesets aren't available on
-      # private repos, so --auto would merge immediately without waiting for
-      # CI. Instead, we poll for the Validate check to pass before merging.
-      - name: Wait for CI to pass
+      # Poll the `Validate` check (free private repos have no required-status-
+      # checks, so `gh pr merge --auto` has nothing to gate on). Fast-fail on ANY
+      # terminal non-success conclusion by allow-listing only in-flight states —
+      # a Dependabot rebase CANCELS the prior run, and a poller that only treats
+      # FAILURE as terminal would burn its full timeout on a CANCELLED check.
+      - name: Wait for Validate to pass
         if: steps.metadata.outputs.update-type != 'version-update:semver-major'
         run: |
-          echo "Waiting for Validate check to complete..."
-          TIMEOUT=600
+          echo "Polling for the Validate check..."
+          TIMEOUT=1200
           ELAPSED=0
           while [ $ELAPSED -lt $TIMEOUT ]; do
             STATE=$(gh pr checks "$PR_URL" --json name,state \
               --jq '.[] | select(.name == "Validate") | .state' 2>/dev/null || true)
-            if [ "$STATE" = "SUCCESS" ]; then
-              echo "CI passed"
-              exit 0
-            elif [ "$STATE" = "FAILURE" ] || [ "$STATE" = "ERROR" ]; then
-              echo "CI failed ($STATE) — skipping merge"
-              exit 1
-            fi
-            sleep 15
-            ELAPSED=$((ELAPSED + 15))
+            if [ "$STATE" = "SUCCESS" ]; then echo "Validate passed"; exit 0; fi
+            case "$STATE" in
+              ""|PENDING|IN_PROGRESS|QUEUED|EXPECTED|WAITING|REQUESTED)
+                sleep 20; ELAPSED=$((ELAPSED + 20)) ;;
+              *)
+                echo "Validate did not pass ($STATE) — not merging."; exit 1 ;;
+            esac
           done
-          echo "Timed out waiting for CI after ${TIMEOUT}s"
+          echo "::warning::Timed out after ${TIMEOUT}s. PR approved but not merged — merge manually or re-run."
           exit 1
         env:
           PR_URL: ${{ github.event.pull_request.html_url }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Merge minor/patch updates
+      - name: Squash-merge minor/patch updates
         if: steps.metadata.outputs.update-type != 'version-update:semver-major'
         run: gh pr merge --squash "$PR_URL"
         env:
