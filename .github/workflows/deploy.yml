@@ -5,6 +5,12 @@ on:
     branches: [main]
   workflow_dispatch: # Allow manual trigger from GitHub UI
 
+# Serialize prod deploys; NEVER cancel one mid-flight — a half-applied
+# container update is worse than a queued second run.
+concurrency:
+  group: deploy-prod
+  cancel-in-progress: false
+
 env:
   RESOURCE_GROUP: rg-twilio-cartoon-printer
   APP_NAME: twilio-cartoon-printer
@@ -213,18 +219,39 @@ jobs:
               --output none
           fi
 
-      - name: Print app URL
+      - name: Resolve app FQDN
+        id: fqdn
         run: |
           FQDN=$(az containerapp show \
             --name ${{ env.APP_NAME }} \
             --resource-group ${{ env.RESOURCE_GROUP }} \
             --query properties.configuration.ingress.fqdn -o tsv)
-          echo ""
-          echo "=========================================="
-          echo "  Deployment complete!"
-          echo "=========================================="
-          echo "  App URL:        https://${FQDN}"
-          echo "  Admin Console:  https://${FQDN}/home"
-          echo "  Dashboard:      https://${FQDN}/dashboard"
-          echo "  Twilio Webhook: https://${FQDN}/sms"
-          echo "=========================================="
+          if [ -z "$FQDN" ]; then echo "Could not resolve container app FQDN."; exit 1; fi
+          echo "fqdn=$FQDN" >> "$GITHUB_OUTPUT"
+
+      - name: Smoke test /healthz
+        # Wait until the new revision actually serves before reporting success, so a
+        # deploy never "completes" while the app is still booting. The startup probe
+        # in containerapp.yaml already holds traffic until /healthz passes; this is
+        # the CI-side confirmation (and fails the run if the app never comes up).
+        env:
+          FQDN: ${{ steps.fqdn.outputs.fqdn }}
+        run: |
+          for i in $(seq 1 30); do
+            CODE=$(curl -s -o /dev/null -w "%{http_code}" "https://$FQDN/healthz" || true)
+            if [ "$CODE" = "200" ]; then
+              echo "Healthz OK after attempt $i"
+              echo ""
+              echo "=========================================="
+              echo "  Deployment complete!"
+              echo "=========================================="
+              echo "  App URL:        https://${FQDN}"
+              echo "  Admin Console:  https://${FQDN}/home"
+              echo "  Dashboard:      https://${FQDN}/dashboard"
+              echo "  Twilio Webhook: https://${FQDN}/sms"
+              echo "=========================================="
+              exit 0
+            fi
+            echo "Attempt $i: status=$CODE — retrying in 10s"; sleep 10
+          done
+          echo "::error::Healthz never returned 200 after 5 minutes."; exit 1
