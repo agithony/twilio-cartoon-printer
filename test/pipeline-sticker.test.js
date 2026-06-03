@@ -30,3 +30,17 @@ test("normal style is unaffected: configured model, no transparent, portrait", (
     assert.equal(p.background, undefined);
     assert.equal(p.size, "1024x1536");
 });
+
+test("resolveGenParams returns isSticker flag", () => {
+    assert.equal(__resolveGenParamsForTest({ styleObj: { sticker: true }, bgMode: "ai", bgRefCount: 0, configuredModel }).isSticker, true);
+    assert.equal(__resolveGenParamsForTest({ styleObj: { sticker: false }, bgMode: "ai", bgRefCount: 0, configuredModel }).isSticker, false);
+});
+
+test("sticker + exact-bg: sticker square size wins, still transparent", () => {
+    const p = __resolveGenParamsForTest({
+        styleObj: { sticker: true }, bgMode: "exact", bgRefCount: 1, configuredModel,
+    });
+    assert.equal(p.size, "1024x1024");
+    assert.equal(p.background, "transparent");
+    assert.equal(p.model, "gpt-image-1.5");
+});
