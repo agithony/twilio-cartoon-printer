@@ -162,3 +162,29 @@ test("caricature + reviewer feedback: caricature block still emits, FINAL LOCK +
     assert.doesNotMatch(out, /FINAL STYLE LOCK/);
     assert.doesNotMatch(out, /FINAL REMINDER/);
 });
+
+test("sticker style never appends a competing background line", () => {
+    const stickerStyle = {
+        name: "Sticker", behavior: "normal", acceptsColorPalette: true, sticker: true,
+        core: "c", brandCore: "bc",
+        prompt: "STICKER_PROMPT\n\nBackground: The background MUST be 100% transparent.",
+    };
+    // Even with bg reference images + analysis present (the branch that would
+    // normally append "Recreate this exact background"), a sticker must NOT get
+    // a second, contradictory background instruction.
+    const out = build(makeInput({
+        styleKey: "sticker", styleObj: stickerStyle, stylePrompt: stickerStyle.prompt,
+        bgMode: "ai", bgRefBuffers: [Buffer.from("x")], bgAnalysis: "a beach at sunset",
+    }));
+    assert.doesNotMatch(out, /Recreate this exact background/);
+    assert.doesNotMatch(out, /Match the background shown/);
+    // The sticker's own transparent instruction is still present (it's in stylePrompt).
+    assert.match(out, /100% transparent/);
+});
+
+test("non-sticker style still appends the reference-background line (regression)", () => {
+    const out = build(makeInput({
+        bgMode: "ai", bgRefBuffers: [Buffer.from("x")], bgAnalysis: "a beach at sunset",
+    }));
+    assert.match(out, /Recreate this exact background/);
+});
