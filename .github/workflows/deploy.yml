@@ -163,6 +163,11 @@ jobs:
             --output none
 
       - name: Deploy Container App
+        # ALLOWED_EMAILS = non-@twilio.com sign-in escape hatch, a plain (non-secret)
+        # comma-separated GitHub repo variable, substituted into containerapp.yaml.
+        # Empty = domain-only (renders as ALLOWED_EMAILS="").
+        env:
+          ALLOWED_EMAILS: ${{ vars.ALLOWED_EMAILS }}
         run: |
           # Resolve BASE_URL for existing apps; new apps get it on first update
           FQDN=$(az containerapp show \
@@ -174,7 +179,9 @@ jobs:
           export APP_NAME="${{ env.APP_NAME }}"
           export CONTAINER_IMAGE="${{ steps.acr-creds.outputs.server }}/${{ env.IMAGE_TAG }}"
           export BASE_URL="https://${FQDN}"
-          envsubst < .github/containerapp.yaml > /tmp/containerapp.yaml
+          export ALLOWED_EMAILS="${ALLOWED_EMAILS:-}"
+          # Restrict substitution to our known vars so no other ${...} in the template is touched.
+          envsubst '${APP_NAME} ${CONTAINER_IMAGE} ${BASE_URL} ${ALLOWED_EMAILS}' < .github/containerapp.yaml > /tmp/containerapp.yaml
 
           if az containerapp show --name ${{ env.APP_NAME }} --resource-group ${{ env.RESOURCE_GROUP }} 2>/dev/null; then
             echo "Updating existing container app..."
