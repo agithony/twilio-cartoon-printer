@@ -41,6 +41,26 @@ properties:
         volumeMounts:
           - volumeName: appdata
             mountPath: /app/appdata
+        # Health probes eliminate the post-deploy 404 window: Container Apps holds
+        # traffic away from the new revision until the STARTUP probe passes, and the
+        # READINESS probe keeps an unready replica out of rotation. /healthz is the
+        # app's liveness endpoint (lib/health.js → app.get("/healthz")).
+        probes:
+          - type: Startup
+            httpGet:
+              path: /healthz
+              port: 8080
+            initialDelaySeconds: 3
+            periodSeconds: 3
+            timeoutSeconds: 3
+            failureThreshold: 20   # up to ~60s for the app to bind routes
+          - type: Readiness
+            httpGet:
+              path: /healthz
+              port: 8080
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
     scale:
       minReplicas: 1
       maxReplicas: 1
