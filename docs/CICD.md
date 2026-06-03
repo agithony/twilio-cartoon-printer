@@ -27,14 +27,16 @@ merge to main ─▶ deploy.yml (push)
 | **Security** | `pnpm audit` + `npm audit` (advisory, `\|\| true`) and **gitleaks** secret scan (hard, via Docker CLI) | gitleaks hard; audits soft |
 | **Validate** | Aggregator — succeeds only if all three jobs succeed | the gate |
 
-Runtime is pinned to **Node 20** to match production (`Dockerfile: node:20-bullseye-slim`).
+Runtime is pinned to **Node 22** to match production (`Dockerfile: node:22-bullseye-slim`).
 
 ## Why a few things are the way they are
 
 - **`pnpm test` uses `--test-force-exit`.** `axios` opens a keep-alive socket on
   `require`, so `node --test` would otherwise hang after the tests pass (the event
-  loop never drains). The flag forces exit once tests complete. Backported to Node
-  20.14, so it's available on the prod runtime.
+  loop never drains). The flag forces exit once tests complete. The suite also uses
+  the `node:test` snapshot API (`t.assert.snapshot`, Node 22+), which is why CI and
+  the Dockerfile both pin Node 22. The glob is shell-expanded (`test/*.test.js`, not
+  a quoted `**` pattern) so it works regardless of `node --test`'s glob support.
 - **`ci.yml` has NO `concurrency:` or `permissions:` blocks.** `deploy.yml` calls it
   via `workflow_call` under a read-only token; any such block makes a reusable
   workflow fail at startup. Concurrency lives on `deploy.yml` (`group: deploy-prod`).
