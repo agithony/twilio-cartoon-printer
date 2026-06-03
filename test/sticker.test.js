@@ -48,3 +48,23 @@ test("compositeStickerBorder keeps the original subject color on top of the bord
     const i = (100 * info.width + 100) * info.channels; // dead center = subject
     assert.ok(data[i] > 200 && data[i + 1] < 60 && data[i + 2] < 60, "center should remain red subject");
 });
+
+test("compositeStickerBorder with defaults (borderPx 14, trim true) trims the canvas", async () => {
+    const input = await makeSubjectPng();
+    // No options object: exercises the production defaults borderPx:14, trim:true.
+    const out = await compositeStickerBorder(input);
+    const meta = await sharp(out).metadata();
+    // (a) alpha channel survives the round-trip + trim.
+    assert.equal(meta.hasAlpha, true, "trimmed output should still have an alpha channel");
+    // (b) trim crops the surrounding transparency, so the output is smaller than
+    //     the 200x200 canvas but still larger than the bare 80x80 subject (it
+    //     gained the white border on every side).
+    assert.ok(
+        meta.width < 200 && meta.height < 200,
+        `expected trim to crop below 200x200, got ${meta.width}x${meta.height}`,
+    );
+    assert.ok(
+        meta.width > 80 && meta.height > 80,
+        `expected bordered subject to exceed 80x80, got ${meta.width}x${meta.height}`,
+    );
+});
