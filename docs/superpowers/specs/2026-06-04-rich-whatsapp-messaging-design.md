@@ -25,7 +25,7 @@
 - **No `twilio/catalog`** anywhere — it requires a Meta Commerce Manager product catalog with priced products and cannot carry a dynamic generated image; wrong tool for an art-style picker.
 - **No `whatsapp/card`** for delivery — its `media` field is not variable, so it can't show the dynamic generated portrait. Delivery uses `twilio/card` (whose `media` IS variable).
 - **No two-button delivery card / no Meta approval for delivery.** The delivery card uses exactly ONE URL button (WhatsApp rejects two URL buttons, and any multi-button card forces approval). See §6.3.
-- **No automated Content Template creation script.** The admin hand-creates the static templates (delivery card, rating, promo) in the Console Content Template Builder per §8. (The app still creates *dynamic* list-picker templates via the Content API at runtime — not optional, not console work.)
+- **No "try another style" re-roll in v1.** Considered (would make the preview their own re-styled face), but it requires a 2nd delivery-card button → Meta approval. Deferred — see §10. Delivery stays single-button.
 - **No change to the channel model** (always-on, start-channel-locked) — already built.
 - **No RCS** (designed-for by the channel layer, not built here).
 
@@ -85,12 +85,27 @@ This is backward-compatible: SMS and typed WhatsApp replies have no `ButtonPaylo
 | 1 | Style pick | `twilio/list-picker` (text rows) | numbered text list (today) | none (in-session) | dynamic, runtime |
 | 2 | Brand pick | `twilio/list-picker` (text rows) | numbered text list | none | dynamic, runtime |
 | 3 | Background pick | `twilio/list-picker` (text rows) | numbered text list | none | dynamic, runtime |
-| 4 | Queued confirmation | `twilio/text` | text (today) | none | n/a |
-| 5 | **Delivery (hero)** | `twilio/card`: portrait media (variable) + **ONE** "View & Share" URL button → share page | image + text (today) | **none** (1 button, in-session) | static, console |
-| 6 | Rating / NPS | `twilio/quick-reply` (🤩 / 🙂 / 😕, ≤3 buttons) | "reply 1–5" text (today) | none | static, console |
-| 7 | Promo (next-day) | `twilio/call-to-action` (1 URL button) | text + link (today) | **needs approval** | static, console |
+| 4 | Queued confirmation | `twilio/text` (plain — no template) | text (today) | none | n/a (plain text) |
+| 5 | **Delivery (hero)** | `twilio/card`: portrait media (variable) + **ONE** "View & Share" URL button → share page | image + text (today) | **none** (1 button, in-session) | static, **script** |
+| 6 | Rating / NPS | `twilio/quick-reply` (🤩 / 🙂 / 😕, 3 buttons) | "reply 1–5" text (today) | none | static, **script** |
+| 7 | Promo (next-day) | `twilio/call-to-action` (2 URL buttons) | text + link (today) | **needs approval** | static, **script** |
 
-6 of 7 need no Meta approval (replies inside the 24-hour user-initiated session, each with ≤1 URL button / ≤3 quick-reply buttons). Only the next-day promo (out-of-session, business-initiated) requires approval. The delivery card is approval-free **because it carries exactly one button** — two URL buttons would both fail validation and force approval (verified against Twilio docs; see §6.3).
+6 of 7 need no Meta approval (replies inside the 24-hour user-initiated session, each with ≤1 URL button / ≤3 quick-reply buttons). Only the next-day promo (out-of-session, business-initiated) requires approval — and because it's an *approved* template it may carry two URL buttons. The delivery card is approval-free **because it carries exactly one button** — two URL buttons would both fail validation and force approval (verified against Twilio docs; see §6.3).
+
+### 4.0 Template inventory (the complete set — 6 templates)
+
+Three buckets, decided by one rule: **a template variable can change text and URL-suffixes, but never structure (item count, button count, domain).** Fixed structure → pre-create with variables. Variable structure → build at runtime.
+
+| Bucket | Key | Content type | How created | Approval |
+|---|---|---|---|---|
+| **A. Static** | `delivery` | `twilio/card` (portrait + 1 share button) | **creation script**, once | none |
+| **A. Static** | `rating` | `twilio/quick-reply` (3 emoji buttons) | creation script, once | none |
+| **A. Static** | `promo` | `twilio/call-to-action` (2 URL buttons) | creation script, once | **one-time (script submits)** |
+| **B. Dynamic** | `styleMenu` | `twilio/list-picker` | app, at runtime (cached by option-set hash) | none |
+| **B. Dynamic** | `brandMenu` | `twilio/list-picker` | app, at runtime | none |
+| **B. Dynamic** | `backgroundMenu` | `twilio/list-picker` | app, at runtime | none |
+
+**Bucket C — no template (stays plain text via existing `getMsg`):** `enqueued`/queued, `quotaExceeded`, `remainingCount`, `stillWorking`, `npsThanks`, `multiplePhotos`, `moderationFail`, `noFace`, `multiSubjectReject`, and all menu **retries** (a retry re-sends the same dynamic list-picker on WhatsApp, plain text on SMS). These need no Content Template in-session.
 
 ### 4.1 Why list-picker (not quick-reply) for menus
 
@@ -143,9 +158,11 @@ The single entry point the `index.js` helpers call. Behavior:
 
 No image/collage step — the list-picker's text rows are the whole menu.
 
-### 5.4 Static templates (delivery card, rating, promo)
+### 5.4 Static templates (delivery card, rating, promo) + creation script
 
-Created by the admin in the **Console Content Template Builder** (instructions §8). Their `HX` SIDs are pasted into the existing `contentTemplates` settings map under new keys: `delivery`, `rating`, `promo`. `messaging.send(..., "delivery", vars, ...)` then resolves them via the existing static path. If a SID is absent, the existing plain-text fallback fires (so partial rollout is safe).
+A committed Node script (`scripts/create-content-templates.js`) creates the three static templates via the Content API (`client.content.v1.contents.create()`) and submits the `promo` for WhatsApp approval. The admin runs it once with their Twilio credentials; it prints each `HX` SID (and can optionally write them straight into settings). SIDs live in the `contentTemplates` settings map under keys `delivery`, `rating`, `promo`. `messaging.send(..., "delivery", vars, ...)` resolves them via the existing static path; if a SID is absent, the existing plain-text fallback fires (safe partial rollout). Script details + exact template JSON in §8.
+
+(Decided over hand-creating in the Console: the variable wiring is fiddly to enter by hand three times, and a script is repeatable across accounts/re-runs.)
 
 ## 6. Data Flow
 
@@ -199,29 +216,70 @@ contentTemplates: {
 
 No per-option `previewImage` field — menus are text-only list-pickers. Dynamic list-picker SIDs are NOT stored in settings — they live in the `content-templates` cache (option-set hash → SID), rebuilt on demand.
 
-## 8. Admin runbook — creating the static templates (Console)
+## 8. Static-template creation script — `scripts/create-content-templates.js`
 
-For each, go to **Messaging → Content Template Builder → Create new**, then paste the resulting `HX` SID into the matching Settings field.
+A committed Node script using the Twilio SDK's Content API (`client.content.v1.contents.create({...})`) creates the three static templates and submits `promo` for WhatsApp approval. Run once: `node scripts/create-content-templates.js` (reads `TWILIO_ACCOUNT_SID`/`TWILIO_AUTH_TOKEN` from env). It is **idempotent**: it lists existing contents by `friendly_name` first and skips/updates rather than duplicating. It prints each `HX` SID and writes them into `contentTemplates` settings (with a `--print-only` flag to skip the write). The exact `types` payloads below are the source of truth for both the script and the variable contracts in §6.
 
-### 8.1 Delivery card (`delivery`) — `twilio/card`
-- **Body:** `Here's your {{1}} portrait! 🎉 Tap below to download or share it.`
-- **Media:** `https://<your-fixed-domain>/{{2}}` — domain baked in, `{{2}}` is the path. Sample variable value: `images/sample_output_mms.jpg` (a real public image ending in a valid extension). The combined sample URL must resolve to a publicly hosted image.
-- **Button (exactly ONE, type URL):** `View & Share` → `{{3}}` (sample: your share-page URL, e.g. `https://<domain>/s/sample`).
-- **Approval: NOT required.** One URL button sent in-session is approval-free. Create the template (to get the `HX` SID) but **do not submit for approval**. (Adding a second button would force approval and a second URL button would fail outright — keep it to one.)
-- Paste the resulting `HX` SID into Settings → `contentTemplates.delivery`.
+### 8.1 `delivery` — `twilio/card` (friendly_name `pb_delivery`)
+```jsonc
+{
+  "friendly_name": "pb_delivery", "language": "en",
+  "variables": { "1": "Cartoon", "2": "images/sample_output_mms.jpg", "3": "https://example.com/s/sample" },
+  "types": {
+    "twilio/card": {
+      "title": "Here's your {{1}} portrait! 🎉",
+      "body": "Tap below to download or share it.",
+      "media": ["https://<your-fixed-domain>/{{2}}"],
+      "actions": [ { "type": "URL", "title": "View & Share", "url": "{{3}}" } ]
+    },
+    "twilio/text": { "body": "Here's your {{1}} portrait! 🎉 View & share it: {{3}}" }
+  }
+}
+```
+- **Exactly ONE URL button.** Approval-free in-session. Do NOT submit for approval. The `twilio/text` fallback covers SMS/older clients.
+- `media` domain is fixed at creation; `{{2}}` supplies the path (must end in a real image extension, publicly hosted). Set `<your-fixed-domain>` to the production base URL.
 
-### 8.2 Rating (`rating`) — `twilio/quick-reply`
-- **Body:** `⭐ How'd we do?`
-- **Buttons (quick-reply):** "🤩 Loved it" id `nps_5` · "🙂 It's good" id `nps_3` · "😕 Meh" id `nps_1`
-- No approval needed for in-session use; create but don't submit.
+### 8.2 `rating` — `twilio/quick-reply` (friendly_name `pb_rating`)
+```jsonc
+{
+  "friendly_name": "pb_rating", "language": "en", "variables": {},
+  "types": {
+    "twilio/quick-reply": {
+      "body": "⭐ How'd we do?",
+      "actions": [
+        { "type": "QUICK_REPLY", "title": "🤩 Loved it", "id": "nps_5" },
+        { "type": "QUICK_REPLY", "title": "🙂 It's good", "id": "nps_3" },
+        { "type": "QUICK_REPLY", "title": "😕 Meh",      "id": "nps_1" }
+      ]
+    },
+    "twilio/text": { "body": "⭐ How'd we do? Reply 1–5 (5 = loved it)." }
+  }
+}
+```
+- 3 buttons, in-session → no approval; do not submit. SMS gets the `twilio/text` "reply 1–5".
 
-### 8.3 Promo (`promo`) — `twilio/call-to-action`
-- **Body:** `🎁 Thanks for visiting the Twilio AI Photo Booth! {{1}}`
-- **Buttons:** URL "🌐 Explore Twilio" → `https://www.twilio.com/{{2}}`; URL "📅 Book a demo" → `https://www.twilio.com/{{3}}`
-- **Submit for WhatsApp approval** — required anyway because the promo is sent out-of-session (next day). Approved templates permit **up to two URL buttons**, so two CTAs are valid here (unlike the in-session delivery card, which must stay at one). Provide URL samples.
-- This is the **only** template requiring Meta approval; budget for its lead time (minutes–hours) before the first event that uses it.
+### 8.3 `promo` — `twilio/call-to-action` (friendly_name `pb_promo`)
+```jsonc
+{
+  "friendly_name": "pb_promo", "language": "en",
+  "variables": { "1": "See how we built this.", "2": "", "3": "demos" },
+  "types": {
+    "twilio/call-to-action": {
+      "body": "🎁 Thanks for visiting the Twilio AI Photo Booth! {{1}}",
+      "actions": [
+        { "type": "URL", "title": "🌐 Explore Twilio", "url": "https://www.twilio.com/{{2}}" },
+        { "type": "URL", "title": "📅 Book a demo",    "url": "https://www.twilio.com/{{3}}" }
+      ]
+    },
+    "twilio/text": { "body": "🎁 Thanks for visiting the Twilio AI Photo Booth! {{1}} https://www.twilio.com/{{3}}" }
+  }
+}
+```
+- Sent out-of-session (next day) → **must be approved**. The script calls the approval endpoint (`.../ApprovalRequests/whatsapp`) with category `MARKETING`. Two URL buttons are valid for an approved template.
+- This is the **only** template needing approval; budget its lead time (minutes–hours) before the first event that uses promo.
 
-NPS button mapping: with §3.1 in place, a tap delivers `nps_5` (the button `id`) via `ButtonPayload` into the handler's `body`. The existing NPS handler (`index.js` ~274-283) reads `body` and does `parseInt(body, 10)` — extend it to first match `/^nps_([1-5])$/` and use the captured digit, falling through to the existing numeric parse for typed SMS replies ("3"). Display titles ("🤩 Loved it") never need parsing because the `id` arrives in `ButtonPayload`, not the title.
+### 8.4 NPS button mapping (code change, not a template)
+With §3.1 in place, a rating tap delivers `nps_5` via `ButtonPayload` into the handler's `body`. The existing NPS handler (`index.js` ~274-283) does `parseInt(body,10)` — extend it to first match `/^nps_([1-5])$/` and use the captured digit, falling through to the existing numeric parse for typed SMS replies ("3"). Display titles ("🤩 Loved it") never need parsing because the routing value arrives in `ButtonPayload`.
 
 ## 9. Error Handling
 
@@ -239,6 +297,7 @@ NPS button mapping: with §3.1 in place, a tap delivers `nps_5` (the button `id`
 - **Image-rich menus** (preview thumbnails per option) — deferred entirely. Would require either admin-uploaded per-option images or AI-generated samples, plus (for tap-the-image) a `twilio/carousel` with a fixed, pre-approved card count. Not worth the approval + per-event friction for v1; text list-pickers ship now.
 - **`twilio/carousel`** for fixed, pre-approved option sets (tap the card image directly) — viable only when an event reuses a stable, pre-approved set; the card count can't vary per send and approval is required even in-session. Revisit if a recurring event wants the premium feel.
 - **Multi-button delivery card** (separate Download + Share styled buttons) — would require Meta approval (two URL buttons / multi-button rule). The single "View & Share" button → share page covers both actions today without approval.
+- **"Try another style" re-roll** on delivery — re-runs the attendee's selfie in a new style (the preview becomes their own re-styled face; immune to per-event style mutability). Deferred only because it adds a 2nd delivery-card button → Meta approval. Strong candidate for v2; could also ship as a separate quick-reply message after delivery to avoid touching the card.
 - **Dashboard counters** for fallback / out-of-session (the multi-channel spec's §6.4) — still unsurfaced; out of scope here.
 - **RCS** rich content (the channel layer is RCS-ready).
 
@@ -263,7 +322,7 @@ Node built-in `node --test`, matching existing style. New/changed coverage:
 
 ## 12. Open Questions
 
-None. All design decisions confirmed during brainstorming: channel model already built; list-picker over quick-reply for menus; **text-only menus (no collage / no preview images)**; **delivery = `twilio/card` with one "View & Share" button → existing share page (no approval)**; no carousel/catalog/whatsapp-card; hard cap at 10; static templates hand-created in Console; portraits hosted under the production base URL for the card media variable.
+None. All design decisions confirmed during brainstorming: channel model already built; list-picker over quick-reply for menus; **text-only menus (no collage / no preview images)**; **delivery = `twilio/card` with one "View & Share" button → existing share page (no approval)**; no carousel/catalog/whatsapp-card; no "try another style" in v1; hard cap at 10; **static templates created by `scripts/create-content-templates.js` (not hand-created in Console)**; only `promo` needs Meta approval; portraits hosted under the production base URL for the card media variable.
 
 ## 13. Implementation Order (hint for writing-plans)
 
@@ -272,7 +331,7 @@ None. All design decisions confirmed during brainstorming: channel model already
 3. `lib/content-templates.js` (list-picker create + option-set-hash cache, null on API error) + test.
 4. `lib/rich-menu.js` `sendMenu` orchestration (WhatsApp-only; text fallback when SID null) + test. No image/collage work.
 5. Wire `index.js` menu helpers (`showMenuAndHold` / `showBrandMenuOrNext` / `showBackgroundMenuOrEnqueue`) to `rich-menu.sendMenu` (WhatsApp branch only; SMS untouched). Brand "None" id = `none` (§4.2).
-6. Static `contentTemplates` keys (`delivery`/`rating`/`promo`). Swap the delivery send (`queue.js:1197`) to the WhatsApp `delivery` card (3 vars, §6.3) with SMS/plain fallback; swap rating + promo call sites; add NPS `nps_N → N` parse (now reachable via §3.1).
-7. Admin runbook doc (§8) surfaced in-app or README.
+6. **`scripts/create-content-templates.js`** (§8): creates `delivery`/`rating`/`promo` via Content API, submits `promo` for approval, prints/writes `HX` SIDs. Idempotent by `friendly_name`. Admin runs once.
+7. Add `contentTemplates` settings keys (`delivery`/`rating`/`promo`). Swap the delivery send (`queue.js:1197`) to the WhatsApp `delivery` card (3 vars, §6.3) with SMS/plain fallback; swap rating + promo call sites; add NPS `nps_N → N` parse (now reachable via §3.1).
 8. Full `node --test` + manual QA pass (§11.1).
 ```
