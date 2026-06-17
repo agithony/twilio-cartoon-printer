@@ -252,21 +252,22 @@ app.post("/sms", async (req, res) => {
 
     // Helper: show background menu or enqueue directly
     async function showBackgroundMenuOrEnqueue(style, imageUrl, messageSid, useTwiml, brand) {
-        const { resolveBackgroundMenu } = require("./lib/prompt-assembler");
+        const { selectBackgroundChoices } = require("./lib/prompt-assembler");
 
-        // Legacy mode: the event configured a flat backgroundChoices list.
-        // Keep serving it verbatim for existing events.
-        const legacyChoices = settings.get("backgroundChoices") || [];
+        // The event's admin-configured flat backgroundChoices list, if any.
+        const configuredChoices = settings.get("backgroundChoices") || [];
 
-        // Resolve from style + brand config (new combo-driven menu).
+        // Resolve style + brand config so the combo-driven menu can take over
+        // when (and only when) the brand/style combo actually shapes the menu.
         const styleObj = activeStyles[style] || {};
         const activeBrands = getActiveBrands();
         const brandObj = brand ? activeBrands[brand] : null;
-        const resolved = resolveBackgroundMenu(styleObj, brandObj);
 
-        // Prefer the resolved menu when non-empty; fall back to legacy otherwise.
-        const useResolved = resolved.length > 0;
-        const choices = useResolved ? resolved : legacyChoices;
+        // selectBackgroundChoices serves the configured list for non-combo
+        // events and the combo-resolved menu otherwise. (Previously this used
+        // `resolved.length > 0`, which is always true and permanently shadowed
+        // the admin-configured list.)
+        const choices = selectBackgroundChoices(styleObj, brandObj, configuredChoices);
 
         if (settings.get("enableBackgroundMenu") && choices.length > 0) {
             if (choices.length === 1) {

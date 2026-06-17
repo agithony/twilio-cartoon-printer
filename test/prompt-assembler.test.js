@@ -132,3 +132,42 @@ test("buildComboFragments: themed-container style without containerDescription r
     const frags = buildComboFragments({ style: incomplete, brand: null, background: null });
     assert.equal(frags.containerDescription, null);
 });
+
+const { selectBackgroundChoices } = require("../lib/prompt-assembler");
+
+// The SMS background menu must serve an admin-configured flat backgroundChoices
+// list for non-combo events, and only fall back to the synthetic combo menu when
+// the combo system genuinely shapes the options (brand scenes / themed-container).
+const flatList = [
+    { key: "gradient", name: "Soft Gradient" },
+    { key: "solid-white", name: "Solid White" },
+    { key: "solid-black", name: "Solid Black" },
+    { key: "original", name: "Original Scene" },
+];
+
+test("selectBackgroundChoices: normal style + no brand + configured list → serves the configured list", () => {
+    // Regression: previously the synthetic [original, plain-white] shadowed the admin list.
+    const choices = selectBackgroundChoices(normalStyle, null, flatList);
+    assert.deepEqual(choices.map((c) => c.key), ["gradient", "solid-white", "solid-black", "original"]);
+});
+
+test("selectBackgroundChoices: brand with scenes → uses combo-resolved menu", () => {
+    const choices = selectBackgroundChoices(normalStyle, wardrobeOnlyBrand, flatList);
+    assert.deepEqual(choices.map((c) => c.key), ["ice-rink", "original", "plain-white"]);
+});
+
+test("selectBackgroundChoices: themed-container style → uses combo-resolved menu (suppresses plain-white)", () => {
+    const choices = selectBackgroundChoices(containerStyle, null, flatList);
+    assert.deepEqual(choices.map((c) => c.key), ["original"]);
+});
+
+test("selectBackgroundChoices: no brand, no configured list → falls back to synthetic defaults", () => {
+    const choices = selectBackgroundChoices(normalStyle, null, []);
+    assert.deepEqual(choices.map((c) => c.key), ["original", "plain-white"]);
+});
+
+test("selectBackgroundChoices: brand without scenes + configured list → serves configured list", () => {
+    const brandNoScenes = { category: "wardrobe-only", wardrobe: "jersey" };
+    const choices = selectBackgroundChoices(normalStyle, brandNoScenes, flatList);
+    assert.deepEqual(choices.map((c) => c.key), ["gradient", "solid-white", "solid-black", "original"]);
+});
