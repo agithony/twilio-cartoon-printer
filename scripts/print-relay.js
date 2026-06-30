@@ -156,8 +156,10 @@ function findPrinter(override) {
 
 function printImage(filepath, printerName) {
     return new Promise((resolve, reject) => {
-        // Fetch print settings from cloud
-        request("GET", "/api/print-relay/status").then(({ data }) => {
+        // Read print settings from the cached /status (seeded at startup,
+        // refreshed every STATUS_REFRESH_MS) instead of a blocking fetch per
+        // print. Falls through to safe defaults if the cache is somehow empty.
+        Promise.resolve({ data: cachedStatus || {} }).then(({ data }) => {
             const printSize = data.printSize || "5x7";
             const printQuality = data.printQuality || "high";
 
@@ -249,6 +251,22 @@ function log(msg) {
     console.log(`[${ts}] ${msg}`);
 }
 
+// ── Cloud status cache ───────────────────────────────────────────────────────
+// Cache the cloud's /status (printSize, printQuality) and refresh it in the
+// background, instead of fetching it synchronously before EVERY print. Parity
+// with the Electron relay (relay-app/relay.js) which moved to this in v1.1.
+// Without it, a single transient cloud hiccup at print time fails that print;
+// with it we keep serving the last-known settings and a brief blip is harmless.
+let cachedStatus = null;
+const STATUS_REFRESH_MS = 60 * 1000;
+
+async function refreshStatus() {
+    try {
+        const { status, data } = await request("GET", "/api/print-relay/status");
+        if (status === 200) cachedStatus = data;
+    } catch { /* keep stale cache — next refresh retries */ }
+}
+
 // ── Worker factory — one worker per printer ─────────────────────────────────
 
 function createWorker(printerOverride) {
@@ -259,6 +277,26 @@ function createWorker(printerOverride) {
     let polling = false;
     let timer = null;
     let stopped = false;
+
+    // Heartbeat timer, active only while this worker holds a claimed job.
+    // Parity with the Electron relay (v1.1): the cloud distinguishes "relay
+    // actively working" (recent beat) from "relay went dark" (no beat >60s)
+    // and recovers the job in ~60s instead of waiting the 15-min printingAt
+    // fallback. The job loop is serial, so at most one heartbeat runs at a time.
+    let heartbeatTimer = null;
+    const HEARTBEAT_MS = 20 * 1000;
+
+    function startHeartbeat(filename) {
+        stopHeartbeat();
+        heartbeatTimer = setInterval(() => {
+            request("POST", `/api/print-relay/jobs/${filename}/heartbeat`, {})
+                .catch(() => { /* network blip — next beat retries; cloud recovers on missing beats */ });
+        }, HEARTBEAT_MS);
+    }
+
+    function stopHeartbeat() {
+        if (heartbeatTimer) { clearInterval(heartbeatTimer); heartbeatTimer = null; }
+    }
 
     function cleanupProcessedJobs() {
         const cutoff = Date.now() - PROCESSED_TTL;
@@ -318,6 +356,10 @@ function createWorker(printerOverride) {
                 const imageUrl = `/api/print-relay/image/${encodeURIComponent(ackData.eventName)}/${ackData.imageFile}`;
                 const localPath = path.join(TEMP_DIR, `${label}_${ackData.imageFile}`);
 
+                // We own this job now — start beating so the cloud can recover
+                // it within ~60s if this process dies, instead of 15 minutes.
+                startHeartbeat(job.filename);
+
                 try {
                     // Download image
                     log(`[${label}] Downloading ${ackData.imageFile}...`);
@@ -354,6 +396,7 @@ function createWorker(printerOverride) {
                         }).catch(() => {});
                     }
                 } finally {
+                    stopHeartbeat();
                     try { fs.unlinkSync(localPath); } catch {}
                 }
             }
@@ -378,6 +421,7 @@ function createWorker(printerOverride) {
     function stop() {
         stopped = true;
         if (timer) clearTimeout(timer);
+        stopHeartbeat();
     }
 
     return {
@@ -395,10 +439,11 @@ function createWorker(printerOverride) {
     log(`  Poll interval: ${POLL_INTERVAL / 1000}s`);
     log(`  Dry run: ${DRY_RUN}`);
 
-    // Verify connectivity
+    // Verify connectivity + seed the status cache in one call
     try {
         const { status, data } = await request("GET", "/api/print-relay/status");
         if (status === 200) {
+            cachedStatus = data;
             log(`Connected to cloud app (printing: ${data.enablePrinting}, size: ${data.printSize}, quality: ${data.printQuality})`);
         } else {
             log(`Warning: Cloud returned HTTP ${status} — ${JSON.stringify(data)}`);
@@ -406,6 +451,11 @@ function createWorker(printerOverride) {
     } catch (err) {
         log(`Warning: Cannot reach cloud app — ${err.message}`);
     }
+
+    // Keep the cached print settings fresh in the background so a transient
+    // cloud blip at print time can't fail a print. unref() so this timer never
+    // keeps the process alive on shutdown.
+    setInterval(refreshStatus, STATUS_REFRESH_MS).unref();
 
     // Determine printer list
     let printerNames = [];
