@@ -1,7 +1,7 @@
 {
   "name": "print-relay",
   "productName": "Twilio Print Station",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "Electron GUI for the Twilio AI Photobooth print relay agent",
   "main": "main.js",
   "scripts": {
@@ -16,19 +16,5 @@
     "electron": "^33.0.0",
     "@electron-forge/cli": "^7.6.0",
     "@electron-forge/maker-zip": "^7.6.0"
-  },
-  "config": {
-    "forge": {
-      "packagerConfig": {
-        "name": "Twilio Print Station",
-        "icon": "./build/icon"
-      },
-      "makers": [
-        {
-          "name": "@electron-forge/maker-zip",
-          "platforms": ["darwin"]
-        }
-      ]
-    }
   }
 }

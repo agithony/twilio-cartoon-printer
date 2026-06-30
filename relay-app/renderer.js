@@ -243,6 +243,27 @@ const STATUS_CLASS = {
     skipped: "failed",
 };
 
+// Re-queue a completed job for printing. The button is disabled while the
+// request is in flight so a double-click can't double-queue. On success the
+// cloud moves the job back to ready/ and a relay worker reprints it on its
+// next poll — the job row will transition through claiming → printing → done
+// again on its own.
+async function reprintJob(filename, btn) {
+    if (btn) { btn.disabled = true; btn.textContent = "Reprinting…"; }
+    try {
+        const res = await window.relay.reprint(filename);
+        if (res && res.ok) {
+            addLog(`Reprint queued: ${filename}`);
+        } else {
+            addLog(`Reprint failed: ${(res && res.error) || "unknown error"}`);
+            if (btn) { btn.disabled = false; btn.textContent = "Reprint"; }
+        }
+    } catch (err) {
+        addLog(`Reprint failed: ${err.message}`);
+        if (btn) { btn.disabled = false; btn.textContent = "Reprint"; }
+    }
+}
+
 window.relay.onJob((j) => {
     let existing = jobs.find(x => x.filename === j.filename);
     if (existing) {
@@ -335,6 +356,26 @@ function renderJobs() {
         status.className = "job-status" + (STATUS_CLASS[j.status] ? " " + STATUS_CLASS[j.status] : "");
         status.textContent = STATUS_LABELS[j.status] || j.status || "";
         row.appendChild(status);
+
+        // Reprint action. Offered once a job has reached a terminal state
+        // (printed or failed) — those are the jobs that exist in the cloud's
+        // done/ queue and can be re-queued. In-flight jobs (claiming/
+        // downloading/printing) get no button; reprinting them would risk a
+        // double print. The server re-validates (must be in done/, image must
+        // exist) and rejects otherwise, so this is just a convenience gate.
+        if (j.status === "done" || j.status === "failed") {
+            const btn = document.createElement("button");
+            btn.className = "job-reprint-btn";
+            btn.textContent = "Reprint";
+            btn.title = "Print this portrait again";
+            btn.addEventListener("click", () => reprintJob(j.filename, btn));
+            row.appendChild(btn);
+        } else {
+            // Keep the grid column aligned for rows without a button.
+            const spacer = document.createElement("span");
+            spacer.className = "job-reprint-spacer";
+            row.appendChild(spacer);
+        }
 
         frag.appendChild(row);
     }
