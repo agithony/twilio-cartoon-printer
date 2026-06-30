@@ -444,7 +444,7 @@ html[data-theme="light"] .theme-toggle .icon-moon { display: block; }
    Matches the dashboard's recent-jobs layout intent. */
 .job-entry {
   display: grid;
-  grid-template-columns: 48px 36px 108px 1fr auto 90px;
+  grid-template-columns: 48px 36px 108px 1fr auto 90px 72px;
   align-items: center;
   gap: 10px;
   padding: 8px 10px;
@@ -512,6 +512,25 @@ html[data-theme="light"] .theme-toggle .icon-moon { display: block; }
 .job-status.failed { color: var(--brand-red); }
 .job-status.printing { color: var(--blue-300); }
 .job-status.downloading { color: var(--blue-200); }
+
+/* Reprint button — sits in the 7th grid column. The spacer occupies the
+   same cell for in-flight rows so every row's columns stay aligned. */
+.job-reprint-btn {
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--blue-400);
+  background: rgba(33, 136, 239, 0.09);
+  border: 1px solid rgba(33, 136, 239, 0.25);
+  border-radius: 6px;
+  padding: 4px 8px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.12s, border-color 0.12s;
+}
+.job-reprint-btn:hover { background: rgba(33, 136, 239, 0.18); }
+.job-reprint-btn:disabled { opacity: 0.55; cursor: default; }
+.job-reprint-spacer { display: block; }
 
 /* ── Log ────────────────────────────────────────── */
 

@@ -106,3 +106,18 @@ ipcMain.handle("stop-relay", () => {
     relays.clear();
     return true;
 });
+
+// Reprint a completed job. Any running engine can issue the request (they all
+// share the same cloud URL + key); we just need one. If nothing is connected,
+// tell the renderer so it can prompt the operator to Connect first.
+ipcMain.handle("reprint-job", async (_, filename) => {
+    const engine = relays.values().next().value;
+    if (!engine) return { ok: false, error: "Connect to the cloud first" };
+    try {
+        const { status, data } = await engine.reprint(filename);
+        if (status === 200) return { ok: true };
+        return { ok: false, error: (data && data.error) || `HTTP ${status}` };
+    } catch (err) {
+        return { ok: false, error: err.message };
+    }
+});

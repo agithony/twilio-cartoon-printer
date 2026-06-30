@@ -64,6 +64,20 @@ class RelayEngine extends EventEmitter {
         this.emit("status", { cloud: "disconnected", printer: "unknown" });
     }
 
+    // Ask the cloud to re-queue a completed job so it prints again. The job
+    // re-enters ready/ server-side and this (or any) relay claims it on the
+    // next poll — no need to target a specific printer. Returns the parsed
+    // { status, data } so the caller can surface success/failure to the UI.
+    async reprint(filename) {
+        const { status, data } = await this._request("POST", `/api/print-relay/jobs/${filename}/reprint`, {});
+        if (status === 200) {
+            this.log(`Reprint queued: ${filename}`);
+        } else {
+            this.log(`Reprint failed for ${filename}: ${(data && data.error) || `HTTP ${status}`}`);
+        }
+        return { status, data };
+    }
+
     async _verifyAndStart() {
         // Check cloud + seed the status cache in one call
         try {
