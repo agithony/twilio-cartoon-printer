@@ -29,6 +29,7 @@ const {
     processPrintQueue,
     recoverStaleRelayJobs,
     clearStaleRelayTargets,
+    sweepMissingOutputJobs,
 } = require("./lib/queue");
 const { parseStyle, detectStyle } = require("./lib/styles");
 const styleMenu = require("./lib/style-menu");
@@ -600,6 +601,7 @@ const server = app.listen(port, "0.0.0.0", async () => {
         try {
             await recoverStaleRelayJobs();
             await clearStaleRelayTargets();
+            await sweepMissingOutputJobs();
             await processPrintQueue();
         }
         finally { printPollRunning = false; }
