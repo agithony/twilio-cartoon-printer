@@ -19,7 +19,7 @@ The Print Station polls the cloud app for print-ready portraits, downloads them,
 
 - **macOS** (the app builds for macOS ARM64; other platforms need Electron Forge config changes)
 - **Node.js** v18+ and **npm**
-- A **CUPS-compatible printer** connected via USB or WiFi (e.g. Epson EcoTank ET-8550)
+- A **CUPS-compatible printer** connected via USB or WiFi (e.g. Epson EcoTank ET-8550), with its **driver installed** so a CUPS queue exists. For the ET-8550, get the macOS driver from [Epson's support page](https://epson.com/Support/Printers/All-In-Ones/ET-Series/Epson-ET-8550/s/SPT_C11CJ21201). A printer with no driver/queue will not appear in the app's printer list.
 - The cloud app running with a **Print Relay Key** configured in Settings > Delivery & Printing
 
 ## Quick Start
@@ -64,12 +64,20 @@ This produces:
 
 Send the `.zip` to event staff. They unzip it, open the app, enter the Cloud URL and Relay Key, and they're printing.
 
+> **First launch on macOS (Gatekeeper).** Because the `.app` isn't notarized, macOS quarantines it on download and may refuse to open it ("app is damaged" or "unidentified developer"). Clear the quarantine flag once, pointing at wherever the app was unzipped:
+>
+> ```sh
+> xattr -dr com.apple.quarantine "~/Downloads/Twilio Print Station.app"
+> ```
+>
+> Adjust the path if the app lives elsewhere (e.g. `/Applications/Twilio Print Station.app`). After this, the app opens normally on every launch.
+
 ## UI Overview
 
 ### Configuration Section
 - **Cloud URL** -- The base URL of your cloud-hosted photobooth server. Click "Edit" to modify after connecting.
 - **Relay Key** -- The shared secret that authenticates this station with the cloud app. Shown as a password field.
-- **Printers** -- Checkbox list of all CUPS printers on this machine. Select one or more. Click the refresh button to re-scan. Leave all unchecked for auto-detect (picks the first healthy printer).
+- **Printers** -- Checkbox list of all CUPS printers on this machine. Select one or more. Click the refresh button to re-scan. Leave all unchecked for auto-detect (picks the first healthy printer). If a connected printer is missing from this list, its driver isn't installed yet — install the driver (see [Prerequisites](#prerequisites)), then click refresh.
 - **Dry Run** -- Check this to download images without actually printing (useful for testing).
 
 ### Status Bar

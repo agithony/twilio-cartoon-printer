@@ -129,6 +129,8 @@ PRINTER_NAME=EPSON_ET_8550_Series
 
 The app is built for the **Epson EcoTank ET-8550** but works with any CUPS printer. Non-Epson printers may need custom print flags. See [docs/GUIDE.md](docs/GUIDE.md#printer-setup) for details.
 
+> **Install the printer driver first.** A connected printer won't appear in `lpstat -p` (or the Relay app's printer list) until its driver is installed and a CUPS queue exists. For the Epson ET-8550, download the macOS driver from [Epson's support page](https://epson.com/Support/Printers/All-In-Ones/ET-Series/Epson-ET-8550/s/SPT_C11CJ21201), then add the printer in **System Settings > Printers & Scanners** (or via `lpadmin`). Re-run `lpstat -p` to confirm it shows as `idle`/`enabled`.
+
 ## CI/CD
 
 Every PR runs lint-free unit tests, a `/healthz` server smoke test, relay-app
