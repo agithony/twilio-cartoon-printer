@@ -10,7 +10,7 @@
     "make": "electron-forge make"
   },
   "dependencies": {
-    "electron-store": "^8.2.0"
+    "electron-store": "^11.0.2"
   },
   "devDependencies": {
     "electron": "^33.0.0",
