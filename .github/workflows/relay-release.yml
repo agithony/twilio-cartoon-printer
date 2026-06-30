@@ -1,0 +1,107 @@
+name: Relay App Release
+
+# Builds the macOS Print Station app and publishes a GitHub Release whenever
+# the relay app's version changes on main. Workflow:
+#   bump relay-app/package.json version → merge to main → release appears.
+#
+# Guarded so it only releases a version once: if a relay-v<version> tag already
+# exists, the build is skipped. So unrelated pushes that happen to touch
+# relay-app/package.json (without a version change) won't republish.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "relay-app/**"
+  workflow_dispatch: {} # allow manual re-runs from the Actions tab
+
+# Don't run two releases for the same ref at once.
+concurrency:
+  group: relay-release-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write # required to create tags + releases
+
+jobs:
+  build-and-release:
+    # macOS runner is required to build/sign the .app. Free for public repos.
+    runs-on: macos-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Read relay app version
+        id: ver
+        run: |
+          VERSION=$(node -p "require('./relay-app/package.json').version")
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "tag=relay-v$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Relay app version: $VERSION"
+
+      - name: Check if this version is already released
+        id: check
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.ver.outputs.tag }}
+        run: |
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+            echo "Release $TAG already exists — skipping build."
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Setup Node.js
+        if: steps.check.outputs.exists == 'false'
+        uses: actions/setup-node@v6
+        with:
+          node-version: 20
+
+      - name: Install relay app dependencies
+        if: steps.check.outputs.exists == 'false'
+        working-directory: relay-app
+        run: npm ci
+
+      - name: Build distributable
+        if: steps.check.outputs.exists == 'false'
+        working-directory: relay-app
+        run: npm run make
+
+      - name: Locate the "(start here)" bundle
+        if: steps.check.outputs.exists == 'false'
+        id: zip
+        working-directory: relay-app
+        run: |
+          # The postMake hook in forge.config.js emits
+          #   out/make/Twilio Print Station <version> (start here).zip
+          ZIP=$(find out/make -maxdepth 1 -name "*start here*.zip" | head -1)
+          if [ -z "$ZIP" ]; then
+            echo "::error::No '(start here)' zip found in relay-app/out/make"
+            ls -la out/make || true
+            exit 1
+          fi
+          echo "Found: $ZIP"
+          echo "path=relay-app/$ZIP" >> "$GITHUB_OUTPUT"
+
+      - name: Create GitHub Release
+        if: steps.check.outputs.exists == 'false'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.ver.outputs.tag }}
+          VERSION: ${{ steps.ver.outputs.version }}
+          ZIP_PATH: ${{ steps.zip.outputs.path }}
+          TARGET_SHA: ${{ github.sha }}
+        run: |
+          gh release create "$TAG" \
+            "$ZIP_PATH" \
+            --title "Print Station $VERSION" \
+            --target "$TARGET_SHA" \
+            --notes "Automated build of Twilio Print Station $VERSION.
+
+          ### Install (macOS, Apple Silicon)
+          1. Download the **\`(start here)\`** zip below and unzip it.
+          2. **Right-click** \`Open Twilio Print Station.command\` → **Open** (once). If macOS warns about an unidentified developer, click **Open** again.
+          3. The app launches. Open it directly from then on.
+
+          > If you open the app first and see *\"is damaged\"* — that's macOS protecting downloaded apps. Don't trash it; use the helper above. Full steps are in **READ ME FIRST.txt** inside the zip."
