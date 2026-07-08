@@ -48,6 +48,7 @@ const { mountPrintRelay } = require("./lib/print-relay");
 const leads = require("./lib/leads");
 const nps = require("./lib/nps");
 const contacts = require("./lib/contacts");
+const channel = require("./lib/channel");
 
 const app = express();
 const port = parseInt(process.env.PORT || "3000", 10);
@@ -136,8 +137,16 @@ app.post("/sms", async (req, res) => {
     }
 
     const twiml = new MessagingResponse();
-    const userPhone = req.body.From;
-    const appPhone = req.body.To;
+    // Normalize the messaging channel: WhatsApp arrives as "whatsapp:+123",
+    // SMS as "+123". We keep the phone identity raw everywhere (quotas, admin
+    // checks, contacts, jobs) and remember the channel separately so async
+    // replies (delivery, still-working, NPS, outreach) go back on the same
+    // channel. Synchronous TwiML replies auto-match the inbound channel.
+    const inbound = channel.parseAddress(req.body.From);
+    const appInbound = channel.parseAddress(req.body.To);
+    const userPhone = inbound.phone;
+    const appPhone = appInbound.phone;
+    channel.record(userPhone, inbound.channel);
     const numMedia = parseInt(req.body.NumMedia || "0", 10);
     const body = req.body.Body || "";
 
@@ -182,7 +191,7 @@ app.post("/sms", async (req, res) => {
                 await sendSms(userPhone, appPhone, msg);
             }
             enqueueJob(imageUrl, messageSid, userPhone, appPhone, style, baseUrl, background, brand);
-            require("./lib/still-working").arm(userPhone, appPhone, eventName);
+            require("./lib/still-working").arm(userPhone, appPhone, eventName, inbound.channel);
         } else {
             const used = getUsageCount(userPhone);
             const maxPrints = settings.get("maxPrints");
@@ -213,7 +222,7 @@ app.post("/sms", async (req, res) => {
                 await sendSms(userPhone, appPhone, msg);
             }
             enqueueJob(imageUrl, messageSid, userPhone, appPhone, style, baseUrl, background, brand);
-            require("./lib/still-working").arm(userPhone, appPhone, eventName);
+            require("./lib/still-working").arm(userPhone, appPhone, eventName, inbound.channel);
         }
     }
 
@@ -558,6 +567,7 @@ app.post("/sms", async (req, res) => {
 
 // Load settings before accepting connections
 settings.load();
+channel.load();
 
 const server = app.listen(port, "0.0.0.0", async () => {
     server.keepAliveTimeout = 65_000;
