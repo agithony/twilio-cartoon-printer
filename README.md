@@ -78,6 +78,7 @@ At minimum, you need:
 ```sh
 TWILIO_ACCOUNT_SID=your_account_sid
 TWILIO_AUTH_TOKEN=your_auth_token
+TWILIO_MESSAGING_SERVICE_SID=your_messaging_service_sid
 OPENAI_API_KEY=your_openai_key
 EVENT_NAME=YourEventName
 ```
@@ -97,7 +98,7 @@ The server starts on port 3000. The admin home page opens automatically at `http
 Point your Twilio phone number's **Messaging webhook** (POST) to your server:
 
 ```
-https://your-server/sms
+https://your-server/inbound
 ```
 
 **For local development**, use [ngrok](https://ngrok.com) to expose your server:
@@ -106,7 +107,7 @@ https://your-server/sms
 ngrok http 3000
 ```
 
-Copy the ngrok URL (e.g. `https://abc123.ngrok.io`) and set it as your Twilio webhook: `https://abc123.ngrok.io/sms`
+Copy the ngrok URL (e.g. `https://abc123.ngrok.io`) and set it as your Twilio webhook: `https://abc123.ngrok.io/inbound`
 
 ### 5. Test it
 
@@ -171,7 +172,7 @@ On **Azure Container Apps**, use an Azure Files volume mount pointed at `/app/ap
 Point your Twilio phone number's webhook to your cloud URL:
 
 ```
-https://your-cloud-app.example.com/sms
+https://your-cloud-app.example.com/inbound
 ```
 
 No ngrok needed -- the cloud app is already publicly accessible.

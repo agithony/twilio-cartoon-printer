@@ -180,7 +180,7 @@
   - Requires: distributed locking (Redis) for queue operations, shared usageCache
   - Separate generation worker from HTTP server
 
-- [ ] **4e. Add rate limiting on /sms webhook**
+- [ ] **4e. Add rate limiting on /inbound webhook**
   - Prevent Twilio retry storms from overwhelming the queue
   - Redis-backed rate limiter: max N requests per phone per minute
 

@@ -5,7 +5,10 @@ const path = require("path");
 const { exec } = require("child_process");
 const express = require("express");
 const bodyParser = require("body-parser");
-const { MessagingResponse } = require("twilio").twiml;
+const channels = require("./lib/channels");
+const messaging = require("./lib/messaging");
+const { getMessageBody, getNpsScore } = require("./lib/inbound-payload");
+const richMenu = require("./lib/rich-menu");
 const {
     POLL_INTERVAL,
     DATA_DIR,
@@ -74,9 +77,15 @@ app.use(require("compression")());
 
 // ── Google OAuth (must be before all other routes) ──────────────────────────
 const { mountAuth, requireAuth, isPublicRoute } = require("./lib/auth");
-const { mountHealth } = require("./lib/health");
+const { createTwilioWebhookValidator } = require("./lib/twilio-webhook");
+const { channelWarnings } = require("./lib/config-warnings");
+const { mountHealth, setReady, isReady } = require("./lib/health");
 mountHealth(app);
 mountAuth(app);
+app.use((req, res, next) => {
+    if (isReady() || req.path.startsWith("/healthz") || req.path.startsWith("/auth")) return next();
+    return res.status(503).send("Application is starting");
+});
 app.use((req, res, next) => {
     if (isPublicRoute(req)) return next();
     requireAuth(req, res, next);
@@ -122,7 +131,7 @@ function markSid(sid) {
     return false;
 }
 
-app.post("/sms", async (req, res) => {
+async function inboundHandler(req, res) {
   try {
     if (!baseUrl) {
         const proto = req.headers["x-forwarded-proto"] || req.protocol || "http";
@@ -133,14 +142,14 @@ app.post("/sms", async (req, res) => {
     // Skip duplicate webhook deliveries (Twilio retries)
     if (markSid(req.body.MessageSid)) {
         console.log(`⚠️  Duplicate webhook skipped: ${req.body.MessageSid}`);
-        return res.type("text/xml").send(new MessagingResponse().toString());
+        return res.status(204).end();
     }
 
-    const twiml = new MessagingResponse();
-    const userPhone = req.body.From;
-    const appPhone = req.body.To;
+    const inboundAdapter = channels.detectChannel(req.body);
+    const userPhone = inboundAdapter.normalizeFrom(req.body.From);
+    const appPhone = inboundAdapter.normalizeFrom(req.body.To);
     const numMedia = parseInt(req.body.NumMedia || "0", 10);
-    const body = req.body.Body || "";
+    const body = getMessageBody(req.body);
 
     const activeStyles = settings.getActiveStyles();
     const activeStyleList = settings.getActiveStyleList();
@@ -149,14 +158,40 @@ app.post("/sms", async (req, res) => {
 
     // Track first contact for drop-off detection
     contacts.recordContact(userPhone, appPhone, eventName);
+    contacts.recordInbound(userPhone, inboundAdapter.name);
 
     // Testing mode: admins experience the full regular-user flow (intro, promo,
     // status messages, lead capture) but with unlimited quota.
     const testingMode = eventName.toLowerCase() === "testing";
     const treatAsAdmin = isAdmin(userPhone) && !testingMode;
 
+    async function sendMenu(menuKind, options, copy, fallbackText) {
+        const result = await richMenu.sendMenu(userPhone, inboundAdapter, menuKind, options, copy);
+        if (!result.rich) {
+            await messaging.send(userPhone, "_raw", {}, { _body: fallbackText, adapter: inboundAdapter });
+        }
+    }
+
+    function styleOptions() {
+        return activeStyleList.map((key) => ({
+            key,
+            name: activeStyles[key].name || key,
+            description: activeStyles[key].description || activeStyles[key].core || "Tap to choose",
+        }));
+    }
+
+    function brandOptions(activeBrands, activeBrandList, includeNone) {
+        const options = activeBrandList.slice(0, includeNone ? 9 : 10).map((key) => ({
+            key,
+            name: activeBrands[key].name || key,
+            description: activeBrands[key].description || "Tap to choose",
+        }));
+        if (includeNone) options.push({ key: "none", name: "None", description: "No brand theme" });
+        return options;
+    }
+
     // Helper: confirm and enqueue a job with the chosen style (and optional background/brand)
-    async function confirmAndEnqueue(style, imageUrl, messageSid, useTwiml, background, brand) {
+    async function confirmAndEnqueue(style, imageUrl, messageSid, background, brand) {
         if (!activeStyles[style]) style = activeStyleList[0] || settings.get("defaultStyle");
         const styleName = activeStyles[style] ? activeStyles[style].name : style;
         const styleNameLower = typeof styleName === "string" ? styleName.toLowerCase() : styleName;
@@ -176,14 +211,9 @@ app.post("/sms", async (req, res) => {
 
         if (treatAsAdmin) {
             const msg = `${settings.getMsg("enqueued", { confirmLabel })}${pickupMsg}`;
-            if (useTwiml) {
-                twiml.message(msg);
-            } else {
-                const { sendSms } = require("./lib/helpers");
-                await sendSms(userPhone, appPhone, msg);
-            }
-            enqueueJob(imageUrl, messageSid, userPhone, appPhone, style, baseUrl, background, brand);
-            require("./lib/still-working").arm(userPhone, appPhone, eventName);
+            await messaging.send(userPhone, "_raw", {}, { _body: msg, adapter: inboundAdapter });
+            enqueueJob(imageUrl, messageSid, userPhone, appPhone, style, baseUrl, background, brand, { channel: inboundAdapter.name });
+            require("./lib/still-working").arm(userPhone, appPhone, eventName, inboundAdapter);
         } else {
             const used = getUsageCount(userPhone);
             const maxPrints = settings.get("maxPrints");
@@ -193,12 +223,7 @@ app.post("/sms", async (req, res) => {
 
             if (remaining <= 0 && !unlimited) {
                 const quotaMsg = settings.getMsg("quotaExceeded", { maxPrints, units, eventName });
-                if (useTwiml) {
-                    twiml.message(quotaMsg);
-                } else {
-                    const { sendSms } = require("./lib/helpers");
-                    await sendSms(userPhone, appPhone, quotaMsg);
-                }
+                await messaging.send(userPhone, "_raw", {}, { _body: quotaMsg, adapter: inboundAdapter });
                 return;
             }
 
@@ -207,52 +232,46 @@ app.post("/sms", async (req, res) => {
                 ? ""
                 : ` ${settings.getMsg("remainingCount", { remaining: afterThis, unit: afterThis === 1 ? unit : unit + "s" })}`;
             const msg = `${settings.getMsg("enqueued", { confirmLabel })}${pickupMsg}${countMsg}`;
-            if (useTwiml) {
-                twiml.message(msg);
-            } else {
-                const { sendSms } = require("./lib/helpers");
-                await sendSms(userPhone, appPhone, msg);
-            }
-            enqueueJob(imageUrl, messageSid, userPhone, appPhone, style, baseUrl, background, brand);
-            require("./lib/still-working").arm(userPhone, appPhone, eventName);
+            await messaging.send(userPhone, "_raw", {}, { _body: msg, adapter: inboundAdapter });
+            enqueueJob(imageUrl, messageSid, userPhone, appPhone, style, baseUrl, background, brand, { channel: inboundAdapter.name });
+            require("./lib/still-working").arm(userPhone, appPhone, eventName, inboundAdapter);
         }
     }
 
     // Helper: show brand menu or proceed to background/enqueue
-    async function showBrandMenuOrNext(style, imageUrl, messageSid, useTwiml) {
+    async function showBrandMenuOrNext(style, imageUrl, messageSid) {
         const activeBrands = getActiveBrands();
         const activeBrandList = Object.keys(activeBrands);
         if (settings.get("enableBrandMenu") && activeBrandList.length > 0) {
             if (activeBrandList.length === 1) {
                 // Auto-select if only one brand
-                await showBackgroundMenuOrEnqueue(style, imageUrl, messageSid, useTwiml, activeBrandList[0]);
+                await showBackgroundMenuOrEnqueue(style, imageUrl, messageSid, activeBrandList[0]);
                 return;
             }
             brandMenu.setPending(userPhone, { imageUrl, messageSid, style, body, appPhone, baseUrl, includeNone: true });
             const menuMsg = brandMenu.buildMenu(activeBrands, activeBrandList, { includeNone: true });
-            if (useTwiml) {
-                twiml.message(menuMsg);
-            } else {
-                const { sendSms } = require("./lib/helpers");
-                await sendSms(userPhone, appPhone, menuMsg);
-            }
+            await sendMenu("brandMenu", brandOptions(activeBrands, activeBrandList, true), {
+                body: settings.getMsg("brandMenuIntro"), button: "Choose a brand",
+            }, menuMsg);
             return;
         }
-        await showBackgroundMenuOrEnqueue(style, imageUrl, messageSid, useTwiml);
+        await showBackgroundMenuOrEnqueue(style, imageUrl, messageSid);
     }
 
     // Helper: show style menu and hold the image (auto-selects if only one style)
     async function showMenuAndHold(imageUrl, messageSid) {
         if (activeStyleList.length === 1) {
-            await showBrandMenuOrNext(activeStyleList[0], imageUrl, messageSid, true);
+            await showBrandMenuOrNext(activeStyleList[0], imageUrl, messageSid);
             return;
         }
         styleMenu.setPending(userPhone, { imageUrl, messageSid, body, appPhone, baseUrl });
-        twiml.message(styleMenu.buildMenu(activeStyles, activeStyleList));
+        await sendMenu("styleMenu", styleOptions(), {
+            body: settings.getMsg("styleMenuIntro"), button: "Choose a style",
+        }, styleMenu.buildMenu(activeStyles, activeStyleList));
     }
 
     // Helper: show background menu or enqueue directly
-    async function showBackgroundMenuOrEnqueue(style, imageUrl, messageSid, useTwiml, brand) {
+    async function showBackgroundMenuOrEnqueue(style, imageUrl, messageSid, brand) {
         const { selectBackgroundChoices } = require("./lib/prompt-assembler");
 
         // The event's admin-configured flat backgroundChoices list, if any.
@@ -272,7 +291,7 @@ app.post("/sms", async (req, res) => {
 
         if (settings.get("enableBackgroundMenu") && choices.length > 0) {
             if (choices.length === 1) {
-                await confirmAndEnqueue(style, imageUrl, messageSid, useTwiml, choices[0].key, brand);
+                await confirmAndEnqueue(style, imageUrl, messageSid, choices[0].key, brand);
                 return;
             }
             backgroundMenu.setPending(userPhone, {
@@ -280,25 +299,21 @@ app.post("/sms", async (req, res) => {
                 resolvedChoices: choices,
             });
             const menuMsg = backgroundMenu.buildMenu(choices);
-            if (useTwiml) {
-                twiml.message(menuMsg);
-            } else {
-                const { sendSms } = require("./lib/helpers");
-                await sendSms(userPhone, appPhone, menuMsg);
-            }
+            await sendMenu("backgroundMenu", choices, {
+                body: settings.getMsg("backgroundMenuIntro"), button: "Choose background",
+            }, menuMsg);
             return;
         }
-        await confirmAndEnqueue(style, imageUrl, messageSid, useTwiml, undefined, brand);
+        await confirmAndEnqueue(style, imageUrl, messageSid, undefined, brand);
     }
 
     // ── 0. NPS response ────────────────────────────────────────────────────
     if (nps.hasPending(userPhone) && numMedia === 0) {
-        const trimmed = (body || "").trim();
-        const score = parseInt(trimmed, 10);
-        if (score >= 1 && score <= 5) {
+        const score = getNpsScore(body);
+        if (score !== null) {
             nps.recordScore(userPhone, eventName, score);
-            twiml.message(settings.getMsg("npsThanks"));
-            return res.type("text/xml").send(twiml.toString());
+            await messaging.send(userPhone, "_raw", {}, { _body: settings.getMsg("npsThanks"), adapter: inboundAdapter });
+            return res.status(204).end();
         }
     }
 
@@ -310,19 +325,19 @@ app.post("/sms", async (req, res) => {
             const pi = result.pendingImage;
             const style = pi.style || parseStyle(pi.body, activeStyles, settings.get("defaultStyle"));
             if (pi.background) {
-                await confirmAndEnqueue(style, pi.imageUrl, pi.messageSid, false, pi.background, pi.brand);
+                await confirmAndEnqueue(style, pi.imageUrl, pi.messageSid, pi.background, pi.brand);
             } else if (pi.brandPicked) {
                 // User already chose a brand (possibly "None" → null) before lead capture.
                 // Don't re-ask; proceed to background.
-                await showBackgroundMenuOrEnqueue(style, pi.imageUrl, pi.messageSid, false, pi.brand);
+                await showBackgroundMenuOrEnqueue(style, pi.imageUrl, pi.messageSid, pi.brand);
             } else if (pi.brand) {
-                await showBackgroundMenuOrEnqueue(style, pi.imageUrl, pi.messageSid, false, pi.brand);
+                await showBackgroundMenuOrEnqueue(style, pi.imageUrl, pi.messageSid, pi.brand);
             } else {
-                await showBrandMenuOrNext(style, pi.imageUrl, pi.messageSid, false);
+                await showBrandMenuOrNext(style, pi.imageUrl, pi.messageSid);
             }
         }
 
-        return res.type("text/xml").send(twiml.toString());
+        return res.status(204).end();
     }
 
     // ── 2. Background menu pending ──────────────────────────────────────────
@@ -337,8 +352,10 @@ app.post("/sms", async (req, res) => {
                 : (settings.get("backgroundChoices") || []);
             const matched = backgroundMenu.matchReply(body, bgChoices);
             if (!matched) {
-                twiml.message(backgroundMenu.buildRetryMenu(bgChoices));
-                return res.type("text/xml").send(twiml.toString());
+                await sendMenu("backgroundMenu", bgChoices, {
+                    body: settings.getMsg("backgroundMenuRetry"), button: "Choose background",
+                }, backgroundMenu.buildRetryMenu(bgChoices));
+                return res.status(204).end();
             }
 
             const bgPending = backgroundMenu.getPending(userPhone);
@@ -355,11 +372,11 @@ app.post("/sms", async (req, res) => {
                     brand: bgPending.brand || null,
                     baseUrl,
                 });
-                return res.type("text/xml").send(twiml.toString());
+                return res.status(204).end();
             }
 
-            await confirmAndEnqueue(bgPending.style, bgPending.imageUrl, bgPending.messageSid, false, matched, bgPending.brand);
-            return res.type("text/xml").send(twiml.toString());
+            await confirmAndEnqueue(bgPending.style, bgPending.imageUrl, bgPending.messageSid, matched, bgPending.brand);
+            return res.status(204).end();
         }
     }
 
@@ -375,8 +392,10 @@ app.post("/sms", async (req, res) => {
             const includeNone = brPending && brPending.includeNone;
             const matched = brandMenu.matchReply(body, activeBrands, activeBrandList, { includeNone });
             if (!matched) {
-                twiml.message(brandMenu.buildRetryMenu(activeBrands, activeBrandList, { includeNone }));
-                return res.type("text/xml").send(twiml.toString());
+                await sendMenu("brandMenu", brandOptions(activeBrands, activeBrandList, includeNone), {
+                    body: settings.getMsg("brandMenuRetry"), button: "Choose a brand",
+                }, brandMenu.buildRetryMenu(activeBrands, activeBrandList, { includeNone }));
+                return res.status(204).end();
             }
 
             brandMenu.clearPending(userPhone);
@@ -393,12 +412,12 @@ app.post("/sms", async (req, res) => {
                     brandPicked: true,
                     baseUrl,
                 });
-                return res.type("text/xml").send(twiml.toString());
+                return res.status(204).end();
             }
 
             // Background menu or enqueue (with brand)
-            await showBackgroundMenuOrEnqueue(brPending.style, brPending.imageUrl, brPending.messageSid, false, effectiveBrand);
-            return res.type("text/xml").send(twiml.toString());
+            await showBackgroundMenuOrEnqueue(brPending.style, brPending.imageUrl, brPending.messageSid, effectiveBrand);
+            return res.status(204).end();
         }
     }
 
@@ -411,8 +430,10 @@ app.post("/sms", async (req, res) => {
             // Text reply — try to match a style
             const matched = styleMenu.matchReply(body, activeStyles, activeStyleList);
             if (!matched) {
-                twiml.message(styleMenu.buildRetryMenu(activeStyles, activeStyleList));
-                return res.type("text/xml").send(twiml.toString());
+                await sendMenu("styleMenu", styleOptions(), {
+                    body: settings.getMsg("styleMenuRetry"), button: "Choose a style",
+                }, styleMenu.buildRetryMenu(activeStyles, activeStyleList));
+                return res.status(204).end();
             }
 
             const pending = styleMenu.getPending(userPhone);
@@ -427,19 +448,19 @@ app.post("/sms", async (req, res) => {
                     style: matched,
                     baseUrl,
                 });
-                return res.type("text/xml").send(twiml.toString());
+                return res.status(204).end();
             }
 
             // Brand menu or background menu or enqueue
-            await showBrandMenuOrNext(matched, pending.imageUrl, pending.messageSid, false);
-            return res.type("text/xml").send(twiml.toString());
+            await showBrandMenuOrNext(matched, pending.imageUrl, pending.messageSid);
+            return res.status(204).end();
         }
     }
 
     // ── 4. Lead capture "before" intercept ──────────────────────────────────
     if (leadMode === "before" && !treatAsAdmin && !leads.isCompleted(userPhone, eventName) && !leads.isActive(userPhone)) {
         if (numMedia > 1) {
-            twiml.message(settings.getMsg("multiplePhotos"));
+            await messaging.send(userPhone, "_raw", {}, { _body: settings.getMsg("multiplePhotos"), adapter: inboundAdapter });
         } else if (numMedia === 1) {
             const explicitStyle = detectStyle(body, activeStyles);
             if (explicitStyle) {
@@ -461,18 +482,17 @@ app.post("/sms", async (req, res) => {
                 });
             } else {
                 // Multiple styles — show menu; section 3 will check lead capture when they pick
-                styleMenu.setPending(userPhone, { imageUrl: req.body.MediaUrl0, messageSid: req.body.MessageSid, body, appPhone, baseUrl });
-                twiml.message(styleMenu.buildMenu(activeStyles, activeStyleList));
+                await showMenuAndHold(req.body.MediaUrl0, req.body.MessageSid);
             }
         } else {
             await leads.startSurvey(userPhone, appPhone, eventName, "before", null);
         }
-        return res.type("text/xml").send(twiml.toString());
+        return res.status(204).end();
     }
 
     // ── 5. Normal flow ──────────────────────────────────────────────────────
     if (numMedia > 1) {
-        twiml.message(settings.getMsg("multiplePhotos"));
+        await messaging.send(userPhone, "_raw", {}, { _body: settings.getMsg("multiplePhotos"), adapter: inboundAdapter });
     } else if (numMedia === 1) {
         // Check quota before showing style menu or enqueuing
         if (!treatAsAdmin) {
@@ -483,14 +503,14 @@ app.post("/sms", async (req, res) => {
             const printingEnabled = settings.get("enablePrinting");
             const units = printingEnabled ? "prints" : "portraits";
             if (used >= maxPrints && !unlimited) {
-                twiml.message(settings.getMsg("quotaExceeded", { maxPrints, units, eventName }));
-                return res.type("text/xml").send(twiml.toString());
+                await messaging.send(userPhone, "_raw", {}, { _body: settings.getMsg("quotaExceeded", { maxPrints, units, eventName }), adapter: inboundAdapter });
+                return res.status(204).end();
             }
         }
 
         const explicitStyle = detectStyle(body, activeStyles);
         if (explicitStyle) {
-            await showBrandMenuOrNext(explicitStyle, req.body.MediaUrl0, req.body.MessageSid, true);
+            await showBrandMenuOrNext(explicitStyle, req.body.MediaUrl0, req.body.MessageSid);
         } else {
             await showMenuAndHold(req.body.MediaUrl0, req.body.MessageSid);
         }
@@ -509,18 +529,18 @@ app.post("/sms", async (req, res) => {
                 const { generateSmartReply } = require("./lib/helpers");
                 const reply = await generateSmartReply(body, { eventName, styleChoices, remaining: null, unit });
                 if (reply) {
-                    twiml.message(reply);
-                    return res.type("text/xml").send(twiml.toString());
+                    await messaging.send(userPhone, "_raw", {}, { _body: reply, adapter: inboundAdapter });
+                    return res.status(204).end();
                 }
             }
-            twiml.message(settings.getMsg("welcome"));
+            await messaging.send(userPhone, "_raw", {}, { _body: settings.getMsg("welcome"), adapter: inboundAdapter });
         } else {
             const used = getUsageCount(userPhone);
             const maxPrints = settings.get("maxPrints");
             const quotaUnlimited = settings.isUnlimitedQuota(maxPrints);
             const remaining = maxPrints - used;
             if (remaining <= 0 && !quotaUnlimited) {
-                twiml.message(settings.getMsg("quotaExceeded", { maxPrints, units: unit + "s", eventName }));
+                await messaging.send(userPhone, "_raw", {}, { _body: settings.getMsg("quotaExceeded", { maxPrints, units: unit + "s", eventName }), adapter: inboundAdapter });
             } else {
                 if (conversational) {
                     const { generateSmartReply } = require("./lib/helpers");
@@ -529,8 +549,8 @@ app.post("/sms", async (req, res) => {
                         remaining: quotaUnlimited ? null : remaining, unit,
                     });
                     if (reply) {
-                        twiml.message(reply);
-                        return res.type("text/xml").send(twiml.toString());
+                        await messaging.send(userPhone, "_raw", {}, { _body: reply, adapter: inboundAdapter });
+                        return res.status(204).end();
                     }
                 }
                 // Unlimited: no welcome/remaining counts. Otherwise first-time
@@ -541,24 +561,30 @@ app.post("/sms", async (req, res) => {
                         ? ` ${settings.getMsg("welcomeCount", { maxPrints, unit: maxPrints === 1 ? unit : unit + "s", eventName })}`
                         : ` ${settings.getMsg("remainingCount", { remaining, unit: remaining === 1 ? unit : unit + "s" })}`;
                 }
-                twiml.message(`${settings.getMsg("welcome")}${countNote}`);
+                await messaging.send(userPhone, "_raw", {}, { _body: `${settings.getMsg("welcome")}${countNote}`, adapter: inboundAdapter });
             }
         }
     }
-    res.type("text/xml").send(twiml.toString());
+    return res.status(204).end();
   } catch (err) {
-    console.error(`❌ SMS webhook error: ${err.message}`);
-    if (!res.headersSent) {
-        const twiml = new MessagingResponse();
-        res.type("text/xml").send(twiml.toString());
-    }
+    console.error(`❌ Inbound webhook error: ${err.message}`);
+    if (!res.headersSent) res.status(500).end();
   }
-});
+}
+
+const validateTwilioWebhook = createTwilioWebhookValidator();
+app.post("/inbound", validateTwilioWebhook, inboundHandler);
+app.post("/sms", validateTwilioWebhook, inboundHandler);
 
 // ── Start ────────────────────────────────────────────────────────────────────
 
 // Load settings before accepting connections
 settings.load();
+const channelIssues = channelWarnings(settings.getAll());
+for (const issue of channelIssues) console.error(`❌ ${issue.message}`);
+if (channelIssues.some((issue) => issue.fatal)) {
+    throw new Error("Invalid messaging sender configuration");
+}
 
 const server = app.listen(port, "0.0.0.0", async () => {
     server.keepAliveTimeout = 65_000;
@@ -583,6 +609,7 @@ const server = app.listen(port, "0.0.0.0", async () => {
     mountApiGenerate(app);
     mountKiosk(app);
     await mountExperiments(app);
+    setReady();
     let genPollRunning = false;
     setInterval(async () => {
         if (genPollRunning || settings.get("queuePaused")) return;

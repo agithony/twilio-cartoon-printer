@@ -16,3 +16,4 @@ relay-app/out/
 data/settings.json
 data/events/
 data/experiments/
+data/content-template-cache.json

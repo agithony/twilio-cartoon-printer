@@ -37,6 +37,15 @@ function freshSettings() {
     return s;
 }
 
+test("deployment template SIDs override stale persisted values", () => {
+    const settings = freshSettings();
+    const original = settings.DEFAULTS.contentTemplates.delivery;
+    settings.DEFAULTS.contentTemplates.delivery = "HXenvironment";
+    settings.update({ contentTemplates: { delivery: "HXpersisted" } });
+    assert.equal(settings.getContentSid("delivery"), "HXenvironment");
+    settings.DEFAULTS.contentTemplates.delivery = original;
+});
+
 test("customStyles accepts behavior field", () => {
     const settings = freshSettings();
     settings.update({
