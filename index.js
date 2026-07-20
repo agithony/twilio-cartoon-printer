@@ -8,6 +8,7 @@ const bodyParser = require("body-parser");
 const channels = require("./lib/channels");
 const messaging = require("./lib/messaging");
 const { getMessageBody, getNpsScore } = require("./lib/inbound-payload");
+const richMenu = require("./lib/rich-menu");
 const {
     POLL_INTERVAL,
     DATA_DIR,
@@ -158,6 +159,31 @@ async function inboundHandler(req, res) {
     const testingMode = eventName.toLowerCase() === "testing";
     const treatAsAdmin = isAdmin(userPhone) && !testingMode;
 
+    async function sendMenu(menuKind, options, copy, fallbackText) {
+        const result = await richMenu.sendMenu(userPhone, inboundAdapter, menuKind, options, copy);
+        if (!result.rich) {
+            await messaging.send(userPhone, "_raw", {}, { _body: fallbackText, adapter: inboundAdapter });
+        }
+    }
+
+    function styleOptions() {
+        return activeStyleList.map((key) => ({
+            key,
+            name: activeStyles[key].name || key,
+            description: activeStyles[key].description || activeStyles[key].core || "Tap to choose",
+        }));
+    }
+
+    function brandOptions(activeBrands, activeBrandList, includeNone) {
+        const options = activeBrandList.slice(0, includeNone ? 9 : 10).map((key) => ({
+            key,
+            name: activeBrands[key].name || key,
+            description: activeBrands[key].description || "Tap to choose",
+        }));
+        if (includeNone) options.push({ key: "none", name: "None", description: "No brand theme" });
+        return options;
+    }
+
     // Helper: confirm and enqueue a job with the chosen style (and optional background/brand)
     async function confirmAndEnqueue(style, imageUrl, messageSid, background, brand) {
         if (!activeStyles[style]) style = activeStyleList[0] || settings.get("defaultStyle");
@@ -218,7 +244,9 @@ async function inboundHandler(req, res) {
             }
             brandMenu.setPending(userPhone, { imageUrl, messageSid, style, body, appPhone, baseUrl, includeNone: true });
             const menuMsg = brandMenu.buildMenu(activeBrands, activeBrandList, { includeNone: true });
-            await messaging.send(userPhone, "_raw", {}, { _body: menuMsg, adapter: inboundAdapter });
+            await sendMenu("brandMenu", brandOptions(activeBrands, activeBrandList, true), {
+                body: settings.getMsg("brandMenuIntro"), button: "Choose a brand",
+            }, menuMsg);
             return;
         }
         await showBackgroundMenuOrEnqueue(style, imageUrl, messageSid);
@@ -231,7 +259,9 @@ async function inboundHandler(req, res) {
             return;
         }
         styleMenu.setPending(userPhone, { imageUrl, messageSid, body, appPhone, baseUrl });
-        await messaging.send(userPhone, "_raw", {}, { _body: styleMenu.buildMenu(activeStyles, activeStyleList), adapter: inboundAdapter });
+        await sendMenu("styleMenu", styleOptions(), {
+            body: settings.getMsg("styleMenuIntro"), button: "Choose a style",
+        }, styleMenu.buildMenu(activeStyles, activeStyleList));
     }
 
     // Helper: show background menu or enqueue directly
@@ -263,7 +293,9 @@ async function inboundHandler(req, res) {
                 resolvedChoices: choices,
             });
             const menuMsg = backgroundMenu.buildMenu(choices);
-            await messaging.send(userPhone, "_raw", {}, { _body: menuMsg, adapter: inboundAdapter });
+            await sendMenu("backgroundMenu", choices, {
+                body: settings.getMsg("backgroundMenuIntro"), button: "Choose background",
+            }, menuMsg);
             return;
         }
         await confirmAndEnqueue(style, imageUrl, messageSid, undefined, brand);
@@ -314,7 +346,9 @@ async function inboundHandler(req, res) {
                 : (settings.get("backgroundChoices") || []);
             const matched = backgroundMenu.matchReply(body, bgChoices);
             if (!matched) {
-                await messaging.send(userPhone, "_raw", {}, { _body: backgroundMenu.buildRetryMenu(bgChoices), adapter: inboundAdapter });
+                await sendMenu("backgroundMenu", bgChoices, {
+                    body: settings.getMsg("backgroundMenuRetry"), button: "Choose background",
+                }, backgroundMenu.buildRetryMenu(bgChoices));
                 return res.status(204).end();
             }
 
@@ -352,7 +386,9 @@ async function inboundHandler(req, res) {
             const includeNone = brPending && brPending.includeNone;
             const matched = brandMenu.matchReply(body, activeBrands, activeBrandList, { includeNone });
             if (!matched) {
-                await messaging.send(userPhone, "_raw", {}, { _body: brandMenu.buildRetryMenu(activeBrands, activeBrandList, { includeNone }), adapter: inboundAdapter });
+                await sendMenu("brandMenu", brandOptions(activeBrands, activeBrandList, includeNone), {
+                    body: settings.getMsg("brandMenuRetry"), button: "Choose a brand",
+                }, brandMenu.buildRetryMenu(activeBrands, activeBrandList, { includeNone }));
                 return res.status(204).end();
             }
 
@@ -388,7 +424,9 @@ async function inboundHandler(req, res) {
             // Text reply — try to match a style
             const matched = styleMenu.matchReply(body, activeStyles, activeStyleList);
             if (!matched) {
-                await messaging.send(userPhone, "_raw", {}, { _body: styleMenu.buildRetryMenu(activeStyles, activeStyleList), adapter: inboundAdapter });
+                await sendMenu("styleMenu", styleOptions(), {
+                    body: settings.getMsg("styleMenuRetry"), button: "Choose a style",
+                }, styleMenu.buildRetryMenu(activeStyles, activeStyleList));
                 return res.status(204).end();
             }
 
@@ -438,8 +476,7 @@ async function inboundHandler(req, res) {
                 });
             } else {
                 // Multiple styles — show menu; section 3 will check lead capture when they pick
-                styleMenu.setPending(userPhone, { imageUrl: req.body.MediaUrl0, messageSid: req.body.MessageSid, body, appPhone, baseUrl });
-                await messaging.send(userPhone, "_raw", {}, { _body: styleMenu.buildMenu(activeStyles, activeStyleList), adapter: inboundAdapter });
+                await showMenuAndHold(req.body.MediaUrl0, req.body.MessageSid);
             }
         } else {
             await leads.startSurvey(userPhone, appPhone, eventName, "before", null);
