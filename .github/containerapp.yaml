@@ -42,8 +42,6 @@ properties:
             value: "${TWILIO_TEMPLATE_PROMO}"
           - name: TWILIO_TEMPLATE_NUDGE
             value: "${TWILIO_TEMPLATE_NUDGE}"
-          - name: TWILIO_TEMPLATE_BROADCAST
-            value: "${TWILIO_TEMPLATE_BROADCAST}"
           - name: OPENAI_API_KEY
             secretRef: openai-key
           - name: GOOGLE_CLIENT_ID
