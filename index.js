@@ -7,6 +7,7 @@ const express = require("express");
 const bodyParser = require("body-parser");
 const channels = require("./lib/channels");
 const messaging = require("./lib/messaging");
+const { getMessageBody, getNpsScore } = require("./lib/inbound-payload");
 const {
     POLL_INTERVAL,
     DATA_DIR,
@@ -123,7 +124,7 @@ function markSid(sid) {
     return false;
 }
 
-app.post("/inbound", async (req, res) => {
+async function inboundHandler(req, res) {
   try {
     if (!baseUrl) {
         const proto = req.headers["x-forwarded-proto"] || req.protocol || "http";
@@ -141,7 +142,7 @@ app.post("/inbound", async (req, res) => {
     const userPhone = inboundAdapter.normalizeFrom(req.body.From);
     const appPhone = inboundAdapter.normalizeFrom(req.body.To);
     const numMedia = parseInt(req.body.NumMedia || "0", 10);
-    const body = req.body.Body || "";
+    const body = getMessageBody(req.body);
 
     const activeStyles = settings.getActiveStyles();
     const activeStyleList = settings.getActiveStyleList();
@@ -270,9 +271,8 @@ app.post("/inbound", async (req, res) => {
 
     // ── 0. NPS response ────────────────────────────────────────────────────
     if (nps.hasPending(userPhone) && numMedia === 0) {
-        const trimmed = (body || "").trim();
-        const score = parseInt(trimmed, 10);
-        if (score >= 1 && score <= 5) {
+        const score = getNpsScore(body);
+        if (score !== null) {
             nps.recordScore(userPhone, eventName, score);
             await messaging.send(userPhone, "_raw", {}, { _body: settings.getMsg("npsThanks"), adapter: inboundAdapter });
             return res.status(204).end();
@@ -527,7 +527,10 @@ app.post("/inbound", async (req, res) => {
     console.error(`❌ Inbound webhook error: ${err.message}`);
     if (!res.headersSent) res.status(500).end();
   }
-});
+}
+
+app.post("/inbound", inboundHandler);
+app.post("/sms", inboundHandler);
 
 // ── Start ────────────────────────────────────────────────────────────────────
 

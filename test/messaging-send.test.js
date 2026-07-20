@@ -43,6 +43,27 @@ test("send: uses contentSid when configured", async () => {
     assert.equal(lastPayload.to, "+14155551234");
 });
 
+test("send: explicit contentSid and variables override settings", async () => {
+    settingsStub._data.contentTemplates = { styleMenu: "HXold" };
+    await messaging.send("+14155551234", "styleMenu", { 1: "old" }, {
+        adapter: smsAdapter,
+        contentSid: "HXruntime",
+        contentVariables: { 1: "new" },
+    });
+    assert.equal(lastPayload.contentSid, "HXruntime");
+    assert.equal(lastPayload.contentVariables, JSON.stringify({ 1: "new" }));
+});
+
+test("send: omits mediaUrl when using Content API", async () => {
+    settingsStub._data.contentTemplates = { delivery: "HXdelivery" };
+    await messaging.send("+14155551234", "delivery", { 1: "Cartoon" }, {
+        adapter: smsAdapter,
+        mediaUrl: "https://example.com/image.jpg",
+    });
+    assert.equal(lastPayload.contentSid, "HXdelivery");
+    assert.equal(lastPayload.mediaUrl, undefined);
+});
+
 test("send: falls back to plain body when no contentSid", async () => {
     settingsStub._data.contentTemplates = {};
     await messaging.send("+14155551234", "enqueued", {}, { adapter: smsAdapter });
