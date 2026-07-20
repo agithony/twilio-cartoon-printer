@@ -120,17 +120,19 @@ jobs:
       - name: Get ACR credentials
         id: acr-creds
         run: |
-          echo "server=${{ env.ACR_NAME }}.azurecr.io" >> $GITHUB_OUTPUT
-          echo "username=$(az acr credential show --name ${{ env.ACR_NAME }} --query username -o tsv)" >> $GITHUB_OUTPUT
-          echo "password=$(az acr credential show --name ${{ env.ACR_NAME }} --query 'passwords[0].value' -o tsv)" >> $GITHUB_OUTPUT
+          {
+            echo "server=${{ env.ACR_NAME }}.azurecr.io"
+            echo "username=$(az acr credential show --name '${{ env.ACR_NAME }}' --query username -o tsv)"
+            echo "password=$(az acr credential show --name '${{ env.ACR_NAME }}' --query 'passwords[0].value' -o tsv)"
+          } >> "$GITHUB_OUTPUT"
 
       - name: Get Storage Key
         id: storage-key
         run: |
           echo "key=$(az storage account keys list \
-            --resource-group ${{ env.RESOURCE_GROUP }} \
-            --account-name ${{ env.STORAGE_ACCOUNT }} \
-            --query '[0].value' -o tsv)" >> $GITHUB_OUTPUT
+            --resource-group '${{ env.RESOURCE_GROUP }}' \
+            --account-name '${{ env.STORAGE_ACCOUNT }}' \
+            --query '[0].value' -o tsv)" >> "$GITHUB_OUTPUT"
 
       - name: Ensure required tags on Container App (tenant policy)
         run: |
@@ -174,6 +176,13 @@ jobs:
         # Empty = domain-only (renders as ALLOWED_EMAILS="").
         env:
           ALLOWED_EMAILS: ${{ vars.ALLOWED_EMAILS }}
+          TWILIO_WHATSAPP_NUMBER: ${{ vars.TWILIO_WHATSAPP_NUMBER }}
+          TWILIO_WHATSAPP_MESSAGING_SERVICE_SID: ${{ vars.TWILIO_WHATSAPP_MESSAGING_SERVICE_SID }}
+          TWILIO_TEMPLATE_DELIVERY: ${{ vars.TWILIO_TEMPLATE_DELIVERY }}
+          TWILIO_TEMPLATE_RATING: ${{ vars.TWILIO_TEMPLATE_RATING }}
+          TWILIO_TEMPLATE_PROMO: ${{ vars.TWILIO_TEMPLATE_PROMO }}
+          TWILIO_TEMPLATE_NUDGE: ${{ vars.TWILIO_TEMPLATE_NUDGE }}
+          TWILIO_TEMPLATE_BROADCAST: ${{ vars.TWILIO_TEMPLATE_BROADCAST }}
         run: |
           # Resolve BASE_URL for existing apps; new apps get it on first update
           FQDN=$(az containerapp show \
@@ -186,8 +195,16 @@ jobs:
           export CONTAINER_IMAGE="${{ steps.acr-creds.outputs.server }}/${{ env.IMAGE_TAG }}"
           export BASE_URL="https://${FQDN}"
           export ALLOWED_EMAILS="${ALLOWED_EMAILS:-}"
+          export TWILIO_WHATSAPP_NUMBER="${TWILIO_WHATSAPP_NUMBER:-}"
+          export TWILIO_WHATSAPP_MESSAGING_SERVICE_SID="${TWILIO_WHATSAPP_MESSAGING_SERVICE_SID:-}"
+          export TWILIO_TEMPLATE_DELIVERY="${TWILIO_TEMPLATE_DELIVERY:-}"
+          export TWILIO_TEMPLATE_RATING="${TWILIO_TEMPLATE_RATING:-}"
+          export TWILIO_TEMPLATE_PROMO="${TWILIO_TEMPLATE_PROMO:-}"
+          export TWILIO_TEMPLATE_NUDGE="${TWILIO_TEMPLATE_NUDGE:-}"
+          export TWILIO_TEMPLATE_BROADCAST="${TWILIO_TEMPLATE_BROADCAST:-}"
+          # shellcheck disable=SC2016
           # Restrict substitution to our known vars so no other ${...} in the template is touched.
-          envsubst '${APP_NAME} ${CONTAINER_IMAGE} ${BASE_URL} ${ALLOWED_EMAILS}' < .github/containerapp.yaml > /tmp/containerapp.yaml
+          envsubst '${APP_NAME} ${CONTAINER_IMAGE} ${BASE_URL} ${ALLOWED_EMAILS} ${TWILIO_WHATSAPP_NUMBER} ${TWILIO_WHATSAPP_MESSAGING_SERVICE_SID} ${TWILIO_TEMPLATE_DELIVERY} ${TWILIO_TEMPLATE_RATING} ${TWILIO_TEMPLATE_PROMO} ${TWILIO_TEMPLATE_NUDGE} ${TWILIO_TEMPLATE_BROADCAST}' < .github/containerapp.yaml > /tmp/containerapp.yaml
 
           if az containerapp show --name ${{ env.APP_NAME }} --resource-group ${{ env.RESOURCE_GROUP }} 2>/dev/null; then
             echo "Updating existing container app..."

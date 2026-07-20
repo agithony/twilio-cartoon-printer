@@ -206,8 +206,8 @@ async function inboundHandler(req, res) {
         if (treatAsAdmin) {
             const msg = `${settings.getMsg("enqueued", { confirmLabel })}${pickupMsg}`;
             await messaging.send(userPhone, "_raw", {}, { _body: msg, adapter: inboundAdapter });
-            enqueueJob(imageUrl, messageSid, userPhone, appPhone, style, baseUrl, background, brand);
-            require("./lib/still-working").arm(userPhone, appPhone, eventName);
+            enqueueJob(imageUrl, messageSid, userPhone, appPhone, style, baseUrl, background, brand, { channel: inboundAdapter.name });
+            require("./lib/still-working").arm(userPhone, appPhone, eventName, inboundAdapter);
         } else {
             const used = getUsageCount(userPhone);
             const maxPrints = settings.get("maxPrints");
@@ -227,8 +227,8 @@ async function inboundHandler(req, res) {
                 : ` ${settings.getMsg("remainingCount", { remaining: afterThis, unit: afterThis === 1 ? unit : unit + "s" })}`;
             const msg = `${settings.getMsg("enqueued", { confirmLabel })}${pickupMsg}${countMsg}`;
             await messaging.send(userPhone, "_raw", {}, { _body: msg, adapter: inboundAdapter });
-            enqueueJob(imageUrl, messageSid, userPhone, appPhone, style, baseUrl, background, brand);
-            require("./lib/still-working").arm(userPhone, appPhone, eventName);
+            enqueueJob(imageUrl, messageSid, userPhone, appPhone, style, baseUrl, background, brand, { channel: inboundAdapter.name });
+            require("./lib/still-working").arm(userPhone, appPhone, eventName, inboundAdapter);
         }
     }
 

@@ -30,6 +30,20 @@ properties:
             secretRef: twilio-token
           - name: TWILIO_MESSAGING_SERVICE_SID
             secretRef: twilio-mssid
+          - name: TWILIO_WHATSAPP_NUMBER
+            value: "${TWILIO_WHATSAPP_NUMBER}"
+          - name: TWILIO_WHATSAPP_MESSAGING_SERVICE_SID
+            value: "${TWILIO_WHATSAPP_MESSAGING_SERVICE_SID}"
+          - name: TWILIO_TEMPLATE_DELIVERY
+            value: "${TWILIO_TEMPLATE_DELIVERY}"
+          - name: TWILIO_TEMPLATE_RATING
+            value: "${TWILIO_TEMPLATE_RATING}"
+          - name: TWILIO_TEMPLATE_PROMO
+            value: "${TWILIO_TEMPLATE_PROMO}"
+          - name: TWILIO_TEMPLATE_NUDGE
+            value: "${TWILIO_TEMPLATE_NUDGE}"
+          - name: TWILIO_TEMPLATE_BROADCAST
+            value: "${TWILIO_TEMPLATE_BROADCAST}"
           - name: OPENAI_API_KEY
             secretRef: openai-key
           - name: GOOGLE_CLIENT_ID
