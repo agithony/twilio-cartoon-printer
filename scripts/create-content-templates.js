@@ -67,9 +67,17 @@ const approvalCategories = {
     delivery: "UTILITY", rating: "UTILITY", promo: "MARKETING", nudgeDropoff: "MARKETING",
 };
 
-async function main({ client = getTwilioClient(), settingsModule = settings, baseUrl = process.env.BASE_URL, samplePortraitPath = process.env.TWILIO_TEMPLATE_SAMPLE_PORTRAIT_PATH, printOnly = process.argv.includes("--print-only") } = {}) {
+async function main({ client, settingsModule = settings, baseUrl = process.env.BASE_URL, samplePortraitPath = process.env.TWILIO_TEMPLATE_SAMPLE_PORTRAIT_PATH, printOnly = process.argv.includes("--print-only") } = {}) {
     baseUrl = String(baseUrl || "").replace(/\/$/, "");
     if (!/^https:\/\//.test(baseUrl)) throw new Error("BASE_URL must be the public HTTPS app URL");
+    if (printOnly) {
+        const definitions = {};
+        for (const locale of ["en", "pt_BR"]) definitions[locale] = buildDefinitions(baseUrl, samplePortraitPath, locale);
+        console.log(JSON.stringify(definitions, null, 2));
+        return { definitions };
+    }
+
+    client = client || getTwilioClient();
     settingsModule.load();
     const existing = await client.content.v1.contents.list({ limit: 1000 });
     const allSids = { en: {}, pt_BR: {} };
@@ -102,15 +110,13 @@ async function main({ client = getTwilioClient(), settingsModule = settings, bas
       }
     }
 
-    if (!printOnly) {
-        const current = settingsModule.get("contentTemplates") || {};
-        const active = {
-            en: { ...(current.en || current), ...approvedSids.en },
-            pt_BR: { ...(current.pt_BR || {}), ...approvedSids.pt_BR },
-        };
-        settingsModule.update({ contentTemplates: active });
-        console.log(`Saved ${Object.keys(approvedSids.en).length + Object.keys(approvedSids.pt_BR).length} approved template SID(s).`);
-    }
+    const current = settingsModule.get("contentTemplates") || {};
+    const active = {
+        en: { ...(current.en || current), ...approvedSids.en },
+        pt_BR: { ...(current.pt_BR || {}), ...approvedSids.pt_BR },
+    };
+    settingsModule.update({ contentTemplates: active });
+    console.log(`Saved ${Object.keys(approvedSids.en).length + Object.keys(approvedSids.pt_BR).length} approved template SID(s).`);
     return { allSids, approvedSids };
 }
 
