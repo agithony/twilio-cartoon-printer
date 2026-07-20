@@ -9,9 +9,9 @@ const settingsStub = {
     getMsg(k) { return `fallback:${k}`; },
 };
 const contactsStub = {
-    _channel: null, _ts: null,
+    _channel: null, _ts: null, _tsByChannel: {},
     getPreferredChannel() { return this._channel; },
-    getLastInboundAt() { return this._ts; },
+    getLastInboundAt(_phone, channel) { return this._tsByChannel[channel] || this._ts; },
 };
 
 let lastPayload = null;
@@ -75,15 +75,18 @@ test("send: WhatsApp adapter formats to with prefix", async () => {
     settingsStub._data.contentTemplates = { enqueued: "HXdef" };
     settingsStub._data.twilioWhatsappNumber = "+14155238886";
     delete settingsStub._data.twilioWhatsappMessagingServiceSid;
+    contactsStub._tsByChannel.whatsapp = Date.now();
     await messaging.send("+14155551234", "enqueued", {}, { adapter: waAdapter });
     assert.equal(lastPayload.to, "whatsapp:+14155551234");
     assert.ok(lastPayload.from === "whatsapp:+14155238886" || lastPayload.messagingServiceSid);
 });
 
-test("send: skips out-of-session WA send when requiresSession=true and no lastInboundAt", async () => {
+test("send: skips every free-form out-of-session WhatsApp send", async () => {
     contactsStub._ts = null;
+    contactsStub._tsByChannel.whatsapp = null;
     lastPayload = null;
-    const result = await messaging.send("+14155551234", "promo", {}, { adapter: waAdapter, requiresSession: true });
+    settingsStub._data.contentTemplates = {};
+    const result = await messaging.send("+14155551234", "promo", {}, { adapter: waAdapter });
     assert.equal(result.skipped, "out-of-session");
     assert.equal(lastPayload, null);
 });
@@ -92,9 +95,19 @@ test("send: proceeds when in-session (lastInboundAt within 24h)", async () => {
     settingsStub._data.contentTemplates = { promo: "HXghi" };
     settingsStub._data.twilioWhatsappNumber = "+14155238886";
     contactsStub._ts = Date.now();
+    contactsStub._tsByChannel.whatsapp = Date.now();
     lastPayload = null;
     await messaging.send("+14155551234", "promo", {}, { adapter: waAdapter, requiresSession: true });
     assert.ok(lastPayload !== null);
+});
+
+test("send: allows an approved template outside the WhatsApp session", async () => {
+    settingsStub._data.contentTemplates = { promo: "HXapproved" };
+    contactsStub._ts = null;
+    contactsStub._tsByChannel.whatsapp = null;
+    lastPayload = null;
+    await messaging.send("+14155551234", "promo", {}, { adapter: waAdapter, allowOutOfSession: true });
+    assert.equal(lastPayload.contentSid, "HXapproved");
 });
 
 test("send: includes mediaUrl when provided", async () => {

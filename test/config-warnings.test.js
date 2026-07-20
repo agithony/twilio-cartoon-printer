@@ -83,23 +83,30 @@ test("style: null/undefined is safely empty", () => {
 // Channel warnings
 
 const { channelWarnings } = require("../lib/config-warnings");
+const credentials = { twilioAccountSid: "ACtest", twilioAuthToken: "token" };
 
 test("channelWarnings: no senders configured returns fatal error", () => {
-    const w = channelWarnings({ twilioPhoneNumber: "", twilioMessagingServiceSid: "", twilioWhatsappNumber: "", twilioWhatsappMessagingServiceSid: "" });
+    const w = channelWarnings({ ...credentials, twilioPhoneNumber: "", twilioMessagingServiceSid: "", twilioWhatsappNumber: "", twilioWhatsappMessagingServiceSid: "" });
     assert.ok(w.some(w => w.fatal && /no.*sender|phone number/i.test(w.message)));
 });
 
 test("channelWarnings: SMS only configured returns no errors", () => {
-    const w = channelWarnings({ twilioPhoneNumber: "+12065551234", twilioMessagingServiceSid: "", twilioWhatsappNumber: "", twilioWhatsappMessagingServiceSid: "" });
+    const w = channelWarnings({ ...credentials, twilioPhoneNumber: "+12065551234", twilioMessagingServiceSid: "", twilioWhatsappNumber: "", twilioWhatsappMessagingServiceSid: "" });
     assert.equal(w.filter(w => w.fatal).length, 0);
 });
 
 test("channelWarnings: WhatsApp number set but malformed returns fatal error", () => {
-    const w = channelWarnings({ twilioPhoneNumber: "+12065551234", twilioWhatsappNumber: "not-a-phone" });
+    const w = channelWarnings({ ...credentials, twilioPhoneNumber: "+12065551234", twilioWhatsappNumber: "not-a-phone" });
     assert.ok(w.some(w => w.fatal && /whatsapp.*invalid|invalid.*whatsapp/i.test(w.message)));
 });
 
 test("channelWarnings: both configured returns no errors", () => {
-    const w = channelWarnings({ twilioPhoneNumber: "+12065551234", twilioWhatsappNumber: "+14155238886" });
+    const w = channelWarnings({ ...credentials, twilioPhoneNumber: "+12065551234", twilioWhatsappNumber: "+14155238886" });
     assert.equal(w.filter(w => w.fatal).length, 0);
+});
+
+test("channelWarnings: credentials are required", () => {
+    const w = channelWarnings({ twilioMessagingServiceSid: "MGtest" });
+    assert.ok(w.some(issue => issue.fatal && /ACCOUNT_SID/.test(issue.message)));
+    assert.ok(w.some(issue => issue.fatal && /AUTH_TOKEN/.test(issue.message)));
 });

@@ -77,9 +77,15 @@ app.use(require("compression")());
 
 // ── Google OAuth (must be before all other routes) ──────────────────────────
 const { mountAuth, requireAuth, isPublicRoute } = require("./lib/auth");
-const { mountHealth } = require("./lib/health");
+const { createTwilioWebhookValidator } = require("./lib/twilio-webhook");
+const { channelWarnings } = require("./lib/config-warnings");
+const { mountHealth, setReady, isReady } = require("./lib/health");
 mountHealth(app);
 mountAuth(app);
+app.use((req, res, next) => {
+    if (isReady() || req.path.startsWith("/healthz") || req.path.startsWith("/auth")) return next();
+    return res.status(503).send("Application is starting");
+});
 app.use((req, res, next) => {
     if (isPublicRoute(req)) return next();
     requireAuth(req, res, next);
@@ -566,13 +572,19 @@ async function inboundHandler(req, res) {
   }
 }
 
-app.post("/inbound", inboundHandler);
-app.post("/sms", inboundHandler);
+const validateTwilioWebhook = createTwilioWebhookValidator();
+app.post("/inbound", validateTwilioWebhook, inboundHandler);
+app.post("/sms", validateTwilioWebhook, inboundHandler);
 
 // ── Start ────────────────────────────────────────────────────────────────────
 
 // Load settings before accepting connections
 settings.load();
+const channelIssues = channelWarnings(settings.getAll());
+for (const issue of channelIssues) console.error(`❌ ${issue.message}`);
+if (channelIssues.some((issue) => issue.fatal)) {
+    throw new Error("Invalid messaging sender configuration");
+}
 
 const server = app.listen(port, "0.0.0.0", async () => {
     server.keepAliveTimeout = 65_000;
@@ -597,6 +609,7 @@ const server = app.listen(port, "0.0.0.0", async () => {
     mountApiGenerate(app);
     mountKiosk(app);
     await mountExperiments(app);
+    setReady();
     let genPollRunning = false;
     setInterval(async () => {
         if (genPollRunning || settings.get("queuePaused")) return;

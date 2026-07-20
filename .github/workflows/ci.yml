@@ -38,6 +38,9 @@ jobs:
         env:
           PORT: "8080"
           NODE_ENV: production
+          TWILIO_ACCOUNT_SID: AC00000000000000000000000000000000
+          TWILIO_AUTH_TOKEN: ci-test-token
+          TWILIO_MESSAGING_SERVICE_SID: MG00000000000000000000000000000000
         run: |
           node index.js &
           SERVER_PID=$!
