@@ -38,10 +38,16 @@ test("recordInbound: sets preferredChannel on first call", () => {
     assert.equal(contacts.getPreferredChannel("+14155553333"), "whatsapp");
 });
 
-test("recordInbound: does NOT overwrite preferredChannel on repeat", () => {
+test("recordInbound: updates preferredChannel to the latest inbound channel", () => {
     contacts.recordInbound("+14155554444", "sms");
     contacts.recordInbound("+14155554444", "whatsapp");
-    assert.equal(contacts.getPreferredChannel("+14155554444"), "sms");
+    assert.equal(contacts.getPreferredChannel("+14155554444"), "whatsapp");
+});
+
+test("recordInbound: isolates session timestamps by channel", () => {
+    contacts.recordInbound("+14155556666", "sms");
+    assert.ok(contacts.getLastInboundAt("+14155556666", "sms") > 0);
+    assert.equal(contacts.getLastInboundAt("+14155556666", "whatsapp"), null);
 });
 
 test("getLastInboundAt: returns null for unknown phone", () => {

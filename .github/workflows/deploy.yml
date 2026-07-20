@@ -260,7 +260,7 @@ jobs:
         env:
           FQDN: ${{ steps.fqdn.outputs.fqdn }}
         run: |
-          for i in $(seq 1 30); do
+          for i in $(seq 1 45); do
             CODE=$(curl -s -o /dev/null -w "%{http_code}" "https://$FQDN/healthz" || true)
             if [ "$CODE" = "200" ]; then
               echo "Healthz OK after attempt $i"
@@ -271,10 +271,10 @@ jobs:
               echo "  App URL:        https://${FQDN}"
               echo "  Admin Console:  https://${FQDN}/home"
               echo "  Dashboard:      https://${FQDN}/dashboard"
-              echo "  Twilio Webhook: https://${FQDN}/inbound"
+              echo "  Twilio Webhook: https://${FQDN}/inbound (legacy /sms remains supported)"
               echo "=========================================="
               exit 0
             fi
             echo "Attempt $i: status=$CODE — retrying in 10s"; sleep 10
           done
-          echo "::error::Healthz never returned 200 after 5 minutes."; exit 1
+          echo "::error::Healthz never returned 200 after 7.5 minutes."; exit 1

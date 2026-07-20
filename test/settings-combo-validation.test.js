@@ -51,6 +51,15 @@ test("attendee language defaults to English and validates runtime modes", () => 
     assert.equal(settings.get("languageMode"), "ask");
 });
 
+test("deployment template SIDs override stale persisted values", () => {
+    const settings = freshSettings();
+    const original = settings.DEFAULTS.contentTemplates.en.delivery;
+    settings.DEFAULTS.contentTemplates.en.delivery = "HXenvironment";
+    settings.update({ contentTemplates: { en: { delivery: "HXpersisted" } } });
+    assert.equal(settings.getContentSid("delivery", "en"), "HXenvironment");
+    settings.DEFAULTS.contentTemplates.en.delivery = original;
+});
+
 test("customStyles accepts behavior field", () => {
     const settings = freshSettings();
     settings.update({

@@ -78,6 +78,7 @@ At minimum, you need:
 ```sh
 TWILIO_ACCOUNT_SID=your_account_sid
 TWILIO_AUTH_TOKEN=your_auth_token
+TWILIO_MESSAGING_SERVICE_SID=your_messaging_service_sid
 OPENAI_API_KEY=your_openai_key
 EVENT_NAME=YourEventName
 ```
