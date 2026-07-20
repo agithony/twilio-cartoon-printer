@@ -5,7 +5,10 @@ const assert = require("node:assert/strict");
 const settingsStub = {
     _data: { contentTemplates: {} },
     get(k) { return this._data[k]; },
-    getContentSid(k) { return (this._data.contentTemplates || {})[k] || null; },
+    getContentSid(k, locale = "en") {
+        const templates = this._data.contentTemplates || {};
+        return (templates[locale] && templates[locale][k]) || templates[k] || null;
+    },
     getMsg(k) { return `fallback:${k}`; },
 };
 const contactsStub = {
@@ -52,6 +55,15 @@ test("send: explicit contentSid and variables override settings", async () => {
     });
     assert.equal(lastPayload.contentSid, "HXruntime");
     assert.equal(lastPayload.contentVariables, JSON.stringify({ 1: "new" }));
+});
+
+test("send: resolves locale-specific static Content SID", async () => {
+    settingsStub._data.contentTemplates = {
+        en: { delivery: "HXenglish" },
+        pt_BR: { delivery: "HXportuguese" },
+    };
+    await messaging.send("+14155551234", "delivery", { 1: "Cartoon" }, { adapter: smsAdapter, locale: "pt_BR" });
+    assert.equal(lastPayload.contentSid, "HXportuguese");
 });
 
 test("send: omits mediaUrl when using Content API", async () => {
