@@ -32,8 +32,10 @@ test("pending state: hasPending false before set", () => {
 });
 
 test("pending state: hasPending true after set, false after clear", () => {
-    styleMenu.setPending("+14155551234", { style: "cartoon" });
+    styleMenu.setPending("+14155551234", { style: "cartoon", locale: "pt_BR", eventName: "Evento" });
     assert.equal(styleMenu.hasPending("+14155551234"), true);
+    assert.equal(styleMenu.getPending("+14155551234").locale, "pt_BR");
+    assert.equal(styleMenu.getPending("+14155551234").eventName, "Evento");
     styleMenu.clearPending("+14155551234");
     assert.equal(styleMenu.hasPending("+14155551234"), false);
 });

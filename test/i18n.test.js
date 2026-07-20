@@ -20,6 +20,26 @@ test("locale normalization accepts common English and Portuguese forms", () => {
 test("language button payloads remain independent of display text", () => {
     assert.equal(i18n.parseLanguageSelection("lang_en"), "en");
     assert.equal(i18n.parseLanguageSelection("lang_pt_BR"), "pt_BR");
+    assert.equal(i18n.isExplicitLanguageSelection("Português"), true);
+    assert.equal(i18n.isExplicitLanguageSelection("lang_en"), true);
+    assert.equal(i18n.isExplicitLanguageSelection("1"), false);
+    assert.equal(i18n.isExplicitLanguageSelection("2"), false);
+    assert.equal(i18n.shouldApplyLanguageSelection("ask", "1", { selectionPending: false }), false);
+    assert.equal(i18n.shouldApplyLanguageSelection("ask", "1", { selectionPending: true }), true);
+    assert.equal(i18n.shouldApplyLanguageSelection("ask", "Português", {}), true);
+    assert.equal(i18n.shouldApplyLanguageSelection("ask", "Português", { activeLocale: "en" }), false);
+});
+
+test("event language mode controls new conversations", () => {
+    assert.equal(i18n.resolveAttendeeLocale("en", "pt_BR"), "en");
+    assert.equal(i18n.resolveAttendeeLocale("pt_BR", "en"), "pt_BR");
+    assert.equal(i18n.resolveAttendeeLocale("ask", "pt_BR"), "pt_BR");
+    assert.equal(i18n.resolveAttendeeLocale("ask", null), null);
+});
+
+test("active flow locale survives a runtime language change", () => {
+    assert.equal(i18n.resolveAttendeeLocale("pt_BR", null, "en"), "en");
+    assert.equal(i18n.resolveAttendeeLocale("en", null, "pt_BR"), "pt_BR");
 });
 
 test("Portuguese messages interpolate variables", () => {

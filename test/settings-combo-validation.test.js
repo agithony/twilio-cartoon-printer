@@ -37,6 +37,20 @@ function freshSettings() {
     return s;
 }
 
+test("attendee language defaults to English and validates runtime modes", () => {
+    const settings = freshSettings();
+    assert.equal(settings.DEFAULTS.languageMode, "en");
+
+    settings.update({ languageMode: "pt_BR" });
+    assert.equal(settings.get("languageMode"), "pt_BR");
+
+    settings.update({ languageMode: "invalid" });
+    assert.equal(settings.get("languageMode"), "pt_BR");
+
+    settings.update({ languageMode: "ask" });
+    assert.equal(settings.get("languageMode"), "ask");
+});
+
 test("customStyles accepts behavior field", () => {
     const settings = freshSettings();
     settings.update({

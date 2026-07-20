@@ -168,32 +168,100 @@ async function inboundHandler(req, res) {
         await messaging.send(userPhone, "_raw", {}, { _body: i18n.languagePrompt(inboundAdapter.name), adapter: inboundAdapter });
     }
 
-    let locale = contacts.getPreferredLocale(userPhone, eventName);
-    const selectedLocale = i18n.parseLanguageSelection(body);
-    const wantsLanguageMenu = /^(language|idioma)$/i.test(String(body || "").trim());
+    const languageMode = settings.get("languageMode") || "en";
+    let heldLanguageSelfie = languageMenu.getPending(userPhone);
+    if (heldLanguageSelfie && heldLanguageSelfie.eventName !== eventName) {
+        languageMenu.clearPending(userPhone);
+        heldLanguageSelfie = null;
+    }
+    if (languageMode !== "ask" && heldLanguageSelfie) {
+        languageMenu.clearPending(userPhone);
+        if (numMedia === 0 && heldLanguageSelfie.eventName === eventName && heldLanguageSelfie.imageUrl) {
+            req.body.MediaUrl0 = heldLanguageSelfie.imageUrl;
+            req.body.MessageSid = heldLanguageSelfie.messageSid;
+            numMedia = 1;
+            body = heldLanguageSelfie.body || "";
+        }
+    }
+
+    function pendingForEvent(menu) {
+        const pending = menu.getPending(userPhone);
+        if (pending && pending.eventName !== eventName) {
+            menu.clearPending(userPhone);
+            return null;
+        }
+        return pending;
+    }
+
+    let pendingBackground = pendingForEvent(backgroundMenu);
+    let pendingBrand = pendingForEvent(brandMenu);
+    let pendingStyle = pendingForEvent(styleMenu);
+    if (numMedia >= 1) {
+        if (pendingBackground) backgroundMenu.clearPending(userPhone);
+        if (pendingBrand) brandMenu.clearPending(userPhone);
+        if (pendingStyle) styleMenu.clearPending(userPhone);
+        pendingBackground = null;
+        pendingBrand = null;
+        pendingStyle = null;
+    }
+
+    const preferredLocale = contacts.getPreferredLocale(userPhone, eventName);
+    const pendingRating = nps.getLatestPending(userPhone);
+    if (pendingRating && !heldLanguageSelfie && !pendingBackground && !pendingBrand && !pendingStyle
+        && !leads.isActive(userPhone) && numMedia === 0) {
+        const score = getNpsScore(body);
+        if (score !== null) {
+            const ratingEvent = pendingRating.eventName || eventName;
+            const ratingLocale = pendingRating.locale || i18n.resolveAttendeeLocale(
+                settings.getForEvent("languageMode", ratingEvent),
+                contacts.getPreferredLocale(userPhone, ratingEvent),
+            ) || i18n.DEFAULT_LOCALE;
+            nps.recordScore(userPhone, ratingEvent, score);
+            await messaging.send(userPhone, "_raw", {}, { _body: i18n.t(ratingLocale, "npsThanks", {}, ratingEvent), adapter: inboundAdapter });
+            return res.status(204).end();
+        }
+    }
+
+    const activeLocale = leads.getActiveLocale(userPhone)
+        || (pendingBackground || {}).locale
+        || (pendingBrand || {}).locale
+        || (pendingStyle || {}).locale;
+    let locale = i18n.resolveAttendeeLocale(
+        languageMode,
+        preferredLocale,
+        activeLocale,
+    );
+    const canSelectLanguage = i18n.shouldApplyLanguageSelection(languageMode, body, {
+        activeLocale,
+        selectionPending: !!heldLanguageSelfie,
+    });
+    const selectedLocale = canSelectLanguage ? i18n.parseLanguageSelection(body) : null;
+    const wantsLanguageMenu = languageMode === "ask" && !activeLocale
+        && /^(language|idioma)$/i.test(String(body || "").trim());
     if (selectedLocale) {
         locale = selectedLocale;
         contacts.setPreferredLocale(userPhone, eventName, locale);
         const held = languageMenu.getPending(userPhone);
-        if (held) {
+        if (held && held.eventName === eventName && held.imageUrl) {
             languageMenu.clearPending(userPhone);
             req.body.MediaUrl0 = held.imageUrl;
             req.body.MessageSid = held.messageSid;
             numMedia = 1;
             body = held.body || "";
-        } else {
+        } else if (numMedia === 0) {
+            if (held) languageMenu.clearPending(userPhone);
             await messaging.send(userPhone, "_raw", {}, { _body: i18n.t(locale, "welcome", {}, eventName), adapter: inboundAdapter });
             return res.status(204).end();
+        } else if (held) {
+            languageMenu.clearPending(userPhone);
         }
-    } else if (!locale || wantsLanguageMenu) {
-        if (numMedia === 1) {
-            languageMenu.setPending(userPhone, {
-                imageUrl: req.body.MediaUrl0,
-                messageSid: req.body.MessageSid,
-                body,
-                eventName,
-            });
-        }
+    } else if (languageMode === "ask" && !activeLocale && (!locale || wantsLanguageMenu || heldLanguageSelfie)) {
+        languageMenu.setPending(userPhone, {
+            imageUrl: numMedia === 1 ? req.body.MediaUrl0 : (heldLanguageSelfie && heldLanguageSelfie.imageUrl),
+            messageSid: numMedia === 1 ? req.body.MessageSid : (heldLanguageSelfie && heldLanguageSelfie.messageSid),
+            body: numMedia === 1 ? body : ((heldLanguageSelfie && heldLanguageSelfie.body) || body),
+            eventName,
+        });
         await promptForLanguage();
         return res.status(204).end();
     }
@@ -292,7 +360,7 @@ async function inboundHandler(req, res) {
                 await showBackgroundMenuOrEnqueue(style, imageUrl, messageSid, activeBrandList[0]);
                 return;
             }
-            brandMenu.setPending(userPhone, { imageUrl, messageSid, style, body, appPhone, baseUrl, includeNone: true });
+            brandMenu.setPending(userPhone, { imageUrl, messageSid, style, body, appPhone, baseUrl, includeNone: true, locale, eventName });
             const menuMsg = brandMenu.buildMenu(activeBrands, activeBrandList, { includeNone: true, locale, eventName });
             await sendMenu("brandMenu", brandOptions(activeBrands, activeBrandList, true), {
                 body: i18n.t(locale, "brandMenuIntro", {}, eventName), button: locale === "pt_BR" ? "Escolher tema" : "Choose a theme",
@@ -308,7 +376,7 @@ async function inboundHandler(req, res) {
             await showBrandMenuOrNext(activeStyleList[0], imageUrl, messageSid);
             return;
         }
-        styleMenu.setPending(userPhone, { imageUrl, messageSid, body, appPhone, baseUrl });
+        styleMenu.setPending(userPhone, { imageUrl, messageSid, body, appPhone, baseUrl, locale, eventName });
         await sendMenu("styleMenu", styleOptions(), {
             body: i18n.t(locale, "styleMenuIntro", {}, eventName), button: locale === "pt_BR" ? "Escolher estilo" : "Choose a style",
         }, styleMenu.buildMenu(activeStyles, activeStyleList, { locale, eventName }));
@@ -341,6 +409,8 @@ async function inboundHandler(req, res) {
             backgroundMenu.setPending(userPhone, {
                 imageUrl, messageSid, style, brand, body, appPhone, baseUrl,
                 resolvedChoices: choices,
+                locale,
+                eventName,
             });
             const menuMsg = backgroundMenu.buildMenu(choices, { locale, eventName });
             await sendMenu("backgroundMenu", choices, {
@@ -351,19 +421,10 @@ async function inboundHandler(req, res) {
         await confirmAndEnqueue(style, imageUrl, messageSid, undefined, brand);
     }
 
-    // ── 0. NPS response ────────────────────────────────────────────────────
-    if (nps.hasPending(userPhone) && numMedia === 0) {
-        const score = getNpsScore(body);
-        if (score !== null) {
-            nps.recordScore(userPhone, eventName, score);
-            await messaging.send(userPhone, "_raw", {}, { _body: i18n.t(locale, "npsThanks", {}, eventName), adapter: inboundAdapter });
-            return res.status(204).end();
-        }
-    }
-
     // ── 1. Lead capture active survey ───────────────────────────────────────
-    if (leadMode !== "disabled" && !treatAsAdmin && leads.isActive(userPhone)) {
+    if (leads.isActive(userPhone)) {
         const result = await leads.processResponse(userPhone, body);
+        if (result.locale) locale = result.locale;
 
         if (result.status === "completed" && result.pendingImage) {
             const pi = result.pendingImage;
@@ -389,6 +450,7 @@ async function inboundHandler(req, res) {
         if (numMedia >= 1) {
             // New selfie replaces old pending — clear and fall through
             backgroundMenu.clearPending(userPhone);
+            locale = i18n.resolveAttendeeLocale(languageMode, preferredLocale);
         } else {
             const bgPendingState = backgroundMenu.getPending(userPhone);
             const bgChoices = bgPendingState && bgPendingState.resolvedChoices
@@ -429,6 +491,7 @@ async function inboundHandler(req, res) {
         if (numMedia >= 1) {
             // New selfie replaces old pending — clear and fall through
             brandMenu.clearPending(userPhone);
+            locale = i18n.resolveAttendeeLocale(languageMode, preferredLocale);
         } else {
             const activeBrands = getActiveBrands();
             const activeBrandList = Object.keys(activeBrands);
@@ -470,6 +533,7 @@ async function inboundHandler(req, res) {
         if (numMedia >= 1) {
             // New selfie replaces old pending — clear and fall through
             styleMenu.clearPending(userPhone);
+            locale = i18n.resolveAttendeeLocale(languageMode, preferredLocale);
         } else {
             // Text reply — try to match a style
             const matched = styleMenu.matchReply(body, activeStyles, activeStyleList);

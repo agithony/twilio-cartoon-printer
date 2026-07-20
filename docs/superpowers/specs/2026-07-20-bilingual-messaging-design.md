@@ -1,13 +1,13 @@
 # English and Brazilian Portuguese Messaging Design
 
 - **Locales:** `en`, `pt_BR`
-- **Default locale:** `en`
+- **Default language mode:** `en`
 - **Scope:** SMS and WhatsApp attendee messages, rich menus, approved templates, lead capture, NPS, errors, outreach, and booth QR entry points
 - **Release rule:** Do not submit production WhatsApp templates until both locale catalogs and language selection are implemented.
 
 ## Goals
 
-1. Let each attendee use English or Brazilian Portuguese independently of the event's administrator language.
+1. Let administrators choose English, Brazilian Portuguese, or per-attendee selection at runtime for each event.
 2. Keep stable internal IDs across languages. Only user-facing text changes.
 3. Route every message through one locale-aware message resolver.
 4. Create and approve separate static WhatsApp templates for each locale.
@@ -16,7 +16,15 @@
 
 ## Locale Selection
 
-On first contact, when no locale is stored, send a two-option language prompt.
+The event-scoped `languageMode` setting is changed at runtime from desktop or staff-mobile Settings:
+
+| Mode | Behavior |
+|---|---|
+| `en` | New conversations use English without a chooser. This is the default. |
+| `pt_BR` | New conversations use Brazilian Portuguese without a chooser. |
+| `ask` | Attendees choose a language on first contact; the choice is persisted by phone and event. |
+
+Active menus, surveys, ratings, and queued jobs retain the locale they started with when the setting changes. In `ask` mode, when no locale is stored, send a two-option language prompt.
 
 ### WhatsApp
 
@@ -60,13 +68,12 @@ Persist locale by normalized phone identity and event:
 
 Resolution precedence:
 
-1. Explicit language button or command
-2. Persisted phone/event locale
-3. Locale encoded by the booth QR prefill
-4. Event default locale
-5. Application default `en`
+1. Locale snapshotted by an active menu, survey, rating, or queued job
+2. Forced event mode (`en` or `pt_BR`)
+3. Persisted phone/event locale when mode is `ask`
+4. Application default `en`
 
-Users may switch at any time with `LANGUAGE`, `IDIOMA`, `ENGLISH`, or `PORTUGUÊS`.
+In `ask` mode, users may request the chooser with `LANGUAGE` or `IDIOMA`, or switch outside an active flow with `ENGLISH` or `PORTUGUÊS`. Numeric replies `1` and `2` select a language only while language selection is pending, so they remain safe for menus and ratings.
 
 ## Message Catalog
 
@@ -271,7 +278,7 @@ Required live testing:
 
 1. Add locale catalog and translation-completeness tests.
 2. Add preferred locale persistence.
-3. Add first-contact language selection and held-selfie state.
+3. Add runtime event language mode, optional first-contact selection, and held-selfie state.
 4. Convert deterministic inbound messages to `t(locale, key)`.
 5. Add localized style/theme/background labels and descriptions.
 6. Include locale in dynamic picker creation and cache.
