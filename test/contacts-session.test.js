@@ -61,3 +61,10 @@ test("recordInbound: persists to disk (survives re-require)", () => {
     assert.equal(fresh.getPreferredChannel("+14155555555"), "whatsapp");
     assert.ok(fresh.getLastInboundAt("+14155555555") > 0);
 });
+
+test("preferred locale is stored per phone and event", () => {
+    contacts.setPreferredLocale("+14155557777", "Event A", "pt_BR");
+    contacts.setPreferredLocale("+14155557777", "Event B", "en");
+    assert.equal(contacts.getPreferredLocale("+14155557777", "Event A"), "pt_BR");
+    assert.equal(contacts.getPreferredLocale("+14155557777", "Event B"), "en");
+});

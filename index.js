@@ -9,6 +9,9 @@ const channels = require("./lib/channels");
 const messaging = require("./lib/messaging");
 const { getMessageBody, getNpsScore } = require("./lib/inbound-payload");
 const richMenu = require("./lib/rich-menu");
+const contentTemplates = require("./lib/content-templates");
+const languageMenu = require("./lib/language-menu");
+const i18n = require("./lib/i18n");
 const {
     POLL_INTERVAL,
     DATA_DIR,
@@ -142,8 +145,8 @@ async function inboundHandler(req, res) {
     const inboundAdapter = channels.detectChannel(req.body);
     const userPhone = inboundAdapter.normalizeFrom(req.body.From);
     const appPhone = inboundAdapter.normalizeFrom(req.body.To);
-    const numMedia = parseInt(req.body.NumMedia || "0", 10);
-    const body = getMessageBody(req.body);
+    let numMedia = parseInt(req.body.NumMedia || "0", 10);
+    let body = getMessageBody(req.body);
 
     const activeStyles = settings.getActiveStyles();
     const activeStyleList = settings.getActiveStyleList();
@@ -153,6 +156,47 @@ async function inboundHandler(req, res) {
     // Track first contact for drop-off detection
     contacts.recordContact(userPhone, appPhone, eventName);
     contacts.recordInbound(userPhone, inboundAdapter.name);
+
+    async function promptForLanguage() {
+        if (inboundAdapter.name === "whatsapp") {
+            const contentSid = await contentTemplates.getOrCreateLanguagePicker();
+            if (contentSid) {
+                const result = await messaging.send(userPhone, "languagePicker", {}, { adapter: inboundAdapter, contentSid });
+                if (!result || !result.error) return;
+            }
+        }
+        await messaging.send(userPhone, "_raw", {}, { _body: i18n.languagePrompt(inboundAdapter.name), adapter: inboundAdapter });
+    }
+
+    let locale = contacts.getPreferredLocale(userPhone, eventName);
+    const selectedLocale = i18n.parseLanguageSelection(body);
+    const wantsLanguageMenu = /^(language|idioma)$/i.test(String(body || "").trim());
+    if (selectedLocale) {
+        locale = selectedLocale;
+        contacts.setPreferredLocale(userPhone, eventName, locale);
+        const held = languageMenu.getPending(userPhone);
+        if (held) {
+            languageMenu.clearPending(userPhone);
+            req.body.MediaUrl0 = held.imageUrl;
+            req.body.MessageSid = held.messageSid;
+            numMedia = 1;
+            body = held.body || "";
+        } else {
+            await messaging.send(userPhone, "_raw", {}, { _body: i18n.t(locale, "welcome", {}, eventName), adapter: inboundAdapter });
+            return res.status(204).end();
+        }
+    } else if (!locale || wantsLanguageMenu) {
+        if (numMedia === 1) {
+            languageMenu.setPending(userPhone, {
+                imageUrl: req.body.MediaUrl0,
+                messageSid: req.body.MessageSid,
+                body,
+                eventName,
+            });
+        }
+        await promptForLanguage();
+        return res.status(204).end();
+    }
 
     // Testing mode: admins experience the full regular-user flow (intro, promo,
     // status messages, lead capture) but with unlimited quota.
