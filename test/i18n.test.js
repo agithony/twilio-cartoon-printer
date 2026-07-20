@@ -28,3 +28,18 @@ test("Portuguese messages interpolate variables", () => {
         "Obrigado, Ana!",
     );
 });
+
+test("Portuguese lead fields use localized prompts", () => {
+    const leads = require("../lib/leads");
+    const fields = leads.__getActiveSurveyFieldsForTest("pt_BR");
+    assert.match(fields[0].prompt, /primeiro nome/i);
+});
+
+test("Portuguese menu framing is localized while IDs remain stable", () => {
+    const brandMenu = require("../lib/brand-menu");
+    const brands = { twilio: { name: "Twilio" } };
+    const text = brandMenu.buildMenu(brands, ["twilio"], { includeNone: true, locale: "pt_BR", eventName: "Evento" });
+    assert.match(text, /escolha um tema/i);
+    assert.match(text, /Nenhum/);
+    assert.equal(brandMenu.matchReply("nenhum", brands, ["twilio"], { includeNone: true }), "__none__");
+});
