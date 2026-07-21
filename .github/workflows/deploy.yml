@@ -250,7 +250,18 @@ jobs:
             --resource-group ${{ env.RESOURCE_GROUP }} \
             --query properties.configuration.ingress.fqdn -o tsv)
           if [ -z "$FQDN" ]; then echo "Could not resolve container app FQDN."; exit 1; fi
+          REVISION=$(az containerapp show \
+            --name ${{ env.APP_NAME }} \
+            --resource-group ${{ env.RESOURCE_GROUP }} \
+            --query properties.latestRevisionName -o tsv)
+          REVISION_FQDN=$(az containerapp revision show \
+            --name ${{ env.APP_NAME }} \
+            --resource-group ${{ env.RESOURCE_GROUP }} \
+            --revision "$REVISION" \
+            --query properties.fqdn -o tsv)
+          if [ -z "$REVISION_FQDN" ]; then echo "Could not resolve new revision FQDN."; exit 1; fi
           echo "fqdn=$FQDN" >> "$GITHUB_OUTPUT"
+          echo "revision-fqdn=$REVISION_FQDN" >> "$GITHUB_OUTPUT"
 
       - name: Smoke test /healthz
         # Wait until the new revision actually serves before reporting success, so a
@@ -259,9 +270,12 @@ jobs:
         # the CI-side confirmation (and fails the run if the app never comes up).
         env:
           FQDN: ${{ steps.fqdn.outputs.fqdn }}
+          REVISION_FQDN: ${{ steps.fqdn.outputs.revision-fqdn }}
         run: |
           for i in $(seq 1 45); do
-            CODE=$(curl -s -o /dev/null -w "%{http_code}" "https://$FQDN/healthz" || true)
+            # Probe the new revision directly. The app FQDN can continue serving
+            # the previous healthy revision while Container Apps warms this one.
+            CODE=$(curl -s -o /dev/null -w "%{http_code}" "https://$REVISION_FQDN/healthz" || true)
             if [ "$CODE" = "200" ]; then
               echo "Healthz OK after attempt $i"
               echo ""
