@@ -20,6 +20,7 @@ test("Portuguese templates preserve payload IDs and field limits", () => {
     assert.equal(definitions.delivery.language, "pt_BR");
     assert.match(definitions.delivery.friendlyName, /^pb_delivery_pt_br_[a-f0-9]+$/);
     assert.match(definitions.delivery.types["twilio/card"].title, /retrato/i);
+    assert.equal(definitions.delivery.types["twilio/card"].subtitle, "Criado na cabine de fotos com IA da Twilio");
     assert.equal(definitions.rating.types["twilio/quick-reply"].actions[0].id, "nps_5");
     for (const action of definitions.rating.types["twilio/quick-reply"].actions) {
         assert.ok(action.title.length <= 20);

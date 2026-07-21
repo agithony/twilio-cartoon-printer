@@ -79,6 +79,28 @@ test("customStyles accepts behavior field", () => {
     assert.equal(stored.containerDescription, "Subject inside a test container.");
 });
 
+test("localized option labels survive settings validation", () => {
+    const settings = freshSettings();
+    settings.update({
+        customStyles: {
+            oil: {
+                name: "Oil Painting",
+                prompt: "Paint the portrait.",
+                description: "Textured paint",
+                labels: { pt_BR: { name: "Pintura a óleo", description: "Pintura com textura" } },
+            },
+        },
+        backgroundChoices: [{
+            key: "city",
+            name: "City",
+            prompt: "City background",
+            labels: { pt_BR: { name: "Cidade", description: "Paisagem urbana" } },
+        }],
+    });
+    assert.equal(settings.get("customStyles").oil.labels.pt_BR.name, "Pintura a óleo");
+    assert.equal(settings.get("backgroundChoices")[0].labels.pt_BR.name, "Cidade");
+});
+
 test("customStyles missing new fields loads cleanly (backward compat)", () => {
     const settings = freshSettings();
     settings.update({

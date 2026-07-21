@@ -9,11 +9,12 @@ process.env.CONTENT_TEMPLATE_CACHE_FILE = path.join(tmpDir, "cache.json");
 
 let creates = 0;
 let releaseCreate;
+let lastCreatePayload;
 const clientStub = {
     content: {
         v1: {
             contents: {
-                create: async () => ({ sid: `HX${++creates}` }),
+                create: async (payload) => { lastCreatePayload = payload; return { sid: `HX${++creates}` }; },
             },
         },
     },
@@ -61,4 +62,11 @@ test("language picker is cached and uses stable locale payloads", async () => {
     };
     assert.equal(await templates.getOrCreateLanguagePicker(), "HXlanguage");
     assert.equal(await templates.getOrCreateLanguagePicker(), "HXlanguage");
+});
+
+test("Portuguese picker uses Portuguese metadata without leaking AI prompts", async () => {
+    clientStub.content.v1.contents.create = async (payload) => { lastCreatePayload = payload; return { sid: "HXpt" }; };
+    await templates.getOrCreateListPicker("style", [{ key: "watercolor", name: "Aquarela", prompt: "SECRET AI PROMPT" }], "Escolha", "Abrir", "pt_BR");
+    assert.equal(lastCreatePayload.language, "pt_BR");
+    assert.doesNotMatch(lastCreatePayload.types["twilio/list-picker"].items[0].description, /SECRET/);
 });

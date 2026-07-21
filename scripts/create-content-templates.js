@@ -16,7 +16,7 @@ function buildDefinitions(baseUrl, samplePortraitPath, locale = "en") {
             types: {
                 "twilio/card": {
                     title: pt ? "Seu retrato em estilo {{1}} está pronto!" : "Your {{1}} portrait is ready!",
-                    subtitle: pt ? "Criado no Twilio AI Photo Booth" : "Created at the Twilio AI Photo Booth",
+                    subtitle: pt ? "Criado na cabine de fotos com IA da Twilio" : "Created at the Twilio AI Photo Booth",
                     media: [`${baseUrl}/{{2}}`],
                     actions: [{ type: "URL", title: pt ? "Ver e compartilhar" : "View & Share", url: `${baseUrl}/{{3}}` }],
                 },

@@ -12,6 +12,7 @@ const richMenu = require("./lib/rich-menu");
 const contentTemplates = require("./lib/content-templates");
 const languageMenu = require("./lib/language-menu");
 const i18n = require("./lib/i18n");
+const optionI18n = require("./lib/option-i18n");
 const {
     POLL_INTERVAL,
     DATA_DIR,
@@ -278,26 +279,19 @@ async function inboundHandler(req, res) {
     const treatAsAdmin = isAdmin(userPhone) && !testingMode;
 
     async function sendMenu(menuKind, options, copy, fallbackText) {
-        const result = await richMenu.sendMenu(userPhone, inboundAdapter, menuKind, options, copy);
+        const result = await richMenu.sendMenu(userPhone, inboundAdapter, menuKind, options, { ...copy, locale });
         if (!result.rich) {
             await messaging.send(userPhone, "_raw", {}, { _body: fallbackText, adapter: inboundAdapter });
         }
     }
 
     function styleOptions() {
-        return activeStyleList.map((key) => ({
-            key,
-            name: activeStyles[key].name || key,
-            description: activeStyles[key].description || activeStyles[key].core || "Tap to choose",
-        }));
+        return activeStyleList.map((key) => optionI18n.localizeOption("style", key, activeStyles[key], locale));
     }
 
     function brandOptions(activeBrands, activeBrandList, includeNone) {
-        const options = activeBrandList.slice(0, includeNone ? 9 : 10).map((key) => ({
-            key,
-            name: activeBrands[key].name || key,
-            description: activeBrands[key].description || "Tap to choose",
-        }));
+        const options = activeBrandList.slice(0, includeNone ? 9 : 10)
+            .map((key) => optionI18n.localizeOption("brand", key, activeBrands[key], locale));
         if (includeNone) options.push({
             key: "none",
             name: locale === "pt_BR" ? "Nenhum" : "None",
@@ -309,7 +303,8 @@ async function inboundHandler(req, res) {
     // Helper: confirm and enqueue a job with the chosen style (and optional background/brand)
     async function confirmAndEnqueue(style, imageUrl, messageSid, background, brand) {
         if (!activeStyles[style]) style = activeStyleList[0] || settings.get("defaultStyle");
-        const styleName = activeStyles[style] ? activeStyles[style].name : style;
+        const stylePresentation = optionI18n.localizeOption("style", style, activeStyles[style] || { name: style }, locale);
+        const styleName = stylePresentation.name;
         const styleNameLower = typeof styleName === "string" ? styleName.toLowerCase() : styleName;
         const singleStyle = activeStyleList.length === 1;
         const confirmLabel = locale === "pt_BR"
@@ -330,7 +325,7 @@ async function inboundHandler(req, res) {
         if (treatAsAdmin) {
             const msg = `${i18n.t(locale, "enqueued", { confirmLabel }, eventName)}${pickupMsg}`;
             await messaging.send(userPhone, "_raw", {}, { _body: msg, adapter: inboundAdapter });
-            enqueueJob(imageUrl, messageSid, userPhone, appPhone, style, baseUrl, background, brand, { channel: inboundAdapter.name, locale });
+            enqueueJob(imageUrl, messageSid, userPhone, appPhone, style, baseUrl, background, brand, { channel: inboundAdapter.name, locale, styleName });
             require("./lib/still-working").arm(userPhone, appPhone, eventName, inboundAdapter, locale);
         } else {
             const used = getUsageCount(userPhone);
@@ -348,10 +343,10 @@ async function inboundHandler(req, res) {
             const afterThis = unlimited ? null : remaining - 1;
             const countMsg = afterThis === null || afterThis <= 0
                 ? ""
-                : ` ${i18n.t(locale, "remainingCount", { remaining: afterThis, unit: afterThis === 1 || locale === "pt_BR" ? unit : unit + "s" }, eventName)}`;
+                : ` ${i18n.t(locale, "remainingCount", { remaining: afterThis, unit: afterThis === 1 ? unit : units }, eventName)}`;
             const msg = `${i18n.t(locale, "enqueued", { confirmLabel }, eventName)}${pickupMsg}${countMsg}`;
             await messaging.send(userPhone, "_raw", {}, { _body: msg, adapter: inboundAdapter });
-            enqueueJob(imageUrl, messageSid, userPhone, appPhone, style, baseUrl, background, brand, { channel: inboundAdapter.name, locale });
+            enqueueJob(imageUrl, messageSid, userPhone, appPhone, style, baseUrl, background, brand, { channel: inboundAdapter.name, locale, styleName });
             require("./lib/still-working").arm(userPhone, appPhone, eventName, inboundAdapter, locale);
         }
     }
@@ -419,7 +414,7 @@ async function inboundHandler(req, res) {
                 eventName,
             });
             const menuMsg = backgroundMenu.buildMenu(choices, { locale, eventName });
-            await sendMenu("backgroundMenu", choices, {
+            await sendMenu("backgroundMenu", optionI18n.localizeOptions("background", choices, locale), {
                 body: i18n.t(locale, "backgroundMenuIntro", {}, eventName), button: locale === "pt_BR" ? "Escolher fundo" : "Choose background",
             }, menuMsg);
             return;
@@ -464,7 +459,7 @@ async function inboundHandler(req, res) {
                 : (settings.get("backgroundChoices") || []);
             const matched = backgroundMenu.matchReply(body, bgChoices);
             if (!matched) {
-                await sendMenu("backgroundMenu", bgChoices, {
+                await sendMenu("backgroundMenu", optionI18n.localizeOptions("background", bgChoices, locale), {
                     body: i18n.t(locale, "backgroundMenuRetry", {}, eventName), button: locale === "pt_BR" ? "Escolher fundo" : "Choose background",
                 }, backgroundMenu.buildRetryMenu(bgChoices, { locale, eventName }));
                 return res.status(204).end();
@@ -631,7 +626,8 @@ async function inboundHandler(req, res) {
     } else {
         const printingEnabled = settings.get("enablePrinting");
         const unit = locale === "pt_BR" ? (printingEnabled ? "impressão" : "retrato") : (printingEnabled ? "print" : "portrait");
-        const styleChoices = activeStyleList.map((k) => activeStyles[k].name).join(", ");
+        const units = locale === "pt_BR" ? (printingEnabled ? "impressões" : "retratos") : unit + "s";
+        const styleChoices = activeStyleList.map((k) => optionI18n.localizeOption("style", k, activeStyles[k], locale).name).join(", ");
 
         // Check if this looks like a real question/conversation vs a simple greeting
         const conversational = body && body.trim().length > 2
@@ -654,7 +650,7 @@ async function inboundHandler(req, res) {
             const quotaUnlimited = settings.isUnlimitedQuota(maxPrints);
             const remaining = maxPrints - used;
             if (remaining <= 0 && !quotaUnlimited) {
-                await messaging.send(userPhone, "_raw", {}, { _body: i18n.t(locale, "quotaExceeded", { maxPrints, units: locale === "pt_BR" ? unit : unit + "s", eventName }, eventName), adapter: inboundAdapter });
+                await messaging.send(userPhone, "_raw", {}, { _body: i18n.t(locale, "quotaExceeded", { maxPrints, units, eventName }, eventName), adapter: inboundAdapter });
             } else {
                 if (conversational) {
                     const { generateSmartReply } = require("./lib/helpers");
@@ -672,8 +668,8 @@ async function inboundHandler(req, res) {
                 var countNote = "";
                 if (!quotaUnlimited) {
                     countNote = used === 0
-                        ? ` ${i18n.t(locale, "welcomeCount", { maxPrints, unit: maxPrints === 1 || locale === "pt_BR" ? unit : unit + "s", eventName }, eventName)}`
-                        : ` ${i18n.t(locale, "remainingCount", { remaining, unit: remaining === 1 || locale === "pt_BR" ? unit : unit + "s" }, eventName)}`;
+                        ? ` ${i18n.t(locale, "welcomeCount", { maxPrints, unit: maxPrints === 1 ? unit : units, eventName }, eventName)}`
+                        : ` ${i18n.t(locale, "remainingCount", { remaining, unit: remaining === 1 ? unit : units }, eventName)}`;
                 }
                 await messaging.send(userPhone, "_raw", {}, { _body: `${i18n.t(locale, "welcome", {}, eventName)}${countNote}`, adapter: inboundAdapter });
             }
