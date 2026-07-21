@@ -37,13 +37,27 @@ function freshSettings() {
     return s;
 }
 
+test("attendee language defaults to English and validates runtime modes", () => {
+    const settings = freshSettings();
+    assert.equal(settings.DEFAULTS.languageMode, "en");
+
+    settings.update({ languageMode: "pt_BR" });
+    assert.equal(settings.get("languageMode"), "pt_BR");
+
+    settings.update({ languageMode: "invalid" });
+    assert.equal(settings.get("languageMode"), "pt_BR");
+
+    settings.update({ languageMode: "ask" });
+    assert.equal(settings.get("languageMode"), "ask");
+});
+
 test("deployment template SIDs override stale persisted values", () => {
     const settings = freshSettings();
-    const original = settings.DEFAULTS.contentTemplates.delivery;
-    settings.DEFAULTS.contentTemplates.delivery = "HXenvironment";
-    settings.update({ contentTemplates: { delivery: "HXpersisted" } });
-    assert.equal(settings.getContentSid("delivery"), "HXenvironment");
-    settings.DEFAULTS.contentTemplates.delivery = original;
+    const original = settings.DEFAULTS.contentTemplates.en.delivery;
+    settings.DEFAULTS.contentTemplates.en.delivery = "HXenvironment";
+    settings.update({ contentTemplates: { en: { delivery: "HXpersisted" } } });
+    assert.equal(settings.getContentSid("delivery", "en"), "HXenvironment");
+    settings.DEFAULTS.contentTemplates.en.delivery = original;
 });
 
 test("customStyles accepts behavior field", () => {

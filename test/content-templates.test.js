@@ -53,3 +53,12 @@ test("concurrent identical menus share one API request", async () => {
     releaseCreate({ sid: "HXshared" });
     assert.deepEqual(await Promise.all([first, second]), ["HXshared", "HXshared"]);
 });
+
+test("language picker is cached and uses stable locale payloads", async () => {
+    clientStub.content.v1.contents.create = async (payload) => {
+        assert.equal(payload.types["twilio/quick-reply"].actions[1].id, "lang_pt_BR");
+        return { sid: "HXlanguage" };
+    };
+    assert.equal(await templates.getOrCreateLanguagePicker(), "HXlanguage");
+    assert.equal(await templates.getOrCreateLanguagePicker(), "HXlanguage");
+});
