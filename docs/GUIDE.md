@@ -351,7 +351,7 @@ When **Print + Digital** mode is active, the **Send digital copy immediately** c
 
 This ensures users always get their digital portrait within seconds, even if the printer is slow, offline, or broken. If the immediate SMS fails (e.g. Twilio is down), the system falls back to sending the MMS after print completion.
 
-The setting uses the `deliveryDigital` SMS template (the same one used for digital-only delivery). Social sharing (`sharePageOnly`) is fully respected: when enabled, the share page URL is sent as text instead of the MMS image.
+The setting uses the `deliveryDigital` SMS template (the same one used for digital-only delivery). For SMS, `sharePageOnly` sends the share page URL as text instead of the MMS image. WhatsApp always sends its portrait preview card.
 
 Disable this checkbox to restore the original behavior where SMS is gated on print completion.
 
@@ -656,7 +656,7 @@ The app integrates with [dub.co](https://dub.co) to create short links for share
 
 ### Share Page Only Mode
 
-When the **Share Page Only** toggle is enabled, the delivery SMS sends only text with the share link -- no MMS image attachment. This avoids showing the portrait twice (once in the message, once on the share page) and saves on MMS costs.
+When **SMS Share Page Only** is enabled, the delivery SMS sends only text with the share link -- no MMS image attachment. This avoids showing the portrait twice and saves on MMS costs. It does not affect WhatsApp, which always includes the portrait preview and **View & Share** button.
 
 ### Configuration
 
@@ -675,7 +675,7 @@ Configure from the Settings panel under **Social Sharing**:
 | Setting | Default | Description |
 |---------|---------|-------------|
 | Enable Share Links | `true` | Master toggle for social sharing |
-| Share Page Only | `false` | Skip MMS image, send text-only SMS with share link |
+| SMS Share Page Only | `false` | Skip the SMS MMS image and send a text-only share link; WhatsApp is unaffected |
 | Enable X/Twitter Share | `true` | Show/hide X/Twitter button on share page |
 | Enable LinkedIn Share | `true` | Show/hide LinkedIn button on share page |
 | Enable Instagram Share | `true` | Show/hide Instagram save button on share page |
@@ -722,7 +722,7 @@ The settings panel is organized into seven sections:
 
 **Engagement & Messages** -- Lead Capture (enable/disable, before/after timing, survey messages and fields), Promotional Message, NPS Survey toggle and delay, SMS Messages organized by category (Welcome & Onboarding, Style Selection, Brand Selection, Background Selection, Processing & Delivery, Error Responses, Lead Capture, NPS) with `{variable}` interpolation support. See [Lead Capture](#lead-capture) for details.
 
-**Social Sharing** -- Enable Share Links toggle, Share Page Only toggle, dub.co API Key and Short Domain (global), Slug Prefix (per-event), per-platform toggles and config (X/Twitter, LinkedIn, Instagram), SMS Share Text template, Share Page Title and Description, Personalized Title template. See [Social Sharing](#social-sharing) for details.
+**Social Sharing** -- Enable Share Links toggle, SMS Share Page Only toggle, dub.co API Key and Short Domain (global), Slug Prefix (per-event), per-platform toggles and config (X/Twitter, LinkedIn, Instagram), SMS Share Text template, Share Page Title and Description, Personalized Title template. See [Social Sharing](#social-sharing) for details.
 
 **API Keys** -- Twilio credentials (Phone Number, Messaging Service SID, Account SID, Auth Token) and OpenAI configuration (API Key, Orchestrator Model, Vision Light Model, Image Generation Model, Smart Reply Model). These override values from `.env`. Setting a Messaging Service SID switches outbound routing from the direct Phone Number to the service's sender pool.
 
