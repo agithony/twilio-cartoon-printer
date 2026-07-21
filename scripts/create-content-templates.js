@@ -8,9 +8,10 @@ const settings = require("../lib/settings");
 function buildDefinitions(baseUrl, samplePortraitPath, locale = "en") {
     if (!samplePortraitPath) throw new Error("TWILIO_TEMPLATE_SAMPLE_PORTRAIT_PATH is required");
     const pt = locale === "pt_BR";
+    const localeSlug = locale.toLowerCase();
     const definitions = {
         delivery: {
-            friendlyName: `pb_delivery_${locale}`, language: locale,
+            friendlyName: `pb_delivery_${localeSlug}`, language: locale,
             variables: { 1: "Cartoon", 2: samplePortraitPath, 3: "photogallery" },
             types: {
                 "twilio/card": {
@@ -23,7 +24,7 @@ function buildDefinitions(baseUrl, samplePortraitPath, locale = "en") {
             },
         },
         rating: {
-            friendlyName: `pb_rating_${locale}`, language: locale,
+            friendlyName: `pb_rating_${localeSlug}`, language: locale,
             types: {
                 "twilio/quick-reply": {
                     body: pt ? "Como você avalia sua experiência com o retrato?" : "How would you rate your portrait experience?",
@@ -39,7 +40,7 @@ function buildDefinitions(baseUrl, samplePortraitPath, locale = "en") {
             },
         },
         promo: {
-            friendlyName: `pb_promo_${locale}`, language: locale,
+            friendlyName: `pb_promo_${localeSlug}`, language: locale,
             types: {
                 "twilio/call-to-action": {
                     body: pt ? "Quer criar experiências como esta? Veja o que você pode construir com a Twilio." : "Want to build experiences like this? See what you can create with Twilio.",
@@ -49,7 +50,7 @@ function buildDefinitions(baseUrl, samplePortraitPath, locale = "en") {
             },
         },
         nudgeDropoff: {
-            friendlyName: `pb_nudge_dropoff_${locale}`, language: locale, variables: { 1: pt ? "nosso evento" : "our event" },
+            friendlyName: `pb_nudge_dropoff_${localeSlug}`, language: locale, variables: { 1: pt ? "nosso evento" : "our event" },
             types: { "twilio/text": { body: pt ? "Ainda quer seu retrato com IA do evento {{1}}? Responda com uma selfie para começar. Responda STOP para cancelar." : "Still want your AI portrait from {{1}}? Reply with a selfie to get started. Reply STOP to opt out." } },
         },
     };

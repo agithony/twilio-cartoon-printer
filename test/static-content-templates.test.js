@@ -18,6 +18,7 @@ test("static template inventory and samples are valid", () => {
 test("Portuguese templates preserve payload IDs and field limits", () => {
     const definitions = buildDefinitions("https://booth.example.com", "assets/template-samples/sample-portrait.jpg", "pt_BR");
     assert.equal(definitions.delivery.language, "pt_BR");
+    assert.match(definitions.delivery.friendlyName, /^pb_delivery_pt_br_[a-f0-9]+$/);
     assert.match(definitions.delivery.types["twilio/card"].title, /retrato/i);
     assert.equal(definitions.rating.types["twilio/quick-reply"].actions[0].id, "nps_5");
     for (const action of definitions.rating.types["twilio/quick-reply"].actions) {
