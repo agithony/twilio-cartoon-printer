@@ -83,6 +83,12 @@ test("send: falls back to plain body when no contentSid", async () => {
     assert.equal(lastPayload.contentSid, undefined);
 });
 
+test("send: localizes Portuguese fallback when no Content SID exists", async () => {
+    settingsStub._data.contentTemplates = {};
+    await messaging.send("+14155551234", "stillWorking", {}, { adapter: smsAdapter, locale: "pt_BR" });
+    assert.match(lastPayload.body, /Ainda estamos trabalhando/i);
+});
+
 test("send: WhatsApp adapter formats to with prefix", async () => {
     settingsStub._data.contentTemplates = { enqueued: "HXdef" };
     settingsStub._data.twilioWhatsappNumber = "+14155238886";

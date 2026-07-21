@@ -23,6 +23,16 @@ test("matchReply: matches by display name", () => {
     assert.equal(styleMenu.matchReply("Anime", activeStyles, activeStyleList), "anime");
 });
 
+test("Portuguese menu uses localized labels and accepts accentless replies", () => {
+    const styles = { watercolor: { name: "Watercolor" }, sketch: { name: "Sketch" } };
+    const text = styleMenu.buildMenu(styles, ["watercolor", "sketch"], { locale: "pt_BR", eventName: "Evento" });
+    assert.match(text, /Aquarela/);
+    assert.match(text, /Esboço/);
+    assert.equal(styleMenu.matchReply("esboco", styles, ["watercolor", "sketch"]), "sketch");
+    assert.equal(styleMenu.matchReply("quero aquarela", styles, ["watercolor", "sketch"]), "watercolor");
+    assert.equal(styleMenu.matchReply("1 please", styles, ["watercolor", "sketch"]), "watercolor");
+});
+
 test("matchReply: returns null for unrecognized input", () => {
     assert.equal(styleMenu.matchReply("xyz", activeStyles, activeStyleList), null);
 });
