@@ -25,7 +25,8 @@ jobs:
           node-version: 22 # matches the Dockerfile (node:22-bullseye-slim)
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      # `pnpm test` runs `node --test --test-force-exit test/*.test.js`.
+      # `pnpm test` runs files sequentially because several suites isolate
+      # process env and filesystem-backed settings within their test process.
       # --test-force-exit is REQUIRED: axios opens a keep-alive socket on require,
       # so without it the runner hangs after tests pass (the event loop never
       # drains). The suite also uses t.assert.snapshot (Node 22+). The app

@@ -7,7 +7,7 @@
     "start": "node index.js",
     "relay": "node scripts/print-relay.js",
     "templates:create": "node scripts/create-content-templates.js",
-    "test": "node --test --test-force-exit test/*.test.js"
+    "test": "node --test --test-concurrency=1 --test-force-exit test/*.test.js"
   },
   "keywords": [],
   "author": "",
