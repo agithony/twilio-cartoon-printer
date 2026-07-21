@@ -1,7 +1,7 @@
 const { test } = require("node:test");
 const assert = require("node:assert/strict");
 const twilio = require("twilio");
-const { buildDefinitions, approvalCategories, main } = require("../scripts/create-content-templates");
+const { buildDefinitions, approvalCategories, getContentName, main } = require("../scripts/create-content-templates");
 
 test("static template inventory and samples are valid", () => {
     const definitions = buildDefinitions("https://booth.example.com", "assets/template-samples/sample-portrait.jpg", "en");
@@ -40,6 +40,15 @@ test("print-only mode builds both locales without calling Twilio", async () => {
     } finally {
         console.log = originalLog;
     }
+});
+
+test("existing submitted templates resolve their name from WhatsApp approval", async () => {
+    const client = {
+        content: { v1: { contents: () => ({
+            approvalFetch: () => ({ fetch: async () => ({ whatsapp: { name: "pb_delivery_en_abc123" } }) }),
+        }) } },
+    };
+    assert.equal(await getContentName(client, { sid: "HXexisting", friendlyName: null }), "pb_delivery_en_abc123");
 });
 
 test("installed Twilio SDK exposes approval methods used by script", () => {

@@ -68,6 +68,17 @@ const approvalCategories = {
     delivery: "UTILITY", rating: "UTILITY", promo: "MARKETING", nudgeDropoff: "MARKETING",
 };
 
+async function getContentName(client, content) {
+    if (content.friendlyName) return content.friendlyName;
+    try {
+        const approval = await client.content.v1.contents(content.sid).approvalFetch().fetch();
+        return approval.whatsapp && approval.whatsapp.name;
+    } catch (err) {
+        if (err.status === 404) return null;
+        throw err;
+    }
+}
+
 async function main({ client, settingsModule = settings, baseUrl = process.env.BASE_URL, samplePortraitPath = process.env.TWILIO_TEMPLATE_SAMPLE_PORTRAIT_PATH, printOnly = process.argv.includes("--print-only") } = {}) {
     baseUrl = String(baseUrl || "").replace(/\/$/, "");
     if (!/^https:\/\//.test(baseUrl)) throw new Error("BASE_URL must be the public HTTPS app URL");
@@ -81,13 +92,18 @@ async function main({ client, settingsModule = settings, baseUrl = process.env.B
     client = client || getTwilioClient();
     settingsModule.load();
     const existing = await client.content.v1.contents.list({ limit: 1000 });
+    const existingByName = new Map();
+    for (const content of existing) {
+        const name = await getContentName(client, content);
+        if (name) existingByName.set(name, content);
+    }
     const allSids = { en: {}, pt_BR: {} };
     const approvedSids = { en: {}, pt_BR: {} };
 
     for (const locale of ["en", "pt_BR"]) {
       const definitions = buildDefinitions(baseUrl, samplePortraitPath, locale);
       for (const [key, definition] of Object.entries(definitions)) {
-        const found = existing.find((item) => item.friendlyName === definition.friendlyName);
+        const found = existingByName.get(definition.friendlyName);
         const content = found || await client.content.v1.contents.create(definition);
         allSids[locale][key] = content.sid;
         console.log(`${locale}.${key}: ${content.sid}${found ? " (existing)" : " (created)"}`);
@@ -128,4 +144,4 @@ if (require.main === module) {
     });
 }
 
-module.exports = { buildDefinitions, approvalCategories, main };
+module.exports = { buildDefinitions, approvalCategories, getContentName, main };
