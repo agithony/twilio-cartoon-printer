@@ -299,7 +299,7 @@ Brands are stored as a global library (`customBrands` in settings), shared acros
 - **Enable/disable individual brands** -- toggle brands on or off per event without deleting them
 - **Brand prompt overrides** -- customize a brand's prompt for a specific event
 
-If only one brand is active, it's auto-selected (no menu shown). Brand menu SMS messages (intro, footer, retry) are configurable under **Engagement & Messages**.
+When the brand selection toggle is on, the menu is shown whenever at least one brand is active. A single active brand is still shown alongside the **None** option so the user can opt out. Brand menu messages (intro, footer, retry) are configurable under **Engagement & Messages**.
 
 Brand reference images are stored in the `brand-references/` folder. Uploading adds to the shared library; each brand selects which images to use. Deleting an image removes it from the library and from all brands that reference it.
 
@@ -309,7 +309,7 @@ The app includes a configurable background system for AI-generated portraits. By
 
 When **Enable Background Selection** is turned on, users get a numbered background menu via SMS after choosing their art style -- similar to the style selection menu. Admins configure the available background options (name + prompt) from the Settings panel. Each option tells the AI what background to render (e.g. "Solid White", "Original Scene", "City Skyline").
 
-If only one background option is configured, it's auto-selected (no menu shown). If the background menu is disabled, the default background prompt is used for all portraits. Leave the default prompt blank to let the AI decide freely.
+When background selection is enabled, the menu is shown whenever at least one option is available, including a single option. If the background menu is disabled, the default background prompt is used for all portraits. Leave the default prompt blank to let the AI decide freely.
 
 Background menu SMS messages (intro, footer, retry) are configurable under **Engagement & Messages**.
 

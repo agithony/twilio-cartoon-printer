@@ -42,6 +42,7 @@ const { parseStyle, detectStyle } = require("./lib/styles");
 const styleMenu = require("./lib/style-menu");
 const brandMenu = require("./lib/brand-menu");
 const backgroundMenu = require("./lib/background-menu");
+const { shouldShowMenu } = require("./lib/menu-routing");
 const { getActiveBrands } = require("./lib/brands");
 const { mountDashboard } = require("./lib/dashboard");
 const { mountApiGenerate } = require("./lib/api-generate");
@@ -355,12 +356,7 @@ async function inboundHandler(req, res) {
     async function showBrandMenuOrNext(style, imageUrl, messageSid) {
         const activeBrands = getActiveBrands();
         const activeBrandList = Object.keys(activeBrands);
-        if (settings.get("enableBrandMenu") && activeBrandList.length > 0) {
-            if (activeBrandList.length === 1) {
-                // Auto-select if only one brand
-                await showBackgroundMenuOrEnqueue(style, imageUrl, messageSid, activeBrandList[0]);
-                return;
-            }
+        if (shouldShowMenu(settings.get("enableBrandMenu"), activeBrandList)) {
             brandMenu.setPending(userPhone, { imageUrl, messageSid, style, body, appPhone, baseUrl, includeNone: true, locale, eventName });
             const menuMsg = brandMenu.buildMenu(activeBrands, activeBrandList, { includeNone: true, locale, eventName });
             await sendMenu("brandMenu", brandOptions(activeBrands, activeBrandList, true), {
@@ -402,11 +398,7 @@ async function inboundHandler(req, res) {
         // the admin-configured list.)
         const choices = selectBackgroundChoices(styleObj, brandObj, configuredChoices);
 
-        if (settings.get("enableBackgroundMenu") && choices.length > 0) {
-            if (choices.length === 1) {
-                await confirmAndEnqueue(style, imageUrl, messageSid, choices[0].key, brand);
-                return;
-            }
+        if (shouldShowMenu(settings.get("enableBackgroundMenu"), choices)) {
             backgroundMenu.setPending(userPhone, {
                 imageUrl, messageSid, style, brand, body, appPhone, baseUrl,
                 resolvedChoices: choices,

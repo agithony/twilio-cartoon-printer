@@ -262,7 +262,7 @@ A: Booth signage. The `/home/panel` page generates a branded instruction screen 
 A: The app uses a smaller AI model (gpt-5.4-nano) to generate a conversational response. If they ask "what is twilio?" they get a real answer. If they say "hi", they get the style menu again. Short common phrases have static responses for speed.
 
 **Q: Do users have to choose a style every time?**
-A: No — they can include the style in the photo caption ("make me anime"). If they do, the menu is skipped. If only one style is enabled for the event, it's auto-selected. Same for brand and background menus.
+A: No — they can include the style in the photo caption ("make me anime"). If they do, the style menu is skipped. If only one style is enabled for the event, it's auto-selected. Enabled brand and background menus are still shown with one choice so the user remains in control.
 
 **Q: What if the app doesn't recognize their style choice?**
 A: It uses fuzzy matching — "anime", "Anime", "anime portrait", "3" (if anime is option 3) all work. If it still can't match, they get a retry message.
