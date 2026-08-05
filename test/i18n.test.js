@@ -59,7 +59,9 @@ test("Portuguese menu framing is localized while IDs remain stable", () => {
     const brandMenu = require("../lib/brand-menu");
     const brands = { twilio: { name: "Twilio" } };
     const text = brandMenu.buildMenu(brands, ["twilio"], { includeNone: true, locale: "pt_BR", eventName: "Evento" });
-    assert.match(text, /escolha um tema/i);
-    assert.match(text, /Nenhum/);
+    assert.match(text, /opção de marca/i);
+    assert.match(text, /Com marca Twilio/);
+    assert.match(text, /Sem marca/);
     assert.equal(brandMenu.matchReply("nenhum", brands, ["twilio"], { includeNone: true }), "__none__");
+    assert.equal(brandMenu.matchReply("sem marca", brands, ["twilio"], { includeNone: true }), "__none__");
 });

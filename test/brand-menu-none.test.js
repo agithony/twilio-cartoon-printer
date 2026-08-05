@@ -8,9 +8,9 @@ const activeBrands = {
 };
 const brandList = ["la-kings", "chelsea-fc"];
 
-test("buildMenu includes None as final option when includeNone=true", () => {
+test("buildMenu includes Unbranded as final option when includeNone=true", () => {
     const msg = brandMenu.buildMenu(activeBrands, brandList, { includeNone: true });
-    assert.match(msg, /None/);
+    assert.match(msg, /Unbranded/);
 });
 
 test("matchReply returns null for 'none' when includeNone=true", () => {
