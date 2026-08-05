@@ -70,6 +70,7 @@ This document covers all features and configuration in depth. For quick setup, s
 | `BRAND_PROMPT` | No | Global branding prompt appended to every art style (e.g. clothing, logos). Leave blank to disable. |
 | `PRINT_SIZE` | No | Print paper size. Options: `4x6`, `5x7`, `8x10`. Defaults to `5x7`. Controls both image pixel dimensions and the PageSize flag sent to the printer. |
 | `PRINT_QUALITY` | No | Print resolution. Options: `standard` (360 DPI), `high` (720 DPI), `max` (1440 DPI). Defaults to `high`. |
+| `PICKUP_LOCATION` | No | Name shown in physical print pickup messages. Runtime setting overrides this value; blank uses `Twilio booth` in English or `estande da Twilio` in Portuguese. |
 | `CUSTOM_PRINT_FLAGS` | No | Additional raw flags appended to the `lp` command. For non-Epson printers or advanced CUPS options (e.g. `-o MediaType=Glossy`). |
 | `PROMO_MESSAGE` | No | Promotional message sent as a standalone SMS after each portrait delivery. Leave blank to disable. |
 | `PRINT_RELAY_KEY` | No | Shared secret for the print relay agent. Set this to enable cloud-to-local printing. See [Print Relay](#print-relay-cloud-printing). |

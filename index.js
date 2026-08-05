@@ -312,8 +312,9 @@ async function inboundHandler(req, res) {
 
         const printingEnabled = settings.get("enablePrinting");
         const twilioBlurb = i18n.t(locale, "twilioBlurb", {}, eventName);
+        const pickupLocation = i18n.resolvePickupLocation(locale, settings.getForEvent("pickupLocation", eventName));
         const pickupText = printingEnabled
-            ? i18n.t(locale, "pickupPrint", {}, eventName)
+            ? i18n.t(locale, "pickupPrint", { pickupLocation }, eventName)
             : i18n.t(locale, "pickupDigital", {}, eventName);
         const pickupMsg = ` ${pickupText}${twilioBlurb ? `\n\n${twilioBlurb}` : ""}`;
         const unit = locale === "pt_BR" ? (printingEnabled ? "impressão" : "retrato") : (printingEnabled ? "print" : "portrait");
