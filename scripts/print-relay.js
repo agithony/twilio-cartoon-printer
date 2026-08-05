@@ -21,6 +21,7 @@ const fs = require("fs");
 const path = require("path");
 const https = require("https");
 const http = require("http");
+const { buildPrintCommand } = require("../relay-app/cups-command");
 
 // ── Parse CLI args ───────────────────────────────────────────────────────────
 
@@ -163,32 +164,7 @@ function printImage(filepath, printerName) {
             const printSize = data.printSize || "5x7";
             const printQuality = data.printQuality || "high";
 
-            const PRINT_SIZES = {
-                "4x6":  { pageSize: "4x6" },
-                "5x7":  { pageSize: "EPPhotoPaper2L" },
-                "8x10": { pageSize: "8x10" },
-            };
-            const PRINT_QUALITIES = {
-                standard: "360x360dpi",
-                high: "720x720dpi",
-                max: "1440x1440dpi",
-            };
-
-            const sizePreset = PRINT_SIZES[printSize] || PRINT_SIZES["5x7"];
-            const pageSize = sizePreset.pageSize + ".NMgn";
-            const resolution = PRINT_QUALITIES[printQuality] || PRINT_QUALITIES["high"];
-
-            const flags = [
-                `-d "${printerName}"`,
-                `-o PageSize=${pageSize}`,
-                "-o EPIJ_RmMg=1",
-                "-o EPIJ_exmg=0",
-                "-o print-scaling=none",
-                "-o scaling=100",
-                `-o Resolution=${resolution}`,
-            ];
-
-            const command = `lp ${flags.join(" ")} "${filepath}"`;
+            const command = buildPrintCommand({ filepath, printerName, printSize, printQuality });
             log(`[${printerName}] Sending to printer: ${command}`);
             exec(command, { timeout: 60000 }, (err, stdout) => {
                 if (err) return reject(err);

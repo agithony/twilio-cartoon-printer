@@ -128,7 +128,7 @@ Set your printer name in the admin Settings panel under **Delivery & Display**, 
 PRINTER_NAME=EPSON_ET_8550_Series
 ```
 
-The app is built for the **Epson EcoTank ET-8550** but works with any CUPS printer. Non-Epson printers may need custom print flags. See [docs/GUIDE.md](docs/GUIDE.md#printer-setup) for details.
+The app has built-in print profiles for the **Epson EcoTank ET-8550** and **DNP DS-RX1**. The DS-RX1 profile is selected automatically from its CUPS queue name; set Print Size to **4x6** when 6x4 media is loaded. Other printers may need custom print flags. See [docs/GUIDE.md](docs/GUIDE.md#printer-setup) for details.
 
 > **Install the printer driver first.** A connected printer won't appear in `lpstat -p` (or the Relay app's printer list) until its driver is installed and a CUPS queue exists. For the Epson ET-8550, download the macOS driver from [Epson's support page](https://epson.com/Support/Printers/All-In-Ones/ET-Series/Epson-ET-8550/s/SPT_C11CJ21201), then add the printer in **System Settings > Printers & Scanners** (or via `lpadmin`). Re-run `lpstat -p` to confirm it shows as `idle`/`enabled`.
 

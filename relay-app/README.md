@@ -18,11 +18,24 @@ The Print Station polls the cloud app for print-ready portraits, downloads them,
 ## Prerequisites
 
 - **macOS** (the app builds for macOS ARM64; other platforms need Electron Forge config changes)
-- **Node.js** v18+ and **npm**
-- A **CUPS-compatible printer** connected via USB or WiFi (e.g. Epson EcoTank ET-8550), with its **driver installed** so a CUPS queue exists. For the ET-8550, get the macOS driver from [Epson's support page](https://epson.com/Support/Printers/All-In-Ones/ET-Series/Epson-ET-8550/s/SPT_C11CJ21201). A printer with no driver/queue will not appear in the app's printer list.
+- **Node.js** v18+ and **npm** only when running from source; the release app is standalone
+- A **CUPS-compatible printer** connected via USB or WiFi (e.g. Epson EcoTank ET-8550 or DNP DS-RX1), with its **driver installed** so a CUPS queue exists. A printer with no driver/queue will not appear in the app's printer list.
 - The cloud app running with a **Print Relay Key** configured in Settings > Delivery & Printing
 
+## Install the Released App
+
+1. Download `Twilio Print Station 1.2.1 (start here).zip` from [GitHub Releases](https://github.com/agithony/twilio-cartoon-printer/releases/latest).
+2. Quit and remove any older Twilio Print Station app, then unzip the new bundle.
+3. Keep the app and `Open Twilio Print Station.command` in the same folder.
+4. On first launch, right-click `Open Twilio Print Station.command`, choose **Open**, then confirm **Open**. The helper clears macOS quarantine and launches the app.
+5. Select `Dai_Nippon_Printing_DS_RX1`, enter the Cloud URL and Relay Key, then click **Connect**.
+6. In the cloud app's Delivery & Printing settings, select Print Size **4x6** for RX1 6x4 media.
+
+The Cloud URL, Relay Key, and printer selection persist when upgrading from an older release.
+
 ## Quick Start
+
+These steps are for running Print Station from source instead of installing the release app.
 
 ### 1. Install dependencies
 
@@ -109,6 +122,7 @@ Expandable section with timestamped messages for debugging. Shows connection eve
 - **Heartbeats for fast crash recovery** -- While holding a job, the app pings the cloud every 20s. If beats stop for >60s (crash, force-quit, network drop), the cloud re-queues the job within seconds. Older v1.0 relays without heartbeats fall back to the 15-minute printing-age threshold.
 - **Download validation** -- Verifies `Content-Length` on the image fetch to catch mid-stream truncation instead of silently printing partial pages.
 - **Status caching** -- Fetches cloud print settings (size, quality) at startup and refreshes every 60s in the background instead of before every print, so transient cloud hiccups don't fail prints mid-job.
+- **DNP DS-RX1 support** -- Detects DS-RX1 CUPS queues and maps app size 4x6 to the driver's required 6x4 media option (`300dnp6x4`) with DNP-compatible resolution and finishing flags.
 - **Graceful shutdown** -- Close the window to stop cleanly.
 
 ## Project Structure
@@ -117,6 +131,7 @@ Expandable section with timestamped messages for debugging. Shows connection eve
 relay-app/
   main.js        Electron main process -- window, IPC handlers, relay lifecycle
   relay.js       RelayEngine -- polling, job processing, CUPS printing
+  cups-command.js Printer-specific CUPS command profiles
   preload.js     IPC bridge between main and renderer
   renderer.js    UI controller -- DOM updates, event handling
   index.html     App layout
