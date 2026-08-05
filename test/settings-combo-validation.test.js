@@ -214,3 +214,9 @@ test("customBrands invalid scene entries are filtered out", () => {
     assert.equal(stored.scenes.length, 1, "only the valid scene should survive");
     assert.equal(stored.scenes[0].key, "ok");
 });
+
+test("pickupLocation is trimmed and persisted per event", () => {
+    const settings = freshSettings();
+    settings.update({ pickupLocation: "  Twilio Experience Station  " });
+    assert.equal(settings.get("pickupLocation"), "Twilio Experience Station");
+});
