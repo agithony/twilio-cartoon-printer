@@ -15,6 +15,36 @@ test("built-in attendee options are localized without changing IDs", () => {
     assert.doesNotMatch(option.description, /AI prompt/);
 });
 
+test("Portuguese custom styles receive descriptive list-picker copy", () => {
+    const cases = [
+        ["oil-painting", "Pintura a óleo", /Pinceladas expressivas/],
+        ["magazine", "Capa de revista", /Capa editorial/],
+        ["action-figure", "Figura de ação", /Boneco colecionável/],
+        ["twilio-illustration", "Ilustração Twilio", /formas e cores da Twilio/],
+    ];
+    for (const [key, name, expected] of cases) {
+        const option = optionI18n.localizeOption("style", key, { name, prompt: "SECRET AI PROMPT" }, "pt_BR");
+        assert.match(option.description, expected);
+        assert.doesNotMatch(option.description, /Toque para escolher|SECRET AI PROMPT/);
+    }
+});
+
+test("unknown Portuguese custom styles use their name instead of generic tap copy", () => {
+    const option = optionI18n.localizeOption("style", "neon-dream", { name: "Sonho neon" }, "pt_BR");
+    assert.equal(option.description, "Retrato transformado no estilo Sonho neon");
+});
+
+test("Portuguese branding options distinguish Twilio branding from unbranded", () => {
+    const branded = optionI18n.localizeOption("brand", "twilio", { name: "Twilio" }, "pt_BR");
+    assert.equal(branded.name, "Com marca Twilio");
+    assert.match(branded.description, /cores e elementos visuais/);
+    assert.deepEqual(optionI18n.unbrandedOption("pt_BR"), {
+        key: "none",
+        name: "Sem marca",
+        description: "Sem logotipos, cores ou elementos de marca",
+    });
+});
+
 test("Portuguese share and display catalogs cover core attendee controls", () => {
     assert.equal(resolveShareLocale({ locale: "pt_BR" }, "Evento"), "pt_BR");
     assert.equal(ui.htmlLang("pt_BR"), "pt-BR");

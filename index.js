@@ -293,11 +293,7 @@ async function inboundHandler(req, res) {
     function brandOptions(activeBrands, activeBrandList, includeNone) {
         const options = activeBrandList.slice(0, includeNone ? 9 : 10)
             .map((key) => optionI18n.localizeOption("brand", key, activeBrands[key], locale));
-        if (includeNone) options.push({
-            key: "none",
-            name: locale === "pt_BR" ? "Nenhum" : "None",
-            description: locale === "pt_BR" ? "Sem tema de marca" : "No brand theme",
-        });
+        if (includeNone) options.push(optionI18n.unbrandedOption(locale));
         return options;
     }
 
@@ -360,7 +356,7 @@ async function inboundHandler(req, res) {
             brandMenu.setPending(userPhone, { imageUrl, messageSid, style, body, appPhone, baseUrl, includeNone: true, locale, eventName });
             const menuMsg = brandMenu.buildMenu(activeBrands, activeBrandList, { includeNone: true, locale, eventName });
             await sendMenu("brandMenu", brandOptions(activeBrands, activeBrandList, true), {
-                body: i18n.t(locale, "brandMenuIntro", {}, eventName), button: locale === "pt_BR" ? "Escolher tema" : "Choose a theme",
+                body: i18n.t(locale, "brandMenuIntro", {}, eventName), button: locale === "pt_BR" ? "Escolher marca" : "Choose branding",
             }, menuMsg);
             return;
         }
