@@ -6,7 +6,8 @@ contextBridge.exposeInMainWorld("relay", {
     listPrinters: () => ipcRenderer.invoke("list-printers"),
     start: (config) => ipcRenderer.invoke("start-relay", config),
     stop: () => ipcRenderer.invoke("stop-relay"),
-    reprint: (filename) => ipcRenderer.invoke("reprint-job", filename),
+    reprint: (filename, printerName) => ipcRenderer.invoke("reprint-job", filename, printerName),
+    saveImage: (sourcePath) => ipcRenderer.invoke("save-job-image", sourcePath),
 
     onLog: (cb) => ipcRenderer.on("relay-log", (_, msg) => cb(msg)),
     onStatus: (cb) => ipcRenderer.on("relay-status", (_, s) => cb(s)),

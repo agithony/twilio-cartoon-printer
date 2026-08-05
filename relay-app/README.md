@@ -24,7 +24,7 @@ The Print Station polls the cloud app for print-ready portraits, downloads them,
 
 ## Install the Released App
 
-1. Download `Twilio Print Station 1.2.1 (start here).zip` from [GitHub Releases](https://github.com/agithony/twilio-cartoon-printer/releases/latest).
+1. Download `Twilio Print Station 1.2.2 (start here).zip` from [GitHub Releases](https://github.com/agithony/twilio-cartoon-printer/releases/latest).
 2. Quit and remove any older Twilio Print Station app, then unzip the new bundle.
 3. Keep the app and `Open Twilio Print Station.command` in the same folder.
 4. On first launch, right-click `Open Twilio Print Station.command`, choose **Open**, then confirm **Open**. The helper clears macOS quarantine and launches the app.
@@ -123,6 +123,8 @@ Expandable section with timestamped messages for debugging. Shows connection eve
 - **Download validation** -- Verifies `Content-Length` on the image fetch to catch mid-stream truncation instead of silently printing partial pages.
 - **Status caching** -- Fetches cloud print settings (size, quality) at startup and refreshes every 60s in the background instead of before every print, so transient cloud hiccups don't fail prints mid-job.
 - **DNP DS-RX1 support** -- Detects DS-RX1 CUPS queues and maps app size 4x6 to the driver's required 6x4 media option (`300dnp6x4`) with DNP-compatible resolution and finishing flags.
+- **Reprint terminal jobs** -- Re-queues completed or failed jobs immediately on the printer that handled them.
+- **Save portraits** -- Saves a job's full-resolution PNG through the native macOS save dialog.
 - **Graceful shutdown** -- Close the window to stop cleanly.
 
 ## Project Structure
@@ -132,6 +134,7 @@ relay-app/
   main.js        Electron main process -- window, IPC handlers, relay lifecycle
   relay.js       RelayEngine -- polling, job processing, CUPS printing
   cups-command.js Printer-specific CUPS command profiles
+  job-files.js   Full-resolution relay cache and safe file export
   preload.js     IPC bridge between main and renderer
   renderer.js    UI controller -- DOM updates, event handling
   index.html     App layout

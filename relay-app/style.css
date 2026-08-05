@@ -513,9 +513,10 @@ html[data-theme="light"] .theme-toggle .icon-moon { display: block; }
 .job-status.printing { color: var(--blue-300); }
 .job-status.downloading { color: var(--blue-200); }
 
-/* Reprint button — sits in the 7th grid column. The spacer occupies the
+/* Job actions sit in the 7th grid column. The spacer occupies the
    same cell for in-flight rows so every row's columns stay aligned. */
-.job-reprint-btn {
+.job-actions { display: flex; flex-direction: column; align-items: stretch; gap: 3px; }
+.job-action-btn {
   font-family: inherit;
   font-size: 11px;
   font-weight: 700;
@@ -528,8 +529,9 @@ html[data-theme="light"] .theme-toggle .icon-moon { display: block; }
   white-space: nowrap;
   transition: background 0.12s, border-color 0.12s;
 }
-.job-reprint-btn:hover { background: rgba(33, 136, 239, 0.18); }
-.job-reprint-btn:disabled { opacity: 0.55; cursor: default; }
+.job-action-btn:hover { background: rgba(33, 136, 239, 0.18); }
+.job-action-btn:disabled { opacity: 0.55; cursor: default; }
+.job-save-btn { color: var(--th-text); }
 .job-reprint-spacer { display: block; }
 
 /* ── Log ────────────────────────────────────────── */

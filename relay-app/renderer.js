@@ -248,10 +248,10 @@ const STATUS_CLASS = {
 // cloud moves the job back to ready/ and a relay worker reprints it on its
 // next poll — the job row will transition through claiming → printing → done
 // again on its own.
-async function reprintJob(filename, btn) {
+async function reprintJob(filename, printerName, btn) {
     if (btn) { btn.disabled = true; btn.textContent = "Reprinting…"; }
     try {
-        const res = await window.relay.reprint(filename);
+        const res = await window.relay.reprint(filename, printerName);
         if (res && res.ok) {
             addLog(`Reprint queued: ${filename}`);
         } else {
@@ -261,6 +261,19 @@ async function reprintJob(filename, btn) {
     } catch (err) {
         addLog(`Reprint failed: ${err.message}`);
         if (btn) { btn.disabled = false; btn.textContent = "Reprint"; }
+    }
+}
+
+async function saveJobImage(imagePath, btn) {
+    if (btn) { btn.disabled = true; btn.textContent = "Saving…"; }
+    try {
+        const res = await window.relay.saveImage(imagePath);
+        if (res && res.ok) addLog(`Portrait saved: ${res.filePath}`);
+        else if (!res || !res.canceled) addLog(`Save failed: ${(res && res.error) || "unknown error"}`);
+    } catch (err) {
+        addLog(`Save failed: ${err.message}`);
+    } finally {
+        if (btn) { btn.disabled = false; btn.textContent = "Save"; }
     }
 }
 
@@ -276,6 +289,7 @@ window.relay.onJob((j) => {
         if (j.userPhone) existing.userPhone = j.userPhone;
         if (j.style) existing.style = j.style;
         if (j.thumbPath) existing.thumbPath = j.thumbPath;
+        if (j.imagePath) existing.imagePath = j.imagePath;
     } else {
         jobs.unshift({
             filename: j.filename,
@@ -285,6 +299,7 @@ window.relay.onJob((j) => {
             printerName: j.printerName || "",
             userPhone: j.userPhone || "",
             thumbPath: j.thumbPath || "",
+            imagePath: j.imagePath || "",
         });
         if (jobs.length > MAX_JOBS) jobs.pop();
     }
@@ -357,25 +372,38 @@ function renderJobs() {
         status.textContent = STATUS_LABELS[j.status] || j.status || "";
         row.appendChild(status);
 
+        const actions = document.createElement("div");
+        actions.className = "job-actions";
+
+        if (j.imagePath) {
+            const saveBtn = document.createElement("button");
+            saveBtn.className = "job-action-btn job-save-btn";
+            saveBtn.textContent = "Save";
+            saveBtn.title = "Save the full-resolution portrait";
+            saveBtn.addEventListener("click", () => saveJobImage(j.imagePath, saveBtn));
+            actions.appendChild(saveBtn);
+        }
+
         // Reprint action. Offered once a job has reached a terminal state
         // (printed or failed) — those are the jobs that exist in the cloud's
-        // done/ queue and can be re-queued. In-flight jobs (claiming/
+        // terminal queues and can be re-queued. In-flight jobs (claiming/
         // downloading/printing) get no button; reprinting them would risk a
         // double print. The server re-validates (must be in done/, image must
         // exist) and rejects otherwise, so this is just a convenience gate.
         if (j.status === "done" || j.status === "failed") {
             const btn = document.createElement("button");
-            btn.className = "job-reprint-btn";
+            btn.className = "job-action-btn job-reprint-btn";
             btn.textContent = "Reprint";
             btn.title = "Print this portrait again";
-            btn.addEventListener("click", () => reprintJob(j.filename, btn));
-            row.appendChild(btn);
-        } else {
-            // Keep the grid column aligned for rows without a button.
+            btn.addEventListener("click", () => reprintJob(j.filename, j.printerName, btn));
+            actions.appendChild(btn);
+        }
+        if (!actions.firstChild) {
             const spacer = document.createElement("span");
             spacer.className = "job-reprint-spacer";
-            row.appendChild(spacer);
+            actions.appendChild(spacer);
         }
+        row.appendChild(actions);
 
         frag.appendChild(row);
     }

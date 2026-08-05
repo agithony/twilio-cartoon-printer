@@ -1,7 +1,8 @@
-const { app, BrowserWindow, ipcMain } = require("electron");
+const { app, BrowserWindow, dialog, ipcMain } = require("electron");
 const path = require("path");
 const Store = require("electron-store");
 const { RelayEngine, listPrinters } = require("./relay");
+const { copyRelayImage, isRelayTempFile } = require("./job-files");
 
 const store = new Store({
     defaults: { url: "", key: "", printers: [], dryRun: false },
@@ -107,16 +108,33 @@ ipcMain.handle("stop-relay", () => {
     return true;
 });
 
-// Reprint a completed job. Any running engine can issue the request (they all
-// share the same cloud URL + key); we just need one. If nothing is connected,
+// Reprint a completed or failed job. Prefer the engine for the row's printer;
+// all engines share the same cloud URL and key.
+// If nothing is connected,
 // tell the renderer so it can prompt the operator to Connect first.
-ipcMain.handle("reprint-job", async (_, filename) => {
-    const engine = relays.values().next().value;
+ipcMain.handle("reprint-job", async (_, filename, printerName) => {
+    const engine = relays.get(printerName || "") || relays.values().next().value;
     if (!engine) return { ok: false, error: "Connect to the cloud first" };
     try {
         const { status, data } = await engine.reprint(filename);
         if (status === 200) return { ok: true };
         return { ok: false, error: (data && data.error) || `HTTP ${status}` };
+    } catch (err) {
+        return { ok: false, error: err.message };
+    }
+});
+
+ipcMain.handle("save-job-image", async (_, sourcePath) => {
+    if (!isRelayTempFile(sourcePath)) return { ok: false, error: "Image is not available in the relay cache" };
+    const result = await dialog.showSaveDialog(mainWindow, {
+        title: "Save portrait",
+        defaultPath: path.join(app.getPath("downloads"), path.basename(sourcePath)),
+        filters: [{ name: "PNG image", extensions: ["png"] }],
+    });
+    if (result.canceled || !result.filePath) return { ok: false, canceled: true };
+    try {
+        await copyRelayImage(sourcePath, result.filePath);
+        return { ok: true, filePath: result.filePath };
     } catch (err) {
         return { ok: false, error: err.message };
     }
