@@ -6,12 +6,12 @@ const path = require("node:path");
 // Unit test for requeueDoneJobForReprint against the real queue dirs. Uses a
 // far-future synthetic prefix so it can never collide with real jobs, and
 // reprint=true + smsSentAt so the requeue takes no usage/MMS side effects.
-const { DONE_DIR, READY_DIR, PRINTING_DIR } = require("../lib/config");
+const { DONE_DIR, FAILED_DIR, READY_DIR, PRINTING_DIR } = require("../lib/config");
 const settings = require("../lib/settings");
 const { requeueDoneJobForReprint } = require("../lib/queue");
 
 // Queue dirs are gitignored runtime dirs; ensure they exist in fresh checkouts.
-for (const d of [DONE_DIR, READY_DIR, PRINTING_DIR]) fs.mkdirSync(d, { recursive: true });
+for (const d of [DONE_DIR, FAILED_DIR, READY_DIR, PRINTING_DIR]) fs.mkdirSync(d, { recursive: true });
 
 const EVENT = "__reprint_test__";
 const PREFIX = "29991231_235957";
@@ -34,7 +34,7 @@ function track(p) { created.push(p); return p; }
 
 after(() => {
     for (const p of created) { try { fs.unlinkSync(p); } catch {} }
-    for (const dir of [DONE_DIR, READY_DIR, PRINTING_DIR]) {
+    for (const dir of [DONE_DIR, FAILED_DIR, READY_DIR, PRINTING_DIR]) {
         try { fs.unlinkSync(path.join(dir, FNAME)); } catch {}
     }
     // Remove the synthetic event's download dir + any output image left in it.
@@ -45,13 +45,16 @@ after(() => {
 function writeDone(job) {
     fs.writeFileSync(track(path.join(DONE_DIR, FNAME)), JSON.stringify(job));
 }
+function writeFailed(job) {
+    fs.writeFileSync(track(path.join(FAILED_DIR, FNAME)), JSON.stringify(job));
+}
 function writeOutputImage() {
     const dir = settings.getDownloadDir(EVENT);
     fs.mkdirSync(dir, { recursive: true });
     fs.writeFileSync(track(path.join(dir, `${PREFIX}_output.png`)), "PNGDATA");
 }
 function cleanupQueues() {
-    for (const dir of [DONE_DIR, READY_DIR, PRINTING_DIR]) {
+    for (const dir of [DONE_DIR, FAILED_DIR, READY_DIR, PRINTING_DIR]) {
         try { fs.unlinkSync(path.join(dir, FNAME)); } catch {}
     }
     // Also clear the output image so each test controls image presence itself
@@ -75,6 +78,20 @@ test("requeue: done job with image moves done → ready with reprint metadata", 
     assert.equal(job.retries, 0);
     assert.equal(job.smsSentAt, 1, "smsSentAt preserved so no dup SMS");
     assert.ok(!("completedAt" in job), "completedAt cleared");
+});
+
+test("requeue: failed print job with image moves failed → ready", () => {
+    cleanupQueues();
+    writeOutputImage();
+    writeFailed({ ...doneJob(), failReason: "printer", retries: 3 });
+
+    const res = requeueDoneJobForReprint(FNAME, { targetPrinter: "Dai_Nippon_Printing_DS_RX1" });
+    assert.equal(res.ok, true);
+    assert.equal(fs.existsSync(path.join(FAILED_DIR, FNAME)), false);
+    const job = JSON.parse(fs.readFileSync(path.join(READY_DIR, FNAME), "utf-8"));
+    assert.equal(job.targetPrinter, "Dai_Nippon_Printing_DS_RX1");
+    assert.equal(job.retries, 0);
+    assert.ok(!("failReason" in job));
 });
 
 test("requeue: 404 when job not in done/", () => {

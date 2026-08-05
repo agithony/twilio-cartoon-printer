@@ -8,6 +8,7 @@ const https = require("https");
 const http = require("http");
 const { EventEmitter } = require("events");
 const { buildPrintCommand } = require("./cups-command");
+const { RELAY_TEMP_DIR, cleanupOldRelayFiles } = require("./job-files");
 
 class RelayEngine extends EventEmitter {
     constructor() {
@@ -21,8 +22,9 @@ class RelayEngine extends EventEmitter {
         this.jobCount = 0;
         this.consecutiveErrors = 0;
         this.basePollMs = 5000;
-        this.tempDir = path.join(require("os").tmpdir(), "print-relay-temp");
+        this.tempDir = RELAY_TEMP_DIR;
         if (!fs.existsSync(this.tempDir)) fs.mkdirSync(this.tempDir, { recursive: true });
+        cleanupOldRelayFiles().catch(() => {});
         // Heartbeat timer active while the relay holds a claimed job. Pings
         // the cloud every HEARTBEAT_MS so the cloud can recover the job
         // within seconds if the relay crashes or hangs, instead of waiting
@@ -65,13 +67,15 @@ class RelayEngine extends EventEmitter {
         this.emit("status", { cloud: "disconnected", printer: "unknown" });
     }
 
-    // Ask the cloud to re-queue a completed job so it prints again. The job
+    // Ask the cloud to re-queue a terminal job so it prints again. The job
     // re-enters ready/ server-side and this (or any) relay claims it on the
     // next poll — no need to target a specific printer. Returns the parsed
     // { status, data } so the caller can surface success/failure to the UI.
     async reprint(filename) {
-        const { status, data } = await this._request("POST", `/api/print-relay/jobs/${filename}/reprint`, {});
+        const printerName = this.config && this.config.printer || null;
+        const { status, data } = await this._request("POST", `/api/print-relay/jobs/${filename}/reprint`, { printerName });
         if (status === 200) {
+            this.processedJobs.delete(filename);
             this.log(`Reprint queued: ${filename}`);
         } else {
             this.log(`Reprint failed for ${filename}: ${(data && data.error) || `HTTP ${status}`}`);
@@ -220,6 +224,7 @@ class RelayEngine extends EventEmitter {
                     }).catch(() => { /* no thumb, no row update — harmless */ });
                 }
 
+                let imageDownloaded = false;
                 try {
                     this.log(`Downloading ${ackData.imageFile}...`);
                     this.emit("job", {
@@ -228,6 +233,8 @@ class RelayEngine extends EventEmitter {
                         status: "downloading",
                     });
                     await this._downloadFile(imageUrl, localPath);
+                    imageDownloaded = true;
+                    this.emit("job", { filename: job.filename, imagePath: localPath });
 
                     if (this.config.dryRun) {
                         this.log(`[DRY RUN] Would print: ${ackData.imageFile}`);
@@ -268,7 +275,9 @@ class RelayEngine extends EventEmitter {
                     }
                 } finally {
                     this._stopHeartbeat();
-                    try { fs.unlinkSync(localPath); } catch {}
+                    if (!imageDownloaded) {
+                        try { fs.unlinkSync(localPath); } catch {}
+                    }
                 }
             }
         } catch (err) {
