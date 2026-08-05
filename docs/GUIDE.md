@@ -98,9 +98,11 @@ Leave `TEMPLATE_FILE` blank to disable the frame overlay.
 
 ### Compatible printers
 
-The app is built and tested with the **Epson EcoTank ET-8550** wide-format photo printer. The print command options (page size, margins, resolution) in `lib/printer.js` are Epson-specific. Other Epson EcoTank models that support 5x7 borderless photo printing should also work.
+The app includes print profiles for the **Epson EcoTank ET-8550** and **DNP DS-RX1**. Profiles are selected per CUPS queue, so local and multi-printer relay setups can use either model without changing global flags.
 
-Using a non-Epson printer (Canon, HP, Brother, etc.) requires changing the `-o` flags in the `lp` command in `lib/printer.js` to match that printer's supported options.
+For a DNP queue whose name contains `DS-RX1`, app size **4x6** maps to the driver's required `300dnp6x4` page size. Standard quality maps to 300x300 DPI; High and Max map to 300x600 DPI. The profile also sends Glossy finish, normal cutter, RGB color, and print retry. Set Print Size to **4x6** when RX1 6x4 media is loaded. The DS-RX1 profile rejects 8x10 because the printer cannot produce it.
+
+Other printer models require CUPS options that match their installed driver and may need a new profile or custom print flags.
 
 ### Connection methods
 
@@ -119,9 +121,9 @@ All connection methods behave identically from the app's perspective. The `lp` c
 lpstat -p
 ```
 
-Copy the printer name (e.g. `EPSON_ET_8550_Series`) into `PRINTER_NAME` in your `.env`. The app matches any printer starting with that prefix. If multiple printers match, it picks a healthy one over a disconnected or disabled one.
+Copy the printer name (for example, `EPSON_ET_8550_Series` or `Dai_Nippon_Printing_DS_RX1`) into `PRINTER_NAME` in your `.env`. The app matches any printer starting with that prefix. If multiple printers match, it picks a healthy one over a disconnected or disabled one.
 
-Print settings (page size, resolution, borderless options) are configured in `lib/printer.js`. The defaults are tuned for an Epson ET-8550 on 5x7 photo paper with no margins.
+Print settings are translated by the detected printer profile in local server printing, the CLI relay, and the Print Station desktop app.
 
 ## Web UI
 
