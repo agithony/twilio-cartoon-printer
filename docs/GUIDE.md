@@ -132,7 +132,7 @@ Print settings are translated by the detected printer profile in local server pr
 
 The home page at `/home` is the admin console for booth operators. It provides three action cards:
 
-- **Launch Booth Display** -- opens a split-screen view (`/home/combo`) with the intro video and photo book side by side. The divider is draggable to resize each pane. An expandable "Open individually" section provides direct links to the intro video and photo book separately.
+- **Launch Booth Display** -- navigates normally to the booth display without opening a popup or forcing fullscreen. Landscape displays remain side by side; portrait displays stack the intro/QR panel above the photo book. The divider is draggable on either axis. An expandable "Open individually" section provides direct links to each view.
 - **Open Dashboard** -- links to the admin dashboard for monitoring and management
 - **Outreach** -- links to the dedicated outreach page for broadcast messaging, raffles, and lead capture reports
 
@@ -165,7 +165,7 @@ The page includes BRB and Fullscreen buttons. When no QR code is uploaded, a pla
 
 ### Booth Display
 
-The booth display at `/home/combo` is a split-screen view with the left pane and photo book side by side on a single monitor. The divider between panes is draggable to resize each side.
+The booth display at `/home/combo` is responsive to monitor orientation and opens as a normal page without a popup or fullscreen prompt. Landscape screens retain the original side-by-side layout. Portrait screens place the content pane above the photo book and synchronize theme changes across both panes. The divider is draggable horizontally or vertically to resize the panes.
 
 The **Display Mode** setting (under Booth Display in the Settings panel) controls what shows on the left side:
 
@@ -179,7 +179,7 @@ When the mode is "Video" but no video file is selected, the display falls back t
 
 ### Photo Book
 
-The photo book at `/photogallery` presents AI-generated portraits as an open book with two pages side by side. Uses the [turn.js](https://github.com/nickmilo/turn.js) library for realistic page-turn animations. Designed for a tactile, physical feel on booth displays.
+The photo book at `/photogallery` presents AI-generated portraits as an open two-page book in both landscape and portrait orientations. It uses the [turn.js](https://github.com/nickmilo/turn.js) library for realistic page-turn animations and is designed for a tactile, physical feel on booth displays.
 
 - Open book layout with left and right pages showing different portraits
 - Realistic page-turn animations powered by turn.js (drag corners or use arrows)
@@ -188,7 +188,7 @@ The photo book at `/photogallery` presents AI-generated portraits as an open boo
 - Page numbers on each page (highest to lowest, newest to oldest)
 - White photo frame mat around each image with decorative corner mounts
 - Auto-rotates through spreads every 10 seconds
-- Play/Pause, keyboard arrows, and clickable thumbnails for manual navigation
+- Play/Pause, keyboard arrows, clickable thumbnails, and native turn.js page-corner dragging for manual navigation
 - Fullscreen support with responsive sizing
 - Warm parchment-toned pages with subtle paper texture
 - **Event filter** -- dropdown to filter portraits by event, or view all events combined
