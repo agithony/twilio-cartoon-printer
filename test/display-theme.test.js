@@ -60,9 +60,20 @@ test("portrait photo book enlarges count and thumbnails while preserving spreads
     assert.match(html, /html:not\(\.combo-embedded\) \.scene/);
     assert.match(html, /display: "double"/);
     assert.doesNotMatch(html, /display: "single"|function bindBookSwipe\(\)/);
-    assert.match(html, /function configureNativePageDrag\(\)/);
-    assert.match(html, /cornerSize = Math\.max\(100, Math\.min\(180/);
-    assert.match(html, /standalonePortrait = window\.top === window/);
+    assert.match(html, /width: 86vw; height: 58vh/);
+    assert.doesNotMatch(html, /bindBookPointerSwipe|bindBookTouchSwipe/);
+});
+
+test("portrait fullscreen preserves count sizing", () => {
+    const html = buildPageHtml("default", "en");
+    assert.match(html, /Fullscreen must not downsize portrait signage/);
+    assert.match(html, /:fullscreen \.count-label strong[\s\S]*font-size: var\(--count-number-size\)/);
+});
+
+test("light photo book uses a Twilio red ambient gradient", () => {
+    const html = buildPageHtml("default", "en");
+    assert.match(html, /rgba\(239,34,58,0\.18\)/);
+    assert.match(html, /linear-gradient\(155deg, #FFFFFF 0%, #FFF7F8 48%, #F3F6FF 100%\)/);
 });
 
 test("portrait combo theme changes synchronize both panes", () => {
