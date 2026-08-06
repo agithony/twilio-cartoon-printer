@@ -188,9 +188,9 @@ The photo book at `/photogallery` presents AI-generated portraits as an open two
 - Page numbers on each page (highest to lowest, newest to oldest)
 - White photo frame mat around each image with decorative corner mounts
 - Auto-rotates through spreads every 10 seconds
-- Play/Pause, keyboard arrows, clickable thumbnails, and native turn.js page-corner dragging for manual navigation
+- Play/Pause, keyboard arrows, and clickable thumbnails for manual navigation
 - Fullscreen support with responsive sizing
-- Warm parchment-toned pages with subtle paper texture
+- Warm parchment-toned pages with subtle paper texture and a Twilio-red ambient gradient in light mode
 - **Event filter** -- dropdown to filter portraits by event, or view all events combined
 - Live portrait counter with animated bump when new images arrive
 - Polls for new images every 5 seconds
