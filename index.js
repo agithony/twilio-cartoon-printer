@@ -37,6 +37,7 @@ const {
     recoverStaleRelayJobs,
     clearStaleRelayTargets,
     sweepMissingOutputJobs,
+    cleanupQueueTempFiles,
 } = require("./lib/queue");
 const { parseStyle, detectStyle } = require("./lib/styles");
 const styleMenu = require("./lib/style-menu");
@@ -714,9 +715,6 @@ const server = app.listen(port, "0.0.0.0", async () => {
         if (genPollRunning || settings.get("queuePaused")) return;
         genPollRunning = true;
         try {
-            // Rescue jobs stuck in GENERATING_DIR before claiming new work —
-            // otherwise a hung worker blocks a concurrency slot indefinitely.
-            await sweepStaleGenerating();
             await processGenerationQueue();
         } finally { genPollRunning = false; }
     }, POLL_INTERVAL);
@@ -725,14 +723,28 @@ const server = app.listen(port, "0.0.0.0", async () => {
         if (printPollRunning || settings.get("queuePaused")) return;
         printPollRunning = true;
         try {
-            await recoverStaleRelayJobs();
-            await clearStaleRelayTargets();
-            await sweepMissingOutputJobs();
             await processPrintQueue();
         }
         finally { printPollRunning = false; }
     }, POLL_INTERVAL);
-    console.log(`⏱️  Workers started (polling every ${POLL_INTERVAL}ms, max ${settings.get("maxConcurrentGeneration")} concurrent generations)`);
+
+    let maintenanceRunning = false;
+    setInterval(async () => {
+        if (maintenanceRunning || settings.get("queuePaused")) return;
+        maintenanceRunning = true;
+        try {
+            await sweepStaleGenerating();
+            await recoverStaleRelayJobs();
+            await clearStaleRelayTargets();
+            await sweepMissingOutputJobs();
+        } finally { maintenanceRunning = false; }
+    }, 30_000);
+
+    await cleanupQueueTempFiles();
+    setInterval(() => cleanupQueueTempFiles().catch((err) => {
+        console.error(`⚠️  Queue temp cleanup failed: ${err.message}`);
+    }), 60 * 60 * 1000);
+    console.log(`⏱️  Workers started (hot queues ${POLL_INTERVAL}ms, maintenance 30000ms, max ${settings.get("maxConcurrentGeneration")} concurrent generations)`);
 
     // Auto-open home page in the default browser (skip in production/Docker)
     const host = `http://localhost:${port}`;
