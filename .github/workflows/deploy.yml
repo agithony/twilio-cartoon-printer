@@ -33,6 +33,20 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v6
 
+      - name: Validate authentication secrets
+        env:
+          ADMIN_PIN: ${{ secrets.ADMIN_PIN }}
+          SESSION_SECRET: ${{ secrets.SESSION_SECRET }}
+        run: |
+          if [[ -n "$ADMIN_PIN" && ! "$ADMIN_PIN" =~ ^[A-Za-z0-9]{8,64}$ ]]; then
+            echo "::error::ADMIN_PIN must contain only A-Z, a-z, and 0-9 and be 8-64 characters long."
+            exit 1
+          fi
+          if (( ${#SESSION_SECRET} < 32 )); then
+            echo "::error::SESSION_SECRET must be set and contain at least 32 characters."
+            exit 1
+          fi
+
       - name: Login to Azure
         uses: azure/login@v3
         with:
@@ -187,6 +201,7 @@ jobs:
               "openai-key=${{ secrets.OPENAI_API_KEY }}" \
               "google-client-id=${{ secrets.GOOGLE_CLIENT_ID }}" \
               "google-client-secret=${{ secrets.GOOGLE_CLIENT_SECRET }}" \
+              "admin-pin=${{ secrets.ADMIN_PIN }}" \
               "session-secret=${{ secrets.SESSION_SECRET }}" \
               "print-relay-key=${{ secrets.PRINT_RELAY_KEY }}" \
             --output none

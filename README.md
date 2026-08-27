@@ -94,15 +94,19 @@ EVENT_NAME=YourEventName
 
 Configure at least one sender using `TWILIO_PHONE_NUMBER`, `TWILIO_MESSAGING_SERVICE_SID`, `TWILIO_WHATSAPP_NUMBER`, or `TWILIO_WHATSAPP_MESSAGING_SERVICE_SID`. The app exits at startup if no SMS or WhatsApp sender is configured.
 
-Admin pages require Google OAuth. For local admin access, create a Google OAuth web client and add `http://localhost:3000/auth/callback` as a redirect URI:
+Admin pages require Google OAuth, a shared admin PIN, or both. For local Google access, create a Google OAuth web client and add `http://localhost:3000/auth/callback` as a redirect URI:
 
 ```sh
 GOOGLE_CLIENT_ID=your-client-id.apps.googleusercontent.com
 GOOGLE_CLIENT_SECRET=your-client-secret
-SESSION_SECRET=random-long-secret
+SESSION_SECRET=replace-with-at-least-32-random-characters
 ```
 
 By default, sign-in is limited to verified `@twilio.com` Google accounts. Add `ALLOWED_EMAILS=person@example.com,other@example.com` for non-Twilio operators.
+
+Alternatively, set `ADMIN_PIN` to a case-sensitive 8-64 character value containing only ASCII letters and numbers. Numeric-only values are allowed. PIN and Google logins use the same signed `HttpOnly` session cookie; changing `ADMIN_PIN` immediately invalidates PIN sessions without affecting Google sessions. Store both `ADMIN_PIN` and `SESSION_SECRET` as secrets.
+
+Production requires `SESSION_SECRET` to be at least 32 characters and refuses to start if it is missing or shorter. Local and test runs generate an ephemeral secret when it is omitted.
 
 All other values have defaults. See [docs/GUIDE.md](docs/GUIDE.md#environment-variables) for the full variable reference.
 
@@ -114,7 +118,7 @@ All other values have defaults. See [docs/GUIDE.md](docs/GUIDE.md#environment-va
 pnpm start
 ```
 
-The server starts on port 3000 in local development. The home page is available at `http://localhost:3000`, but protected admin pages return `503` until Google OAuth is configured.
+The server starts on port 3000 in local development. The home page is available at `http://localhost:3000`, but protected admin pages return `503` until Google OAuth or `ADMIN_PIN` is configured.
 
 ### 2. Connect Twilio
 
