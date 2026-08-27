@@ -11,7 +11,7 @@
     "test": "node --test --test-concurrency=1 ../test/cups-command.test.js ../test/relay-job-files.test.js ../test/relay-reprint.test.js ../test/relay-output-profile.test.js"
   },
   "dependencies": {
-    "electron-store": "^8.2.0"
+    "electron-store": "^11.0.2"
   },
   "devDependencies": {
     "electron": "^33.0.0",
