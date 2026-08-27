@@ -58,6 +58,8 @@ properties:
             secretRef: google-client-secret
           - name: SESSION_SECRET
             secretRef: session-secret
+          - name: PRINT_RELAY_KEY
+            secretRef: print-relay-key
         volumeMounts:
           - volumeName: appdata
             mountPath: /app/appdata

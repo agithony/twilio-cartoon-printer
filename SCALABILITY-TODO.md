@@ -1,8 +1,8 @@
 # Scalability Assessment & Remediation Plan
-*Last updated: 2026-04-03*
+*Last updated: 2026-07-07*
 
 ## Current Architecture
-- **Single container:** 1 CPU, 2GB RAM, Azure Container Apps, `maxReplicas: 1` (deploy.sh:224-225)
+- **Single container:** The GitHub Actions Container App template uses 2 CPU / 4Gi with `maxReplicas: 1` (`.github/containerapp.yaml`). The legacy `deploy.sh` path still uses 1 CPU / 2Gi.
 - **100% file-based:** No database, no Redis. Jobs = JSON files in `queue/{state}/`, images in `downloads/{event}/`
 - **Azure File Share:** 10GB quota (deploy.sh:128), mounted at `/app/appdata`, ~50-100ms latency per file op
 - **Single event loop:** Express server + generation worker + print worker share one Node.js process
@@ -14,8 +14,9 @@
 - **Background menu** — per-event background selection
 - **Review modes** — `"off"`, `"human"`, `"ai"` (replaces legacy `enableManualReview`)
 - **Memory leak fixes** — NPS, relay quota, brand/background/style menu Maps all have cleanup intervals
+- **Dashboard stale-while-revalidate caches** — dashboard file reads and stats are cached, though cache misses still aggregate over the file set
 
-## Current Data
+## Data Snapshot From Initial Assessment
 - 469+ done jobs, 4+ events, ~3.2GB images, ~1.8MB job metadata
 - Per job: ~400 bytes JSON + ~7MB images (_input.jpg ~400KB, _output.png ~6MB, _output_mms.jpg ~120KB)
 
@@ -31,13 +32,13 @@
 ### At ~5,000 jobs: API responses become sluggish
 - `/api/images` returns ALL images as one JSON array — 5K objects = ~250KB, polled every 5 seconds
 - `/api/users` iterates ALL done jobs, returns ALL users — polled every 10 seconds
-- `/api/stats` loads ALL done+failed jobs into memory for aggregation — polled every 3 seconds
+- `/api/stats` uses cached job reads and stale-while-revalidate responses, but cache misses still aggregate across done+failed jobs
 - `buildUsageCache()` at startup reads every file sequentially — ~5K files x 50ms = ~4 minutes on Azure Files
 
 ### At ~10,000+ jobs: App becomes unusable
-- `readdir()` on done/ returns 10K+ entries — each background refresh reads all of them
+- `readdir()` on done/ returns 10K+ entries — background cache refreshes still have to scan the full directory
 - Photo book creates 10K+ DOM nodes at once (turn.js pre-builds all pages)
-- Dashboard stats computation: 6+ O(n) passes over 10K jobs every 30 seconds
+- Dashboard stats computation: 6+ O(n) passes over 10K jobs on cache refresh/miss
 - Memory: 10K job objects x ~1-2KB = 10-20MB per cache (dashboard + outreach = 2 separate copies)
 - Startup: `buildUsageCache()` would take 8+ minutes scanning 10K files
 
@@ -47,7 +48,7 @@
 - Style map builds by scanning all queue directories for every job ever processed
 
 ### AI Review at scale: Cost and latency compound
-- +1 orchestrator API call per generated image (gpt-5.4 level model)
+- +1 orchestrator API call per generated image (`gpt-5.5` by default)
 - Brand reference images re-read from disk on every generation + every AI review (not cached)
 - At 15 concurrent generations: 15 simultaneous API calls + 30+ file reads for brand refs
 
@@ -56,11 +57,10 @@
 ## PHASE 1: IMMEDIATE FIXES (storage + sync I/O + response limits)
 *Low risk, high impact. Can ship today.*
 
-- [ ] **1a. Fix gallery.js sync I/O**
-  - **File:** `lib/gallery.js:13-23`
-  - `fs.readdirSync()` on hot path, polled every 5 seconds by client
-  - Convert to async `fsp.readdir()` with stale-while-revalidate cache (same pattern as photogallery.js)
-  - Add `const fsp = fs.promises;` at top
+- [ ] **1a. Remove or modernize legacy gallery.js**
+  - **File:** `lib/gallery.js`
+  - `index.js` currently mounts `/photogallery`, not `/gallery`, so this legacy route is not on the active path
+  - If `/gallery` is re-enabled, convert sync reads to async `fsp.readdir()` with stale-while-revalidate cache (same pattern as photogallery.js)
 
 - [ ] **1b. Add cache headers to /images static route**
   - **File:** `index.js:84-86`
@@ -161,9 +161,9 @@
 ## PHASE 4: INFRASTRUCTURE (for production at scale)
 *Architectural changes. Plan carefully.*
 
-- [ ] **4a. Increase container resources**
-  - `deploy.sh:193-194`: CPU 1.0 -> 2.0, memory 2Gi -> 4Gi
-  - Allows more concurrent Sharp image processing + AI review overhead
+- [ ] **4a. Align legacy deploy resources with GitHub Actions template**
+  - `.github/containerapp.yaml` already uses CPU 2.0 / memory 4Gi
+  - `deploy.sh:193-194` still uses CPU 1.0 / memory 2Gi; update or retire the legacy script
 
 - [ ] **4b. Add /images CDN or cache proxy**
   - Azure CDN in front of image routes

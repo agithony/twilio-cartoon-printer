@@ -7,7 +7,7 @@ const APP_NAME = "Twilio Print Station";
 // ── Gatekeeper helper bundled with the distributable ─────────────────────────
 // The app is ad-hoc signed (no paid Apple Developer account → no Developer ID
 // cert, no notarization). macOS stamps com.apple.quarantine on anything
-// downloaded/AirDropped/Slacked, and on Apple Silicon a quarantined ad-hoc app
+// downloaded or otherwise transferred, and on Apple Silicon a quarantined ad-hoc app
 // opens to the dead-end "app is damaged … Move to Trash" dialog.
 //
 // A quarantined *shell script*, by contrast, only gets the milder "unidentified
@@ -48,7 +48,7 @@ If you double-clicked the app first and saw "Twilio Print Station is damaged":
 
 ALTERNATIVE (Terminal one-liner):
   Open Terminal, paste this, press Return:
-    xattr -dr com.apple.quarantine "$(dirname "$0")/${APP_NAME}.app" 2>/dev/null; open "$(dirname "$0")/${APP_NAME}.app"
+    xattr -dr com.apple.quarantine "$HOME/Downloads/${APP_NAME}.app" 2>/dev/null; open "$HOME/Downloads/${APP_NAME}.app"
 
 Keep the app and this helper together in the same folder.
 `;
@@ -65,6 +65,16 @@ module.exports = {
         },
     ],
     hooks: {
+        postPackage: async (_forgeConfig, packageResult) => {
+            for (const outputPath of packageResult.outputPaths || []) {
+                const appPath = outputPath.endsWith(".app")
+                    ? outputPath
+                    : path.join(outputPath, `${APP_NAME}.app`);
+                if (!fs.existsSync(appPath)) continue;
+                execFileSync("codesign", ["--force", "--deep", "--sign", "-", appPath]);
+                execFileSync("codesign", ["--verify", "--deep", "--strict", appPath]);
+            }
+        },
         // After the .app and its plain zip are built, assemble a distribution
         // folder pairing the app with the un-quarantine helper + README, and
         // zip THAT. The plain maker-zip output is left in place; the

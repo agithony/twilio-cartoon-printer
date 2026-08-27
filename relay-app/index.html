@@ -40,6 +40,15 @@
         </div>
       </div>
       <div class="field">
+        <label for="outputDirectory">Save Downloaded Portraits To <span class="optional">(optional)</span></label>
+        <div class="input-row">
+          <input type="text" id="outputDirectory" placeholder="Temporary cache only" readonly>
+          <button id="chooseOutputDirectory" type="button" class="edit-btn">Choose</button>
+          <button id="clearOutputDirectory" type="button" class="edit-btn">Clear</button>
+        </div>
+        <div class="field-hint">Every final PNG is automatically copied here. Printing continues if saving fails.</div>
+      </div>
+      <div class="field">
         <div class="printer-header">
           <label>Printers</label>
           <button id="refreshPrinters" type="button" class="icon-btn" title="Refresh printers">&#x21bb;</button>

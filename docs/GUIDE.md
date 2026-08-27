@@ -5,6 +5,7 @@ This document covers all features and configuration in depth. For quick setup, s
 ## Table of Contents
 
 - [Environment Variables](#environment-variables)
+- [Admin Authentication](#admin-authentication)
 - [Template Frames](#template-frames)
 - [Printer Setup](#printer-setup)
 - [Web UI](#web-ui)
@@ -17,6 +18,7 @@ This document covers all features and configuration in depth. For quick setup, s
   - [Event Report](#event-report)
 - [Style Selection](#style-selection)
 - [Adding or Changing Styles](#adding-or-changing-styles)
+- [Multi-Subject Photos](#multi-subject-photos)
 - [Branding](#branding)
   - [Single Brand Mode](#single-brand-mode)
   - [Multi-Brand Selection](#multi-brand-selection)
@@ -55,20 +57,23 @@ This document covers all features and configuration in depth. For quick setup, s
 | Variable | Required | Description |
 |---|---|---|
 | `TWILIO_ACCOUNT_SID` | Yes | Your Twilio Account SID |
-| `TWILIO_MESSAGING_SERVICE_SID` | No | Messaging Service SID (starts with `MG`). When set, outbound messages route through this service — Twilio auto-picks the right sender from the pool (e.g. 10DLC for US, toll-free for international) and retries across senders on failure. Leave blank to send directly from `TWILIO_PHONE_NUMBER`. |
 | `TWILIO_AUTH_TOKEN` | Yes | Your Twilio Auth Token |
+| `TWILIO_PHONE_NUMBER` | Conditional | SMS/MMS sender in E.164 format. Required unless you use `TWILIO_MESSAGING_SERVICE_SID` or WhatsApp-only sending. |
+| `TWILIO_MESSAGING_SERVICE_SID` | Conditional | Messaging Service SID (starts with `MG`). When set, outbound SMS/MMS route through this service and Twilio picks a sender from the pool. |
+| `TWILIO_WHATSAPP_NUMBER` | Conditional | WhatsApp sender in E.164 format. Required for direct WhatsApp sending unless you use `TWILIO_WHATSAPP_MESSAGING_SERVICE_SID`. |
+| `TWILIO_WHATSAPP_MESSAGING_SERVICE_SID` | Conditional | Messaging Service SID for WhatsApp sending. Configure this or `TWILIO_WHATSAPP_NUMBER` for WhatsApp support. |
 | `OPENAI_API_KEY` | Yes | Your OpenAI API key |
-| `PRINTER_NAME` | Yes | CUPS printer name prefix (find with `lpstat -p`). The app matches any printer starting with this name, so `EPSON_ET_8550_Series` matches `EPSON_ET_8550_Series_2`, etc. |
+| `PRINTER_NAME` | Print only | CUPS printer name prefix for local printing (find with `lpstat -p`). The app matches any printer starting with this name, so `EPSON_ET_8550_Series` matches `EPSON_ET_8550_Series_2`, etc. |
 | `EVENT_NAME` | Yes | Name of the current event (used for per-event print limits and download folders) |
 | `ADMIN_PHONES` | No | Comma-separated phone numbers in E.164 format (e.g. `+14155551234`). Admins get unlimited prints and are excluded from dashboard metrics. |
 | `MAX_PRINTS_PER_USER` | No | Max free prints per phone number per event. Defaults to `2`. |
-| `MAX_CONCURRENT_GENERATION` | No | Max AI image generations running at the same time. Defaults to `3`. Increase for faster throughput, decrease if hitting OpenAI rate limits. Configurable at runtime under Event & Operations. |
+| `MAX_CONCURRENT_GENERATION` | No | Max AI image generations running at the same time. Defaults to `15`. Increase for faster throughput, decrease if hitting OpenAI rate limits. Configurable at runtime under Event & Operations. |
 | `TEMPLATE_FILE` | No | Filename of the template frame in the `templates/` folder (e.g. `signal_sf.png`). Leave blank to disable. |
-| `VIDEO_FILE` | No | Filename of the Get Started video in the `assets/` folder (e.g. `get-started.mp4`). Defaults to `get-started.mp4`. |
+| `VIDEO_FILE` | No | Filename of the Get Started video in `booth-uploads/`. Defaults to `get-started.mp4`. Upload videos from Settings so they persist across container restarts. |
 | `TERMS_URL` | No | URL to your terms of service. Displayed on booth screens (video, combo, photo gallery). |
 | `ENABLE_PRINTING` | No | Set to `false` to disable printing and run digital-only (MMS delivery). Defaults to `true`. |
 | `BRAND_PROMPT` | No | Global branding prompt appended to every art style (e.g. clothing, logos). Leave blank to disable. |
-| `PRINT_SIZE` | No | Print paper size. Options: `4x6`, `5x7`, `8x10`. Defaults to `5x7`. Controls both image pixel dimensions and the PageSize flag sent to the printer. |
+| `PRINT_SIZE` | No | Output and print preset. Options: `4x6`, `6x4` (landscape 1800x1200 PNG), `5x7`, `8x10`. Defaults to `5x7`. Controls AI orientation, final pixel dimensions, and printer page orientation. |
 | `PRINT_QUALITY` | No | Print resolution. Options: `standard` (360 DPI), `high` (720 DPI), `max` (1440 DPI). Defaults to `high`. |
 | `PICKUP_LOCATION` | No | Name shown in physical print pickup messages. Runtime setting overrides this value; blank uses `Twilio booth` in English or `estande da Twilio` in Portuguese. |
 | `CUSTOM_PRINT_FLAGS` | No | Additional raw flags appended to the `lp` command. For non-Epson printers or advanced CUPS options (e.g. `-o MediaType=Glossy`). |
@@ -79,19 +84,53 @@ This document covers all features and configuration in depth. For quick setup, s
 | `PRINT_RELAY_PRINTERS` | No | Comma-separated list of printer names for multi-printer relay (e.g. `EPSON_1,EPSON_2`). Overrides `PRINT_RELAY_PRINTER`. |
 | `PRINT_RELAY_INTERVAL` | No | Relay poll interval in seconds (default: `5`). |
 | `PRINT_RELAY_DRY_RUN` | No | Set to `true` to download images without printing (for testing). |
+| `BASE_URL` | No | Public app URL used in generated review/share links. Auto-detected from the first inbound request if not set, but should be set explicitly in production. |
+| `DATA_MOUNT` | No | Persistent storage mount used by Docker/cloud startup. Defaults to `/app/appdata`. |
 | `DUB_API_KEY` | No | dub.co API key for URL shortening. Leave blank to disable short links. |
 | `DUB_DOMAIN` | No | Custom short domain on dub.co (default: `twil.io`). |
+| `DUB_SLUG_PREFIX` | No | Default per-event short-link slug prefix. Defaults to `p`. |
 | `DUB_FOLDER_ID` | No | Optional dub.co folder ID for organizing short links. |
+| `GOOGLE_CLIENT_ID` | Admin UI | Google OAuth client ID. Required for login to protected admin routes unless a valid session already exists. |
+| `GOOGLE_CLIENT_SECRET` | Admin UI | Google OAuth client secret. |
+| `SESSION_SECRET` | Admin UI | Secret used to HMAC-sign admin and review tokens. If omitted, an ephemeral secret is generated and sessions do not survive restart. |
+| `ALLOWED_EMAILS` | No | Comma-separated non-`@twilio.com` emails allowed to sign in. Empty means verified `@twilio.com` accounts only. |
+| `REVIEW_TOKEN_TTL` | No | Review token lifetime in seconds. Defaults to 7 days. |
+| `MODEL_ORCHESTRATOR` | No | OpenAI model for orchestration, moderation-adjacent decisions, AI review, and prompt reasoning. Defaults to `gpt-5.5`. |
+| `MODEL_VISION_LIGHT` | No | Lightweight vision model for face/scene checks. Defaults to `gpt-5.4-nano`. |
+| `MODEL_IMAGE_GEN` | No | Image generation model. Defaults to `gpt-image-2-2026-04-21`; exact/transparent background mode can use `gpt-image-1.5`. |
+| `MODEL_SMART_REPLY` | No | Model for conversational replies to text-only messages. Defaults to `gpt-5.4-nano`. |
+| `MODEL_REF_ANALYSIS` | No | Model for analyzing brand/reference images. Defaults to `gpt-5.5`. |
+
+At startup the app validates channel configuration and exits if no SMS or WhatsApp sender is configured.
+
+## Admin Authentication
+
+All non-public admin routes are protected by Google OAuth. Public routes include `/inbound`, `/healthz`, `/auth/*`, `/review/*`, `/s/*`, `/images/*`, `/assets/*`, `/booth-uploads/*`, `/api/print-relay/*`, and read-only `GET` routes under `/photogallery`.
+
+Set `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, and `SESSION_SECRET` to enable login. Add these redirect URIs to the Google OAuth client as needed:
+
+```text
+http://localhost:3000/auth/callback
+https://your-production-host/auth/callback
+```
+
+Verified `@twilio.com` Google accounts are allowed by default. Use `ALLOWED_EMAILS` for individual non-Twilio operators.
+
+Security notes:
+
+- `/inbound` is public so Twilio can call it. The current app does not validate `X-Twilio-Signature`.
+- Relay endpoints are public but require the `x-relay-key` header to match `PRINT_RELAY_KEY`.
+- Share pages and generated image routes are public by design.
 
 ## Template Frames
 
 Place your template PNGs in the `templates/` folder. Set `TEMPLATE_FILE` in `.env` to the filename you want to use (e.g. `signal_sf.png`). You can also change the template at runtime from the Settings panel on the home page under **Styles & Art**, and upload new templates directly through the UI.
 
-Templates should be PNGs with **transparent areas** where the generated portrait shows through. The opaque areas form the frame border (branding, logos, CTA, etc.). The template is composited on top of the portrait at print dimensions (1500x2100).
+Templates should be PNGs with **transparent areas** where the generated portrait shows through. The opaque areas form the frame border (branding, logos, CTA, etc.). The template is composited on top of the portrait at the configured output dimensions.
 
 The app automatically detects the template's transparent window and fits the portrait within it, so frame borders never clip the subject's head or body. A small inset padding keeps the portrait from touching the frame edge. If no transparent area is found, the portrait fills the entire print area as a fallback.
 
-The template can be **any resolution** -- it gets resized to fit the print automatically. For best results, use a 5:7 aspect ratio. Other ratios work too; the full frame design is preserved with transparent padding if the ratio doesn't match.
+The template can be **any resolution**, but its orientation must match the selected output preset. Use a 3:2 landscape template for `6x4`; a portrait template is skipped rather than severely cropped. For best results, match the final output aspect ratio.
 
 Leave `TEMPLATE_FILE` blank to disable the frame overlay.
 
@@ -128,6 +167,24 @@ Print settings are translated by the detected printer profile in local server pr
 
 ## Web UI
 
+Current mounted routes:
+
+| Route | Access | Purpose |
+|---|---|---|
+| `/` | Admin | Redirects to `/home` |
+| `/home` | Admin | Settings, booth display launcher, video/static/combo/break screens |
+| `/dashboard` | Admin | Monitoring, review, retry/reprint, printer controls, reports |
+| `/outreach` | Admin | Broadcasts, raffles, lead reports, drop-off nudges |
+| `/photogallery` | Public GET, admin mutations | Public booth photo book and admin photo actions |
+| `/s/:filePrefix` | Public | Share page for delivered portraits |
+| `/review/*` | Public token/PIN flow | Mobile review flow for approved reviewers |
+| `/api/generate` | Admin/API | Programmatic generation endpoint used by kiosk/API clients |
+| `/kiosk` | Admin/API | Browser kiosk submission UI |
+| `/eval` | Admin | Prompt experiments and evaluation tools |
+| `/api/print-relay/*` | Relay key | Print Station and CLI relay API |
+| `/auth/*` | Public | Google OAuth login, callback, and logout |
+| `/healthz` | Public | Health check |
+
 ### Home Page
 
 The home page at `/home` is the admin console for booth operators. It provides three action cards:
@@ -144,7 +201,7 @@ A **How It Works** section shows the 6-step flow from setup through attendee eng
 
 The intro video at `/home/video` is a fullscreen looping video player designed to run on a booth display monitor to attract attendees and show them how the photobooth works.
 
-- Place your video file in the `assets/` folder (or upload via the Settings panel)
+- Upload your video from the Settings panel, which stores it in `booth-uploads/` so it persists across cloud restarts
 - Set `VIDEO_FILE` in `.env` to the filename (defaults to `get-started.mp4`)
 - The video autoplays on loop with floating BRB, Pause/Play, and Fullscreen buttons
 - To switch videos, change the setting from the Settings panel on `/home` or update `.env`
@@ -251,9 +308,9 @@ Reply with a number or style name.
 
 Users can reply with a number (`3`) or type the style name (`watercolor`). If a user includes a recognized style name in the caption when sending their selfie, the menu is skipped and generation starts immediately.
 
-If no style is specified, the default style is used (cartoon by default, configurable from the Settings panel).
+If no style is specified, the user is shown the style menu unless only one style is active for the event. When only one style is active, that style is selected automatically.
 
-The bot also responds conversationally when users send text-only messages with questions or unusual input (e.g. "what is twilio?", "how does this work?"). Common short messages like "hi" get a fast static response, while longer or more interesting messages get a dynamic AI-generated reply (via gpt-4o-mini) that answers the question and directs the user to send a selfie.
+The bot also responds conversationally when users send text-only messages with questions or unusual input (e.g. "what is twilio?", "how does this work?"). Common short messages like "hi" get a fast static response, while longer or more interesting messages get a dynamic AI-generated reply (via `gpt-5.4-nano` by default) that answers the question and directs the user to send a selfie.
 
 ## Adding or Changing Styles
 
@@ -271,6 +328,12 @@ Art styles can be managed in two ways:
 ```
 
 Styles automatically appear in SMS messages and are available for users to select. Style matching is fuzzy -- it handles extra spaces, hyphens, and case differences.
+
+## Multi-Subject Photos
+
+By default, **Multi-Subject Photos** is set to reject group photos. If scene analysis detects more than one primary human subject, the app sends the configurable `multiSubjectReject` message and refunds the user's usage count.
+
+Change the Multi-Subject Photos mode from **Styles & Art** when an event should allow multiple people in one portrait. Scene analysis still counts the primary subjects and pets so the prompt can preserve the intended subject count.
 
 ## Branding
 
@@ -326,7 +389,7 @@ Before a generated portrait reaches the user, it can pass through an optional re
 | `human` | Portraits park in `queue/review/` until an admin explicitly approves each one from the dashboard or the mobile review URL (guarded by a PIN) | Brand-sensitive events where every output needs eyes |
 | `ai` | The orchestrator model reviews each portrait; clean ones pass, problematic ones are auto-rejected with a "try again" SMS to the user | Medium-trust events — catches obvious failures without requiring a human |
 
-When `reviewMode` is `human` or `ai`, the **Variants Per Review** setting (default `1`, max `4`) controls how many portraits are generated per request. With variants >1, each request fans out to N parallel generations sharing a `parentJobId`, and they surface to the reviewer as a single card showing all variants side by side.
+When `reviewMode` is `human` or `ai`, the **Variants Per Review** setting (default `1`, max `3`) controls how many portraits are generated per request. With variants >1, each request fans out to N parallel generations sharing a `parentJobId`, and they surface to the reviewer as a single card showing all variants side by side.
 
 - In `human` mode, the reviewer picks one of the N variants (the winner goes to the user, losing siblings are marked `SUPERSEDED` and discarded).
 - In `ai` mode, a best-of-N coordinator picks the winner automatically once all siblings are terminal.
@@ -342,9 +405,9 @@ Flipping review mode **off** while items sit in the queue does NOT auto-approve 
 
 The app supports three delivery modes, configurable from the Settings panel under **Delivery & Display**:
 
-- **Print + Digital (local)** -- Portraits are printed on a directly connected printer and sent to the user via MMS after printing completes. Requires a CUPS printer on the server machine. Set `ENABLE_PRINTING=true` in `.env` or toggle in the Settings panel.
-- **Print + Digital (cloud relay)** -- The server runs in the cloud. A relay agent on the event laptop polls for print-ready jobs, downloads images, and prints locally. Set a **Print Relay Key** in the Settings panel to enable. See [Print Relay](#print-relay-cloud-printing) for full setup.
-- **Digital Only** -- Portraits are sent via MMS immediately after AI generation. No printer required. Use this for demos, remote events, or setups without a physical printer. Set `ENABLE_PRINTING=false` and leave the Print Relay Key blank.
+- **Print + Digital (local)** -- Portraits are printed on a directly connected printer and sent to the user via MMS/share link. With immediate digital delivery enabled, delivery happens after generation while printing continues; otherwise it waits for print completion. Requires a CUPS printer on the server machine. Set `ENABLE_PRINTING=true` in `.env` or toggle in the Settings panel.
+- **Print + Digital (cloud relay)** -- The server runs in the cloud. A relay agent on the event laptop polls for print-ready jobs, downloads images, and prints locally. Enable printing and set a **Print Relay Key** in the Settings panel. See [Print Relay](#print-relay-cloud-printing) for full setup.
+- **Digital Only** -- Portraits are sent via MMS or share link immediately after AI generation. No printer required. Use this for demos, remote events, or setups without a physical printer. Set `ENABLE_PRINTING=false` and leave the Print Relay Key blank.
 
 The delivery mode affects the SMS messages users receive (e.g. "head to the booth to pick up your print" vs "we'll text it to you").
 
@@ -388,22 +451,22 @@ Cloud App                              Event Laptop
 │  /api/print-relay/     │  complete   │  Handles: offline      │
 │    jobs/:id/complete   ◄─────────────┤  printers, retries,    │
 │                        │             │  crashes, reconnects   │
-│  sendPrintCompletionMms│             │                        │
-│  (after relay reports) │             │                        │
+│  digital delivery      │             │                        │
+│  usually sent earlier  │             │                        │
 └────────────────────────┘             └────────────────────────┘
 ```
 
 ### Setup -- Step 1: Cloud App
 
-Open the admin Settings panel. Under **Delivery & Display**, enter a **Print Relay Key** (any secret string, e.g. `my-event-2026`). Save settings. This enables the relay API and routes generated portraits to the relay print queue instead of trying to print locally.
+Open the admin Settings panel. Under **Delivery & Display**, choose **Print + Digital** and enter a strong, unique **Print Relay Key** (for example, generate one with `openssl rand -hex 32`). Save settings.
 
-You do NOT need to enable the "Print + Digital" toggle -- the relay key alone is enough.
+The relay key enables and authenticates the relay API. Printing must also be enabled; otherwise generated jobs go straight to `done/` as digital-only jobs and the relay has nothing to claim.
 
 ### Setup -- Step 2: Event Laptop
 
 #### Print Station App (Recommended)
 
-The Print Station is a desktop app in the `relay-app/` directory. Event staff enter the Cloud URL and Relay Key in the UI, select one or more printers from the checklist, and click Connect. No terminal or `.env` files needed. When multiple printers are selected, jobs are distributed automatically across them.
+The Print Station is a desktop app in the `relay-app/` directory. Event staff click **Edit** to enter the Cloud URL and Relay Key, select one or more printers from the checklist, and click **Connect**. New installations leave both credential fields blank. No terminal or `.env` files are needed. When multiple printers are selected, jobs are distributed automatically across them.
 
 **Install and run:**
 
@@ -414,8 +477,8 @@ npm start
 ```
 
 **In the app UI:**
-1. Enter your **Cloud URL** (e.g. `https://your-app.azurecontainerapps.io`)
-2. Enter the **Relay Key** (same one you set in the cloud app's Settings)
+1. Click **Edit** next to **Cloud URL**, enter your cloud URL (e.g. `https://your-app.azurecontainerapps.io`), then lock it again if desired
+2. Click **Edit** next to **Relay Key**, enter the same key you set in the cloud app's Settings, then lock it again if desired
 3. Select one or more **Printers** from the checklist (or leave all unchecked for auto-detect)
 4. Click **Connect**
 
@@ -430,7 +493,7 @@ cd relay-app
 npm run make
 ```
 
-This creates a `.zip` in `out/make/zip/darwin/arm64/` (~99 MB). Send it to event staff -- they unzip, open the app, and configure in the UI.
+This creates the standard Forge zip and an event-staff bundle at `out/make/Twilio Print Station <version> (start here).zip`. Send the **`(start here)`** zip to staff. It contains the `.app`, `READ ME FIRST.txt`, and `Open Twilio Print Station.command` for the first macOS launch.
 
 See **[relay-app/README.md](../relay-app/README.md)** for full documentation including UI overview, features, and project structure.
 
@@ -448,7 +511,7 @@ Create a `.env` file:
 
 ```sh
 PRINT_RELAY_URL=https://your-cloud-app.example.com
-PRINT_RELAY_KEY=my-event-2026
+PRINT_RELAY_KEY=<same-random-secret-configured-in-the-cloud-app>
 ```
 
 Start the relay:
@@ -460,12 +523,12 @@ pnpm relay
 **Verify** -- You should see:
 
 ```
-Connected to cloud app (printing: false, size: 5x7, quality: high)
+Connected to cloud app (printing: true, size: 5x7, quality: high)
 Printer found: EPSON_ET_8550_Series
 Polling for print jobs...
 ```
 
-Text a selfie to your Twilio number. The relay should claim the job, download the image, and print it. After printing, the cloud app sends the MMS.
+Text a selfie to your Twilio number. The relay should claim the job, download the image, and print it. With the default **Send digital copy immediately** setting, the user receives the digital portrait after generation and print completion suppresses duplicate MMS. If that setting is disabled, the cloud app sends the MMS after printing succeeds.
 
 ### CLI options
 
@@ -481,16 +544,16 @@ Text a selfie to your Twilio number. The relay should claim the job, download th
 ### Reliability
 
 - **Network drops** -- The relay keeps polling. When the network comes back, it reconnects automatically. No manual intervention needed.
-- **Relay crash** -- Print Station v1.1+ posts a heartbeat to the cloud every 20s while it holds a job. If the cloud sees no heartbeat for >60s, it moves the job back to `ready/` immediately. Older v1.0 relays (no heartbeats) fall back to a 15-minute `printingAt`-age threshold. Either way, the next relay to poll claims the recovered job.
+- **Relay crash** -- Print Station v1.1+ posts a heartbeat to the cloud every 20s while it holds a job. If the cloud sees no heartbeat for >60s after the first heartbeat, it moves the job back to `ready/`. A crash before the first heartbeat, and older v1.0 relays without heartbeats, fall back to a 15-minute `printingAt`-age threshold. Either way, the next relay to poll claims the recovered job.
 - **Printer offline** -- If the printer is offline or stopped, the relay detects this within seconds and reports failure. The cloud app re-queues the job for retry (up to 3 retries).
-- **Multiple printers** -- Select multiple printers in the Print Station app or use `--printers "A,B"` in the CLI to distribute jobs across printers automatically. Each printer gets its own worker. If neither is specified, the relay auto-detects all healthy printers.
+- **Multiple printers** -- Select multiple printers in the Print Station app or use `--printers "A,B"` in the CLI to distribute jobs across printers automatically. Each selected/listed printer gets its own worker. In the Print Station app, leaving every printer unchecked starts one unfiltered auto worker that picks the first healthy printer; for production multi-printer setups, explicitly check the printers you want to use. In the CLI, omitting printer flags auto-detects all healthy printers.
 - **Multiple agents** -- You can run multiple relay agents with the same key for redundancy. They race to claim jobs; only one wins each job. The others gracefully skip it.
 - **Image missing** -- If the output image doesn't exist on the server (e.g. disk error), the relay is told to skip the job and it won't retry for 1 hour.
 - **Graceful shutdown** -- Press Ctrl+C to stop the relay cleanly.
 
 ### Print settings
 
-The relay reads print settings (size, quality) from a cached `/status` response. On startup it fetches once; a background timer refreshes every 60 seconds. Admin changes to print size or quality in the Settings panel take effect on the relay within ~60s -- no relay restart needed, and transient cloud outages don't block prints mid-job.
+The relay reads fallback print settings from a cached `/status` response, while each claimed job carries its own snapshotted size, orientation, quality, and validated custom flags. Print Station 1.3.1 supports Epson ET-8550 and DNP DS-RX1 printer-specific CUPS mappings; transient cloud outages do not change an already-claimed job's profile.
 
 ## Cloud Deployment
 
@@ -521,10 +584,12 @@ The startup script (`scripts/start.sh`) automatically symlinks these directories
 | `queue/` | Job files in all pipeline stages |
 | `downloads/` | Input photos and generated portraits |
 | `brand-references/` | Brand reference images for AI generation |
+| `style-references/` | Style reference images for AI generation |
+| `background-references/` | Background reference images for AI generation |
 | `templates/` | Frame overlay PNGs |
-| `assets/` | Videos and media files |
+| `booth-uploads/` | Uploaded booth videos, QR images, and display media |
 
-Set `DATA_MOUNT` to customize the mount path (defaults to `/app/appdata`).
+Set `DATA_MOUNT` to customize the mount path (defaults to `/app/appdata`). The Docker build intentionally excludes local `booth-uploads/`, `brand-references/`, `style-references/`, and `background-references/`; upload or seed those files into persistent storage after deployment.
 
 ### Azure Container Apps
 
@@ -614,6 +679,8 @@ Messages support `{variable}` interpolation for dynamic values. Available variab
 | `{styleName}` | Delivery messages | Name of the art style used |
 
 Lead capture survey fields (first name, last name, country, email, company, job title) can each be toggled on/off with custom prompts and error messages.
+
+For WhatsApp and other channels that require Twilio Content Templates, the Settings panel includes a **Content Templates** group. Enter an `HX...` Content SID for each message key that needs template delivery. If no Content SID is configured for a key, the app falls back to the plain-text body for that message. Media attachments are only sent for plain-body sends because Twilio Content Template sends are handled separately.
 
 All message customizations are stored in `data/settings.json` and take effect immediately.
 
@@ -711,7 +778,7 @@ Configure the message from the Settings panel on the home page under **Engagemen
 
 The Settings panel on the home page (`/home`) lets admins change all app configuration at runtime without editing `.env` or restarting the server. Changes take effect immediately and are persisted to `data/settings.json`.
 
-The settings panel is organized into seven sections:
+The settings panel is organized into eight sections:
 
 **Event & Operations** -- Event Name (combo-box with existing events, saved-profile badges, or type a new name to create one -- selecting auto-saves and switches), Max Prints Per User, Admin Phone Numbers, Max Concurrent Generations, Queue Control (pause/resume), Manual Review toggle, Review PIN, Break Screen Message
 
@@ -721,13 +788,13 @@ The settings panel is organized into seven sections:
 
 **Backgrounds** -- Default Background Prompt, optional Background Selection Menu with configurable choices (name + prompt pairs), background menu SMS messages
 
-**Delivery & Display** -- Delivery Mode (Print + Digital or Digital Only), Printer selection, Print Size (4x6, 5x7, 8x10), Print Quality (Standard, High, Max), Custom Print Flags, Print Relay Key (for cloud-to-local printing), Booth Display Mode (Video / Static Page / None), Intro Video, Static Page settings (headline, subline, QR code, steps, legal text), Terms URL
+**Delivery & Display** -- Delivery Mode (Print + Digital or Digital Only), Printer selection, Print Size (4x6, 6x4 Landscape, 5x7, 8x10), Print Quality (Standard, High, Max), Custom Print Flags, Print Relay Key (for cloud-to-local printing), Booth Display Mode (Video / Static Page / None), Intro Video, Static Page settings (headline, subline, QR code, steps, legal text), Terms URL
 
 **Engagement & Messages** -- Lead Capture (enable/disable, before/after timing, survey messages and fields), Promotional Message, NPS Survey toggle and delay, SMS Messages organized by category (Welcome & Onboarding, Style Selection, Brand Selection, Background Selection, Processing & Delivery, Error Responses, Lead Capture, NPS) with `{variable}` interpolation support. See [Lead Capture](#lead-capture) for details.
 
 **Social Sharing** -- Enable Share Links toggle, SMS Share Page Only toggle, dub.co API Key and Short Domain (global), Slug Prefix (per-event), per-platform toggles and config (X/Twitter, LinkedIn, Instagram), SMS Share Text template, Share Page Title and Description, Personalized Title template. See [Social Sharing](#social-sharing) for details.
 
-**API Keys** -- Twilio credentials (Phone Number, Messaging Service SID, Account SID, Auth Token) and OpenAI configuration (API Key, Orchestrator Model, Vision Light Model, Image Generation Model, Smart Reply Model). These override values from `.env`. Setting a Messaging Service SID switches outbound routing from the direct Phone Number to the service's sender pool.
+**API Keys** -- Twilio credentials (SMS phone number, SMS Messaging Service SID, WhatsApp sender, WhatsApp Messaging Service SID, Account SID, Auth Token) and OpenAI configuration (API Key, Orchestrator Model, Vision Light Model, Image Generation Model, Smart Reply Model, Reference Analysis Model). These override values from `.env`. Setting a Messaging Service SID switches outbound routing from the direct sender to the service's sender pool.
 
 Settings are stored as overrides on top of `.env` defaults. Per-event settings are saved automatically when switching events (see [Switching Events](#switching-events)). Click "Reset to Defaults" to revert all overrides for the current event.
 
@@ -755,7 +822,7 @@ This only imports style prompt overrides (the text you've customized for each ar
 
 ## Switching Events
 
-Settings are saved and restored **per event**. Each event keeps its own complete settings profile -- art styles, brand references, prompts, SMS messages, lead capture, background config, and all other creative settings. Infrastructure settings (API keys, admin phones, printers, concurrency) are global and shared across all events.
+Settings are saved and restored **per event**. Each event keeps its own settings profile -- art styles, brand references, prompts, SMS messages, lead capture, background config, delivery/display options, and most operator controls. Only credentials and shared infrastructure keys are global.
 
 ### How it works
 
@@ -790,14 +857,14 @@ All creative and event-specific settings, including:
 
 ### What stays global
 
-- Twilio credentials (Account SID, Auth Token, Phone Number)
-- OpenAI credentials (API Key, model selections)
-- Admin phone numbers
-- Printer selection
-- Max concurrent generations
-- Queue pause state
-- Custom brands library (brand definitions are shared; per-event controls are disabled brands and prompt overrides)
+- Twilio credentials and sender IDs (Account SID, Auth Token, SMS sender, SMS Messaging Service SID, WhatsApp sender, WhatsApp Messaging Service SID)
+- OpenAI credentials and model selections
+- Print Relay Key
+- Custom brands library (brand definitions are shared; per-event controls are disabled brands, scene choices, and prompt overrides)
+- Usage overrides
 - dub.co credentials (API Key, Short Domain, Folder ID)
+
+Admin phones, printer selection, concurrency, queue pause state, delivery mode, and most creative/operator controls are per-event in the current settings model.
 
 ### Brand reference images
 
@@ -911,9 +978,11 @@ twilio-cartoon-printer/
 │   └── start.sh          Docker entrypoint -- symlinks dirs to persistent storage
 ├── docs/
 │   └── GUIDE.md          Detailed documentation (this file)
-├── assets/               Video and media files for the home page
-│   └── get-started.mp4   Attract loop video (gitignored)
-├── brand-references/     Brand reference images for AI generation
+  ├── assets/               Shipped static assets, fonts, CSS, and in-image media
+  ├── booth-uploads/        Uploaded booth videos, QR images, and display media
+  ├── brand-references/     Brand reference images for AI generation
+  ├── style-references/     Style reference images for AI generation
+  ├── background-references/ Background reference images for AI generation
 ├── templates/            Frame overlays (PNGs with transparent center)
 │   └── signal_sf.png     Example: SIGNAL SF branded frame
 ├── downloads/            Generated images, organized by event name
@@ -938,7 +1007,7 @@ twilio-cartoon-printer/
 ├── .env                  API keys, printer config, event settings
 ├── .env.example          Template with all available environment variables
 ├── Dockerfile            Production container image
-├── .gitignore            Excludes downloads/, queue/, .env, node_modules/, data/leads.json
+├── .gitignore            Excludes local runtime data, secrets, logs, and dependencies
 ├── package.json
 └── pnpm-lock.yaml
 ```

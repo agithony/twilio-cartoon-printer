@@ -5,7 +5,7 @@ const { RelayEngine, listPrinters } = require("./relay");
 const { copyRelayImage, isRelayTempFile } = require("./job-files");
 
 const store = new Store({
-    defaults: { url: "", key: "", printers: [], dryRun: false },
+    defaults: { url: "", key: "", printers: [], dryRun: false, outputDirectory: "" },
 });
 
 // Migrate old "printer" (string) → "printers" (array)
@@ -23,10 +23,10 @@ let relays = new Map(); // printerName -> RelayEngine
 function createWindow() {
     mainWindow = new BrowserWindow({
         width: 480,
-        height: 640,
+        height: 720,
         resizable: true,
         minWidth: 400,
-        minHeight: 500,
+        minHeight: 600,
         title: "Twilio Print Station",
         webPreferences: {
             preload: path.join(__dirname, "preload.js"),
@@ -53,11 +53,28 @@ ipcMain.handle("save-config", (_, config) => {
     store.set("key", config.key || "");
     store.set("printers", Array.isArray(config.printers) ? config.printers : []);
     store.set("dryRun", !!config.dryRun);
+    store.set("outputDirectory", config.outputDirectory || "");
     return store.store;
 });
 
 ipcMain.handle("list-printers", async () => {
     return await listPrinters();
+});
+
+ipcMain.handle("choose-output-directory", async () => {
+    const result = await dialog.showOpenDialog(mainWindow, {
+        title: "Choose portrait output folder",
+        defaultPath: store.get("outputDirectory") || app.getPath("pictures"),
+        properties: ["openDirectory", "createDirectory"],
+    });
+    if (result.canceled || !result.filePaths[0]) return null;
+    store.set("outputDirectory", result.filePaths[0]);
+    return result.filePaths[0];
+});
+
+ipcMain.handle("set-output-directory", (_, outputDirectory) => {
+    store.set("outputDirectory", outputDirectory || "");
+    return store.get("outputDirectory");
 });
 
 ipcMain.handle("start-relay", (_, config) => {
@@ -95,6 +112,7 @@ ipcMain.handle("start-relay", (_, config) => {
             key: config.key,
             printer: printer,
             dryRun: !!config.dryRun,
+            outputDirectory: config.outputDirectory || "",
             interval: 5,
         });
         relays.set(printer, engine);
@@ -109,9 +127,8 @@ ipcMain.handle("stop-relay", () => {
 });
 
 // Reprint a completed or failed job. Prefer the engine for the row's printer;
-// all engines share the same cloud URL and key.
-// If nothing is connected,
-// tell the renderer so it can prompt the operator to Connect first.
+// all engines share the same cloud URL and key. If nothing is connected, tell
+// the renderer so it can prompt the operator to connect first.
 ipcMain.handle("reprint-job", async (_, filename, printerName) => {
     const engine = relays.get(printerName || "") || relays.values().next().value;
     if (!engine) return { ok: false, error: "Connect to the cloud first" };

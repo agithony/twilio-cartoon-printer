@@ -77,8 +77,14 @@ jobs:
             --name ${{ env.FILE_SHARE }} \
             --account-name ${{ env.STORAGE_ACCOUNT }} \
             --account-key "$STORAGE_KEY" \
-            --quota 10 \
+            --quota 100 \
             --output none 2>/dev/null || true
+          az storage share update \
+            --name ${{ env.FILE_SHARE }} \
+            --account-name ${{ env.STORAGE_ACCOUNT }} \
+            --account-key "$STORAGE_KEY" \
+            --quota 100 \
+            --output none
 
       - name: Ensure Container Apps Environment exists
         run: |
@@ -134,12 +140,12 @@ jobs:
             --account-name '${{ env.STORAGE_ACCOUNT }}' \
             --query '[0].value' -o tsv)" >> "$GITHUB_OUTPUT"
 
-      - name: Ensure required tags on Container App (tenant policy)
+      - name: Ensure Container App exists with required tags (tenant policy)
         run: |
           # The tenant 'tag-enforcement-policy' blocks any write to the Container
-          # App resource unless required tags are present. Merge them in before
-          # 'secret set' runs. Skip cleanly if the app doesn't exist yet — it
-          # will be created with tags in the Deploy step below.
+          # App resource unless required tags are present. Existing apps retain
+          # the normal deploy path. A new app is bootstrapped at zero replicas so
+          # its FQDN exists before secrets and the full revision are configured.
           APP_ID=$(az containerapp show \
             --name ${{ env.APP_NAME }} \
             --resource-group ${{ env.RESOURCE_GROUP }} \
@@ -151,7 +157,21 @@ jobs:
               --tags created_by=github-actions managed_by=twilio-cartoon-printer-ci \
               --output none
           else
-            echo "Container App does not exist yet — tags will be applied on create."
+            echo "Bootstrapping new container app..."
+            az containerapp create \
+              --name ${{ env.APP_NAME }} \
+              --resource-group ${{ env.RESOURCE_GROUP }} \
+              --environment ${{ env.ENV_NAME }} \
+              --image ${{ steps.acr-creds.outputs.server }}/${{ env.IMAGE_TAG }} \
+              --ingress external \
+              --target-port 8080 \
+              --registry-server ${{ steps.acr-creds.outputs.server }} \
+              --registry-username ${{ steps.acr-creds.outputs.username }} \
+              --registry-password "${{ steps.acr-creds.outputs.password }}" \
+              --min-replicas 0 \
+              --max-replicas 1 \
+              --tags created_by=github-actions managed_by=twilio-cartoon-printer-ci \
+              --output none
           fi
 
       - name: Set secrets
@@ -168,6 +188,7 @@ jobs:
               "google-client-id=${{ secrets.GOOGLE_CLIENT_ID }}" \
               "google-client-secret=${{ secrets.GOOGLE_CLIENT_SECRET }}" \
               "session-secret=${{ secrets.SESSION_SECRET }}" \
+              "print-relay-key=${{ secrets.PRINT_RELAY_KEY }}" \
             --output none
 
       - name: Deploy Container App
@@ -187,11 +208,15 @@ jobs:
           TWILIO_TEMPLATE_PROMO_PT_BR: ${{ vars.TWILIO_TEMPLATE_PROMO_PT_BR }}
           TWILIO_TEMPLATE_NUDGE_PT_BR: ${{ vars.TWILIO_TEMPLATE_NUDGE_PT_BR }}
         run: |
-          # Resolve BASE_URL for existing apps; new apps get it on first update
+          # The bootstrap step guarantees a real FQDN even on the first deploy.
           FQDN=$(az containerapp show \
             --name ${{ env.APP_NAME }} \
             --resource-group ${{ env.RESOURCE_GROUP }} \
-            --query properties.configuration.ingress.fqdn -o tsv 2>/dev/null || true)
+            --query properties.configuration.ingress.fqdn -o tsv)
+          if [ -z "$FQDN" ]; then
+            echo "Could not resolve container app FQDN."
+            exit 1
+          fi
 
           # Render YAML template with image, env vars, and volume mount
           export APP_NAME="${{ env.APP_NAME }}"
@@ -212,35 +237,21 @@ jobs:
           # Restrict substitution to our known vars so no other ${...} in the template is touched.
           envsubst '${APP_NAME} ${CONTAINER_IMAGE} ${BASE_URL} ${ALLOWED_EMAILS} ${TWILIO_WHATSAPP_NUMBER} ${TWILIO_WHATSAPP_MESSAGING_SERVICE_SID} ${TWILIO_TEMPLATE_DELIVERY} ${TWILIO_TEMPLATE_RATING} ${TWILIO_TEMPLATE_PROMO} ${TWILIO_TEMPLATE_NUDGE} ${TWILIO_TEMPLATE_DELIVERY_PT_BR} ${TWILIO_TEMPLATE_RATING_PT_BR} ${TWILIO_TEMPLATE_PROMO_PT_BR} ${TWILIO_TEMPLATE_NUDGE_PT_BR}' < .github/containerapp.yaml > /tmp/containerapp.yaml
 
-          if az containerapp show --name ${{ env.APP_NAME }} --resource-group ${{ env.RESOURCE_GROUP }} 2>/dev/null; then
-            echo "Updating existing container app..."
-            az containerapp registry set \
-              --name ${{ env.APP_NAME }} \
-              --resource-group ${{ env.RESOURCE_GROUP }} \
-              --server ${{ steps.acr-creds.outputs.server }} \
-              --username ${{ steps.acr-creds.outputs.username }} \
-              --password "${{ steps.acr-creds.outputs.password }}" \
-              --output none
+          echo "Updating container app registry credentials..."
+          az containerapp registry set \
+            --name ${{ env.APP_NAME }} \
+            --resource-group ${{ env.RESOURCE_GROUP }} \
+            --server ${{ steps.acr-creds.outputs.server }} \
+            --username ${{ steps.acr-creds.outputs.username }} \
+            --password "${{ steps.acr-creds.outputs.password }}" \
+            --output none
 
-            echo "Deploying image, env vars, and volume mount in a single revision..."
-            az containerapp update \
-              --name ${{ env.APP_NAME }} \
-              --resource-group ${{ env.RESOURCE_GROUP }} \
-              --yaml /tmp/containerapp.yaml \
-              --output none
-          else
-            echo "Creating new container app..."
-            az containerapp create \
-              --name ${{ env.APP_NAME }} \
-              --resource-group ${{ env.RESOURCE_GROUP }} \
-              --environment ${{ env.ENV_NAME }} \
-              --yaml /tmp/containerapp.yaml \
-              --registry-server ${{ steps.acr-creds.outputs.server }} \
-              --registry-username ${{ steps.acr-creds.outputs.username }} \
-              --registry-password "${{ steps.acr-creds.outputs.password }}" \
-              --tags created_by=github-actions managed_by=twilio-cartoon-printer-ci \
-              --output none
-          fi
+          echo "Deploying image, env vars, and volume mount in a single revision..."
+          az containerapp update \
+            --name ${{ env.APP_NAME }} \
+            --resource-group ${{ env.RESOURCE_GROUP }} \
+            --yaml /tmp/containerapp.yaml \
+            --output none
 
       - name: Resolve app FQDN
         id: fqdn

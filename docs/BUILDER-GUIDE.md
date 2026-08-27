@@ -61,10 +61,10 @@ There is no database, no Redis, no message broker. **Everything is files on disk
 
 | Layer | Choice | Why |
 |---|---|---|
-| **Runtime** | Node.js 20 + Express 5 | Easy async I/O for a lot of concurrent small operations (downloads, API calls, file renames). Low operational overhead. |
+| **Runtime** | Node.js 22+ + Express 5 | Easy async I/O for a lot of concurrent small operations (downloads, API calls, file renames). Low operational overhead. |
 | **SMS/MMS** | Twilio | The obvious choice — it's literally in the product name. Handles the carrier mess for us. |
 | **AI image generation** | OpenAI (`gpt-image-2` primarily, `gpt-image-1.5` for transparent-background mode) | Best quality for stylized portraits with character preservation. |
-| **AI orchestration** | OpenAI (`gpt-5.4` family) | For content moderation, face detection, scene analysis, AI review, and smart replies to text-only messages. |
+| **AI orchestration** | OpenAI (`gpt-5.5` by default, `gpt-5.4-nano` for lightweight vision/reply work) | For content moderation-adjacent checks, face detection, scene analysis, AI review, reference analysis, and smart replies to text-only messages. |
 | **Image processing** | Sharp (libvips) | Fast, well-maintained, handles weird phone JPEGs gracefully. |
 | **Printing** | CUPS (`lp` command via `child_process`) | Built into macOS/Linux, already knows how to talk to every printer your OS knows. |
 | **Queue** | Filesystem directories (`queue/pending/`, `queue/generating/`, etc.) | Atomic renames across directories = atomic state transitions. No extra infrastructure. |
@@ -93,16 +93,16 @@ A few are worth explaining because they drive everything else.
 This is the single most useful mental model. Follow one photo from text message to delivery.
 
 1. **Inbound SMS/MMS.** User texts a selfie to the Twilio number. Twilio POSTs to `/inbound`.
-2. **Message routing.** The webhook handler decides what kind of message this is:
+2. **Message routing.** The public webhook handler decides what kind of message this is:
    - Pure text with no image → route to style menu logic, smart reply, or menu response
    - Image + text → check if caption picks a style directly, else show menu
    - A reply to a menu → advance the user's state (style chosen → brand menu → background menu → enqueue)
 3. **Lead capture gate (optional).** If lead capture is configured for "before," the user answers a short SMS survey first; their photo is held in memory. For "after," the portrait is generated but the completion SMS is held until they finish the survey.
 4. **Enqueue.** A job file is written to `queue/pending/`. It's named with a timestamp prefix (e.g. `20260502_143000.json`). Multi-variant mode writes N files with a shared `parentJobId`.
 5. **Generation worker picks it up.** Every second, the worker scans `pending/` and claims jobs (up to `maxConcurrentGeneration`) by renaming them to `generating/`. The rename is atomic — two workers can't claim the same job.
-6. **Pipeline runs** (see the next section). On success, the output lands in `downloads/<eventName>/<prefix>_output.png`, and the job moves to one of three places based on configuration: `review/` (human or AI review), `ready/` (to print), or `done/` (digital-only).
+6. **Pipeline runs** (see the next section). On success, the output lands in `downloads/<eventName>/<prefix>_output.png`, and the job moves to one of three places based on configuration: `review/` (human or AI review), `ready/` (printing enabled), or `done/` (digital-only).
 7. **Printing (if enabled).** Either the local print worker (local mode) or the Print Station relay (cloud mode) picks up jobs from `ready/`, prints them, and moves them to `done/`.
-8. **SMS delivery.** Once the job is complete, the user gets an MMS (or text-only share link, depending on settings).
+8. **SMS delivery.** In Print + Digital mode, immediate digital delivery is enabled by default, so the user usually receives the MMS or share link right after generation while printing continues. If that setting is disabled, delivery waits for print completion. Digital-only jobs deliver immediately after generation.
 9. **Optional follow-ups.** Promo message 15 seconds later; NPS survey after their last allowed portrait.
 
 Each step is fully independent. If the printer is down, generations keep queuing. If OpenAI is rate-limited, already-generated jobs keep printing. The filesystem queue decouples everything.
@@ -170,7 +170,7 @@ The cloud side exposes `/api/print-relay/*` endpoints behind a shared secret:
 
 ## The admin surface
 
-Five pages, each mounted at a different route:
+The main routes are:
 
 | Route | What it's for |
 |---|---|
@@ -179,10 +179,17 @@ Five pages, each mounted at a different route:
 | `/outreach` | User directory with broadcast SMS, raffle draws, lead export. |
 | `/photogallery` | Photo book — animated flip-through gallery of portraits for booth displays. |
 | `/home/combo` | Split-screen booth display (intro video + photo book side by side). |
+| `/review` | Token/PIN-based review flow for staff. |
+| `/api/generate` | Programmatic generation endpoint used by kiosk/API clients. |
+| `/kiosk` | Browser kiosk submission surface. |
+| `/eval` | Prompt experiment and evaluation tools. |
+| `/api/print-relay/*` | Relay polling, claim, heartbeat, image, complete, and reprint API. |
+| `/auth/*` | Google OAuth login/callback/logout. |
+| `/healthz` | Health check used by CI/cloud probes. |
 
-**The settings panel is the heart of the app for operators.** Seven collapsible sections: Event & Operations, Styles & Art, Branding, Backgrounds, Delivery & Display, Engagement & Messages, Social Sharing, API Keys. Everything in there writes to `data/settings.json` and takes effect immediately — no restart. Per-event profiles save/restore the whole set when you switch events.
+**The settings panel is the heart of the app for operators.** Eight collapsible sections: Event & Operations, Styles & Art, Branding, Backgrounds, Delivery & Display, Engagement & Messages, Social Sharing, API Keys. Everything in there writes to `data/settings.json` and takes effect immediately — no restart. Per-event profiles save/restore the whole set when you switch events.
 
-**Authentication is trust-the-network.** The admin pages have no login. They rely on the URL being unguessable (which for a personal deployment is fine) and/or a review PIN for staff-level access (that lets someone approve reviews without seeing the full admin). Cloud deployments should put the whole thing behind a VPN or IP allowlist — this is a thing to know, not a bug. It's explicit: the app was never built for public admin access.
+**Authentication is Google OAuth.** Non-public admin routes are gated by `requireAuth()`. Without `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET`, admin pages return `503` and admin API calls return `401`. Verified `@twilio.com` Google accounts are allowed by default; `ALLOWED_EMAILS` adds individual non-Twilio operators. Public routes remain public by design: `/inbound`, `/healthz`, `/auth/*`, `/review/*`, `/s/*`, images/assets/booth uploads, relay endpoints protected by `x-relay-key`, and read-only `GET` photo gallery routes.
 
 ## Deployment
 
@@ -199,9 +206,9 @@ The whole thing takes ~3 minutes from merge to live. The container config (CPU, 
 
 **Persistent storage gotcha worth knowing.** The `scripts/start.sh` startup script symlinks certain directories on the container's filesystem to the Azure Files mount at `/app/appdata`. This is how settings, queue, and downloads survive container restarts. One directory (`assets`) was in that list accidentally and caused a multi-week bug where CSS changes never took effect — the first deploy's CSS got copied to the share, and every subsequent deploy's CSS was refused by `cp -n` ("don't overwrite"). Fixed by removing `assets` from the list; now static files are served straight from the image.
 
-**Secrets.** Set via `az containerapp secret set` in the deploy workflow, referenced in containerapp.yaml via `secretRef`. Twilio credentials, OpenAI API key, Google OAuth (unused currently), session secret. Rotating a secret = updating the GitHub Actions secret + re-running the deploy.
+**Secrets.** Set via `az containerapp secret set` in the deploy workflow, referenced in containerapp.yaml via `secretRef`. Twilio credentials, OpenAI API key, Google OAuth, and session secret all flow this way. Rotating a secret = updating the GitHub Actions secret + re-running the deploy.
 
-**Two Docker images, one codebase.** The main server image (`Dockerfile`, root) runs the app. The Electron Print Station is built separately with `electron-forge` in `relay-app/` and distributed as a `.zip` — not containerized, not in CI, built on-demand with `pnpm run make` when you need a new release.
+**Server container plus desktop relay.** The main server image (`Dockerfile`, root) runs the app. The Electron Print Station is built separately with `electron-forge` in `relay-app/`. The `relay-release.yml` workflow builds a macOS release when the relay app version changes and publishes the `Twilio Print Station <version> (start here).zip` bundle for event staff.
 
 ## Design decisions worth knowing
 
@@ -242,7 +249,7 @@ A: It's really their face. The image model (OpenAI's gpt-image-2 edit endpoint) 
 A: Typically 30-60 seconds. OpenAI's image model is the bottleneck. If the user picked a style or a brand menu, add a few seconds of SMS back-and-forth on top.
 
 **Q: Can users send any photo, or does it have to be a selfie?**
-A: Any photo with a face. The face-detection step will reject photos without a clear face. Scene analysis handles group photos — a photo of two people produces a portrait of two people, the prompt is dynamically adjusted to say "exactly 2 humans in the output."
+A: Any photo with a clear face can pass face detection. By default, group photos are rejected by the Multi-Subject Photos setting (`multiSubjectMode: "reject"`). If the event changes that mode to allow multiple subjects, scene analysis counts the primary people and pets so the prompt preserves the intended subject count.
 
 **Q: What if someone sends an inappropriate photo?**
 A: Content moderation runs first, before generation. Flagged photos get an apologetic SMS and don't cost the user a print. OpenAI's own content policy also blocks certain generations at the model level.
@@ -259,7 +266,7 @@ A: Text selfie → (optional) lead capture survey → style menu ("1. cartoon, 2
 A: Booth signage. The `/home/panel` page generates a branded instruction screen with a QR code that reveals the Twilio number when scanned. You run that on a monitor at the booth.
 
 **Q: What happens if a user types gibberish or asks a question instead of picking a style?**
-A: The app uses a smaller AI model (gpt-5.4-nano) to generate a conversational response. If they ask "what is twilio?" they get a real answer. If they say "hi", they get the style menu again. Short common phrases have static responses for speed.
+A: The app uses a smaller AI model (`gpt-5.4-nano` by default) to generate a conversational response. If they ask "what is twilio?" they get a real answer. If they say "hi", they get the style menu again. Short common phrases have static responses for speed.
 
 **Q: Do users have to choose a style every time?**
 A: No — they can include the style in the photo caption ("make me anime"). If they do, the style menu is skipped. If only one style is enabled for the event, it's auto-selected. Enabled brand and background menus are still shown with one choice so the user remains in control.
@@ -311,7 +318,7 @@ A: v1.1+ Print Stations send a heartbeat to the cloud every 20 seconds while the
 A: Yes — they all use the same relay key. Jobs race: first to claim wins. Useful for redundancy (backup laptop) or scale (two laptops, different printers).
 
 **Q: What if I need to update the Print Station?**
-A: Download the new `.zip` from `relay-app/out/make/...` (built with `pnpm run make`). Unzip, replace the old app. Config is preserved.
+A: Download the latest **`(start here)`** zip from GitHub Releases. Unzip it and replace the old app. Config is preserved.
 
 **Q: Does the cloud app require Azure?**
 A: No. The Dockerfile is standard. You can run it on Fly.io, Railway, Render, Cloud Run, AWS ECS, anywhere that runs a Docker container with persistent volume mounts. Azure is just what's currently set up.
@@ -339,10 +346,10 @@ A: `/outreach` → Lead Capture panel → Download CSV. All survey fields plus p
 A: `/home` → Settings → Styles & Art → Add Custom Style. Give it a name and a prompt. Live immediately. Existing built-in styles are editable too, with a reset button.
 
 **Q: How do I switch between different events?**
-A: Change the Event Name field in settings. Picking an existing event from the dropdown auto-saves the current event's settings and loads that event's settings. Everything (styles, brands, messages, etc.) is per-event. Global things (API keys, printers, admin phones) stay put.
+A: Change the Event Name field in settings. Picking an existing event from the dropdown auto-saves the current event's settings and loads that event's settings. Most operator and creative settings are per-event. Credentials, model selections, the print relay key, the shared custom-brand library, usage overrides, and dub.co credentials stay global.
 
 **Q: What's the difference between global and per-event settings?**
-A: Creative stuff (styles, brands, backgrounds, SMS messages, booth display) is per-event — each event has its own profile. Infrastructure (Twilio/OpenAI credentials, admin phones, printer config, concurrency) is global — shared across all events.
+A: Most creative and operator controls are per-event — styles, brand/background selections, SMS messages, booth display, delivery mode, printer selection, admin phones, concurrency, and queue pause state. Global settings are limited to credentials/model choices, the print relay key, the shared custom-brand library, usage overrides, and dub.co credentials.
 
 **Q: How do I change the SMS messages users see?**
 A: Settings → Engagement & Messages → SMS Messages. Every message the app sends is editable. `{variable}` interpolation works for dynamic values like `{eventName}`, `{styleName}`, `{firstName}`.
@@ -362,7 +369,7 @@ A: The admin UI is a handful of low-traffic pages. Adding a framework would mean
 A: Simplicity. Webhook, workers, dashboard, all share memory. You can see the state by looking at one PID. If you split workers into separate services you'd add deployment complexity and inter-service communication for questionable gain. The in-process approach limits horizontal scale, but that's a concession, not an oversight.
 
 **Q: Is the app safe to expose to the internet?**
-A: The `/inbound` webhook is; Twilio authenticates requests. The admin pages (`/home`, `/dashboard`, `/outreach`) have no login. In cloud deployments, the public URL should be treated as semi-secret. For stricter setups, put it behind a VPN, reverse proxy with basic auth, or IP allowlist. Adding real auth is on the "nice to have" list, not "required."
+A: Admin pages are protected by Google OAuth, and relay APIs require `x-relay-key`. The `/inbound` webhook is public and the current app does not validate `X-Twilio-Signature`, so only point trusted Twilio senders at it or add signature validation before using it in a higher-risk environment. Share pages and generated image routes are public by design.
 
 **Q: Are user phone numbers and photos stored permanently?**
 A: Photos yes — `downloads/<eventName>/<prefix>_input.jpg` and `<prefix>_output.png` stick around. Phone numbers are stored in job files, lead data, raffle data, NPS scores. Nothing is auto-deleted. For a production-grade retention policy, you'd need to add explicit cleanup — not implemented.
@@ -386,8 +393,3 @@ A: Hard-refresh the browser (Cmd+Shift+R) to bust the 5-minute browser cache. If
 
 **Q: OpenAI is returning "Invalid image file or mode" errors for one user's photo.**
 A: The code auto-retries once with a Sharp re-encode, which fixes most cases (especially iPhone Smart HDR). If it still fails, the user's photo has a format we can't recover — ask them to take a new photo, preferably from a different device, or toggle their iPhone camera to "Most Compatible" format.
-
-
-
-
-

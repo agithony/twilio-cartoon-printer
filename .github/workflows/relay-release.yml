@@ -56,7 +56,7 @@ jobs:
         if: steps.check.outputs.exists == 'false'
         uses: actions/setup-node@v6
         with:
-          node-version: 20
+          node-version: 22
 
       - name: Install relay app dependencies
         if: steps.check.outputs.exists == 'false'
@@ -67,6 +67,16 @@ jobs:
         if: steps.check.outputs.exists == 'false'
         working-directory: relay-app
         run: npm run make
+
+      - name: Smoke test packaged app and ad-hoc signature
+        if: steps.check.outputs.exists == 'false'
+        run: |
+          APP=$(find "$PWD/relay-app/out" -type d -name "Twilio Print Station.app" -print -quit)
+          if [ -z "$APP" ]; then
+            echo "::error::Packaged Twilio Print Station.app not found"
+            exit 1
+          fi
+          PRINT_STATION_APP="$APP" node --test test/print-station-package-smoke.test.js
 
       - name: Locate the "(start here)" bundle
         if: steps.check.outputs.exists == 'false'

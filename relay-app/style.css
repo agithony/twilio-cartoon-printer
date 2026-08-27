@@ -169,6 +169,18 @@ html[data-theme="light"] .theme-toggle .icon-moon { display: block; }
   letter-spacing: 0.5px;
 }
 
+.field label .optional {
+  text-transform: none;
+  letter-spacing: 0;
+  color: var(--th-text-muted);
+}
+
+.field-hint {
+  font-size: 10px;
+  color: var(--th-text-muted);
+  line-height: 1.35;
+}
+
 .field-row {
   display: flex;
   gap: 12px;
@@ -460,8 +472,8 @@ html[data-theme="light"] .theme-toggle .icon-moon { display: block; }
   font-variant-numeric: tabular-nums;
 }
 
-/* Thumbnail square — serves the _output_mms.jpg the engine downloaded
-   to temp dir. Empty placeholder has a dashed border so rows with no
+/* Thumbnail square uses the authenticated final PNG downloaded for printing.
+   Empty placeholder has a dashed border so rows with no
    thumb yet (download still in flight) still look deliberate. */
 .job-thumb, .job-thumb-empty {
   width: 36px; height: 36px; border-radius: 4px; display: block;
