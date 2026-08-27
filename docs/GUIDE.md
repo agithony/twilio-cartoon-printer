@@ -92,7 +92,8 @@ This document covers all features and configuration in depth. For quick setup, s
 | `DUB_FOLDER_ID` | No | Optional dub.co folder ID for organizing short links. |
 | `GOOGLE_CLIENT_ID` | Admin UI | Google OAuth client ID. Required for login to protected admin routes unless a valid session already exists. |
 | `GOOGLE_CLIENT_SECRET` | Admin UI | Google OAuth client secret. |
-| `SESSION_SECRET` | Admin UI | Secret used to HMAC-sign admin and review tokens. If omitted, an ephemeral secret is generated and sessions do not survive restart. |
+| `ADMIN_PIN` | Admin UI | Optional shared, case-sensitive admin PIN. Must be 8-64 ASCII letters or numbers; numeric-only values are allowed. Configure this, Google OAuth, or both. |
+| `SESSION_SECRET` | Admin UI | Secret used to HMAC-sign admin sessions, OAuth state, and review tokens. Production requires at least 32 characters and fails startup if it is missing or weak. Local/test runs generate an ephemeral secret when omitted. |
 | `ALLOWED_EMAILS` | No | Comma-separated non-`@twilio.com` emails allowed to sign in. Empty means verified `@twilio.com` accounts only. |
 | `REVIEW_TOKEN_TTL` | No | Review token lifetime in seconds. Defaults to 7 days. |
 | `MODEL_ORCHESTRATOR` | No | OpenAI model for orchestration, moderation-adjacent decisions, AI review, and prompt reasoning. Defaults to `gpt-5.5`. |
@@ -105,9 +106,9 @@ At startup the app validates channel configuration and exits if no SMS or WhatsA
 
 ## Admin Authentication
 
-All non-public admin routes are protected by Google OAuth. Public routes include `/inbound`, `/healthz`, `/auth/*`, `/review/*`, `/s/*`, `/images/*`, `/assets/*`, `/booth-uploads/*`, `/api/print-relay/*`, and read-only `GET` routes under `/photogallery`.
+All non-public admin routes accept a Google OAuth or shared PIN session. Public routes include `/inbound`, `/healthz`, `/auth/*`, `/review/*`, `/s/*`, approved files under `/images/*`, `/assets/*`, `/booth-uploads/*`, `/api/print-relay/*`, and approved read-only `GET` routes under `/photogallery`.
 
-Set `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, and `SESSION_SECRET` to enable login. Add these redirect URIs to the Google OAuth client as needed:
+Set a random `SESSION_SECRET` of at least 32 characters and configure Google OAuth, `ADMIN_PIN`, or both. Add these redirect URIs to the Google OAuth client as needed:
 
 ```text
 http://localhost:3000/auth/callback
@@ -115,6 +116,10 @@ https://your-production-host/auth/callback
 ```
 
 Verified `@twilio.com` Google accounts are allowed by default. Use `ALLOWED_EMAILS` for individual non-Twilio operators.
+
+`ADMIN_PIN` accepts 8-64 characters from `[A-Za-z0-9]` and is case-sensitive; numeric-only values are allowed. Five failed attempts from one client block further attempts for 15 minutes. Rotating it invalidates existing PIN sessions only. Google OAuth callbacks use a signed, short-lived state token bound to an `HttpOnly`, `SameSite=Lax` nonce cookie.
+
+Standalone review login accepts only the existing 4-6 character Review PIN and has its own five-attempt/15-minute client limit. `ADMIN_PIN` is accepted only at `/auth/pin`, where it creates a full admin session that also authorizes review pages and staged media. Review sessions are bound to the Review PIN, so rotating it invalidates existing review sessions. Approved images remain public; staged media under `/images/staging/*` and `/photogallery/staging/*` requires either a valid admin session or review session.
 
 Security notes:
 

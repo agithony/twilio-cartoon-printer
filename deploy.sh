@@ -25,7 +25,8 @@ prompt_with_default() {
 prompt_secret() {
   local prompt="$1"
   local user_value
-  read -r -p "$prompt: " user_value
+  read -r -s -p "$prompt: " user_value
+  printf "\n" >&2
   echo "$user_value"
 }
 
@@ -74,10 +75,18 @@ TWILIO_PHONE=$(prompt_secret "Twilio Phone Number (e.g. +14155551234)")
 OPENAI_KEY=$(prompt_secret "OpenAI API Key")
 GOOGLE_CID=$(prompt_secret "Google OAuth Client ID")
 GOOGLE_CSEC=$(prompt_secret "Google OAuth Client Secret")
-SESSION_SEC=$(prompt_secret "Session Secret (hex string, or leave blank to auto-generate)")
+ADMIN_PIN=$(prompt_secret "Admin PIN (8-64 alphanumeric characters, or leave blank)")
+if [[ -n "$ADMIN_PIN" && ( ${#ADMIN_PIN} -lt 8 || ${#ADMIN_PIN} -gt 64 || ! "$ADMIN_PIN" =~ ^[A-Za-z0-9]+$ ) ]]; then
+  echo "Error: Admin PIN must contain only A-Z, a-z, and 0-9 and be 8-64 characters long." >&2
+  exit 1
+fi
+SESSION_SEC=$(prompt_secret "Session Secret (at least 32 characters, or leave blank to auto-generate)")
 if [[ -z "$SESSION_SEC" ]]; then
   SESSION_SEC=$(openssl rand -hex 32)
   echo "  Generated session secret: ${SESSION_SEC:0:8}..."
+elif (( ${#SESSION_SEC} < 32 )); then
+  echo "Error: Session Secret must be at least 32 characters long." >&2
+  exit 1
 fi
 RELAY_KEY=$(prompt_secret "Print Relay Key (or leave blank to auto-generate)")
 if [[ -z "$RELAY_KEY" ]]; then
@@ -193,6 +202,8 @@ properties:
         value: "${GOOGLE_CID}"
       - name: google-client-secret
         value: "${GOOGLE_CSEC}"
+      - name: admin-pin
+        value: "${ADMIN_PIN}"
       - name: session-secret
         value: "${SESSION_SEC}"
       - name: print-relay-key
@@ -227,6 +238,8 @@ properties:
             secretRef: google-client-id
           - name: GOOGLE_CLIENT_SECRET
             secretRef: google-client-secret
+          - name: ADMIN_PIN
+            secretRef: admin-pin
           - name: SESSION_SECRET
             secretRef: session-secret
           - name: PRINT_RELAY_KEY

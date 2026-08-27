@@ -60,6 +60,7 @@ const nps = require("./lib/nps");
 const contacts = require("./lib/contacts");
 
 const app = express();
+app.set("trust proxy", 1);
 const port = parseInt(process.env.PORT || "3000", 10);
 
 // Storage diagnostics
@@ -78,11 +79,11 @@ for (const dir of [DATA_DIR, PENDING_DIR, GENERATING_DIR, READY_DIR, PRINTING_DI
     if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
 }
 
-app.use(bodyParser.urlencoded({ extended: false }));
 app.use(require("compression")());
 
-// ── Google OAuth (must be before all other routes) ──────────────────────────
+// ── Admin authentication (must be before all other routes) ─────────────────
 const { mountAuth, requireAuth, isPublicRoute } = require("./lib/auth");
+const { requireStagedMediaAuth } = require("./lib/review-auth");
 const { createTwilioWebhookValidator } = require("./lib/twilio-webhook");
 const { channelWarnings } = require("./lib/config-warnings");
 const { mountHealth, setReady, isReady } = require("./lib/health");
@@ -112,7 +113,7 @@ app.use("/assets", express.static(path.join(__dirname, "assets"), {
 }));
 
 // Staging images (for review previews in dashboard)
-app.use("/images/staging", (req, res, next) => {
+app.use("/images/staging", requireStagedMediaAuth, (req, res, next) => {
     express.static(path.join(settings.getDownloadDir(), ".staging"))(req, res, next);
 });
 // Serve approved images — resolves download dir dynamically per request
@@ -775,8 +776,9 @@ async function inboundHandler(req, res) {
 }
 
 const validateTwilioWebhook = createTwilioWebhookValidator();
-app.post("/inbound", validateTwilioWebhook, inboundHandler);
-app.post("/sms", validateTwilioWebhook, inboundHandler);
+const parseTwilioWebhook = bodyParser.urlencoded({ extended: false });
+app.post("/inbound", parseTwilioWebhook, validateTwilioWebhook, inboundHandler);
+app.post("/sms", parseTwilioWebhook, validateTwilioWebhook, inboundHandler);
 
 // ── Start ────────────────────────────────────────────────────────────────────
 

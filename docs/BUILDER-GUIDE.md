@@ -189,7 +189,7 @@ The main routes are:
 
 **The settings panel is the heart of the app for operators.** Eight collapsible sections: Event & Operations, Styles & Art, Branding, Backgrounds, Delivery & Display, Engagement & Messages, Social Sharing, API Keys. Everything in there writes to `data/settings.json` and takes effect immediately — no restart. Per-event profiles save/restore the whole set when you switch events.
 
-**Authentication is Google OAuth.** Non-public admin routes are gated by `requireAuth()`. Without `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET`, admin pages return `503` and admin API calls return `401`. Verified `@twilio.com` Google accounts are allowed by default; `ALLOWED_EMAILS` adds individual non-Twilio operators. Public routes remain public by design: `/inbound`, `/healthz`, `/auth/*`, `/review/*`, `/s/*`, images/assets/booth uploads, relay endpoints protected by `x-relay-key`, and read-only `GET` photo gallery routes.
+**Authentication supports Google OAuth and a shared admin PIN.** Non-public admin routes are gated by `requireAuth()` and accept either method through the same signed session cookie. Configure complete Google credentials, a valid `ADMIN_PIN`, or both; with neither, admin pages return `503` and admin API calls return `401`. Verified `@twilio.com` Google accounts are allowed by default; `ALLOWED_EMAILS` adds individual non-Twilio operators. Public routes remain public by design: `/inbound`, `/healthz`, `/auth/*`, `/review/*`, `/s/*`, approved images/assets/booth uploads, relay endpoints protected by `x-relay-key`, and approved read-only `GET` photo gallery routes. Staged image routes accept only a full admin session or credential-bound review token.
 
 ## Deployment
 
@@ -206,7 +206,7 @@ The whole thing takes ~3 minutes from merge to live. The container config (CPU, 
 
 **Persistent storage gotcha worth knowing.** The `scripts/start.sh` startup script symlinks certain directories on the container's filesystem to the Azure Files mount at `/app/appdata`. This is how settings, queue, and downloads survive container restarts. One directory (`assets`) was in that list accidentally and caused a multi-week bug where CSS changes never took effect — the first deploy's CSS got copied to the share, and every subsequent deploy's CSS was refused by `cp -n` ("don't overwrite"). Fixed by removing `assets` from the list; now static files are served straight from the image.
 
-**Secrets.** Set via `az containerapp secret set` in the deploy workflow, referenced in containerapp.yaml via `secretRef`. Twilio credentials, OpenAI API key, Google OAuth, and session secret all flow this way. Rotating a secret = updating the GitHub Actions secret + re-running the deploy.
+**Secrets.** Set via `az containerapp secret set` in the deploy workflow, referenced in containerapp.yaml via `secretRef`. Twilio credentials, OpenAI API key, Google OAuth, `ADMIN_PIN`, and the session secret all flow this way. Production refuses to start unless `SESSION_SECRET` is at least 32 characters. Rotating a secret = updating the GitHub Actions secret + re-running the deploy.
 
 **Server container plus desktop relay.** The main server image (`Dockerfile`, root) runs the app. The Electron Print Station is built separately with `electron-forge` in `relay-app/`. The `relay-release.yml` workflow builds a macOS release when the relay app version changes and publishes the `Twilio Print Station <version> (start here).zip` bundle for event staff.
 
