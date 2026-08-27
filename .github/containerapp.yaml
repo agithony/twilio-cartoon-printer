@@ -21,6 +21,9 @@ properties:
             value: /app/appdata
           - name: BASE_URL
             value: ${BASE_URL}
+          # Forces workflow_dispatch runs at the same commit to load updated secrets.
+          - name: DEPLOYMENT_RUN_ID
+            value: "${DEPLOYMENT_RUN_ID}"
           # Non-@twilio.com sign-in escape hatch (comma-separated). Empty = domain only.
           - name: ALLOWED_EMAILS
             value: "${ALLOWED_EMAILS}"
