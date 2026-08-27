@@ -74,3 +74,69 @@ test("preferred locale is stored per phone and event", () => {
     assert.equal(contacts.getPreferredLocale("+14155557777", "Event A"), "pt_BR");
     assert.equal(contacts.getPreferredLocale("+14155557777", "Event B"), "en");
 });
+
+test("deleteByPhone: removes session key when no eventName given", () => {
+    contacts.recordContact("+14155556666", "+12065551234", "testEvent");
+    contacts.recordInbound("+14155556666", "sms");
+    assert.ok(contacts.getLastInboundAt("+14155556666") !== null);
+    contacts.deleteByPhone("+14155556666");
+    assert.equal(contacts.getLastInboundAt("+14155556666"), null);
+    assert.equal(contacts.getPreferredChannel("+14155556666"), null);
+});
+
+test("deleteByPhone: preserves session key when eventName given", () => {
+    contacts.recordContact("+14155557777", "+12065551234", "testEvent");
+    contacts.recordInbound("+14155557777", "whatsapp");
+    contacts.deleteByPhone("+14155557777", "testEvent");
+    // Session key should survive per-event deletion
+    assert.ok(contacts.getPreferredChannel("+14155557777") !== null);
+});
+
+test("deleteByEvent: preserves session keys", () => {
+    contacts.recordContact("+14155558888", "+12065551234", "eventToDelete");
+    contacts.recordInbound("+14155558888", "sms");
+    contacts.deleteByEvent("eventToDelete");
+    // Contact record gone, session key survives
+    assert.ok(contacts.getPreferredChannel("+14155558888") !== null);
+});
+
+test("getDropOffs: returns contacts with no active jobs", () => {
+    contacts.recordContact("+14155559001", "+12065551234", "evt1");
+    contacts.recordContact("+14155559002", "+12065551234", "evt1");
+    const dropOffs = contacts.getDropOffs("evt1", [], []);
+    const phones = dropOffs.map(d => d.phone);
+    assert.ok(phones.includes("+14155559001"));
+    assert.ok(phones.includes("+14155559002"));
+});
+
+test("getDropOffs: excludes contacts with active jobs", () => {
+    contacts.recordContact("+14155559003", "+12065551234", "evt2");
+    const activeJobs = [{ userPhone: "+14155559003", eventName: "evt2" }];
+    const dropOffs = contacts.getDropOffs("evt2", activeJobs, []);
+    assert.equal(dropOffs.find(d => d.phone === "+14155559003"), undefined);
+});
+
+test("getDropOffs: excludes admin phones", () => {
+    contacts.recordContact("+14155559004", "+12065551234", "evt3");
+    const dropOffs = contacts.getDropOffs("evt3", [], ["+14155559004"]);
+    assert.equal(dropOffs.find(d => d.phone === "+14155559004"), undefined);
+});
+
+test("getDropOffs: skips __session__ keys (no session records in results)", () => {
+    contacts.recordInbound("+14155559005", "sms");
+    const dropOffs = contacts.getDropOffs("evt4", [], []);
+    // session key should never appear as a drop-off
+    assert.equal(dropOffs.find(d => d.phone === "+14155559005" && !d.eventName), undefined);
+});
+
+test("markNudged: sets nudgedAt on existing contact", () => {
+    contacts.recordContact("+14155559006", "+12065551234", "evt5");
+    const before = Date.now();
+    const result = contacts.markNudged("+14155559006", "evt5");
+    assert.equal(result, true);
+});
+
+test("markNudged: returns false for unknown contact", () => {
+    const result = contacts.markNudged("+19999990000", "unknown-event");
+    assert.equal(result, false);
+});

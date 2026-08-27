@@ -79,6 +79,11 @@ if [[ -z "$SESSION_SEC" ]]; then
   SESSION_SEC=$(openssl rand -hex 32)
   echo "  Generated session secret: ${SESSION_SEC:0:8}..."
 fi
+RELAY_KEY=$(prompt_secret "Print Relay Key (or leave blank to auto-generate)")
+if [[ -z "$RELAY_KEY" ]]; then
+  RELAY_KEY=$(openssl rand -hex 32)
+  echo "  Generated print relay key: ${RELAY_KEY:0:8}..."
+fi
 EVENT_NAME=$(prompt_with_default "Event name" "default")
 
 # --- Azure Extensions ---
@@ -125,7 +130,12 @@ az storage share create \
   --name "$FILE_SHARE" \
   --account-name "$STORAGE_ACCT" \
   --account-key "$STORAGE_KEY" \
-  --quota 10 >/dev/null 2>&1 || true
+  --quota 100 >/dev/null 2>&1 || true
+az storage share update \
+  --name "$FILE_SHARE" \
+  --account-name "$STORAGE_ACCT" \
+  --account-key "$STORAGE_KEY" \
+  --quota 100 >/dev/null
 
 # --- Container Apps Environment ---
 if ! az containerapp env show --resource-group "$RG" --name "$ENV_NAME" >/dev/null 2>&1; then
@@ -185,6 +195,8 @@ properties:
         value: "${GOOGLE_CSEC}"
       - name: session-secret
         value: "${SESSION_SEC}"
+      - name: print-relay-key
+        value: "${RELAY_KEY}"
   template:
     containers:
       - name: ${APP_NAME}
@@ -217,6 +229,8 @@ properties:
             secretRef: google-client-secret
           - name: SESSION_SECRET
             secretRef: session-secret
+          - name: PRINT_RELAY_KEY
+            secretRef: print-relay-key
         volumeMounts:
           - volumeName: appdata
             mountPath: /app/appdata
@@ -272,7 +286,7 @@ echo "  Outreach:       https://${FQDN}/outreach"
 echo ""
 echo "  Next steps:"
 echo "  1. Set your Twilio phone number's webhook to:"
-echo "     https://${FQDN}/sms"
+echo "     https://${FQDN}/inbound"
 echo "  2. Visit https://${FQDN}/home to configure settings"
 echo "  3. Send a selfie to your Twilio number to test"
 echo ""

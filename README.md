@@ -1,35 +1,41 @@
 # Twilio + AI Photo Generator
 
-A photobooth-style app powered by Twilio and OpenAI. Attendees text a selfie to a Twilio phone number, choose an art style, and receive a printed portrait at your booth (or a digital copy via MMS). All configuration is manageable at runtime through a web-based admin UI -- no server restarts needed.
+[![CI](https://github.com/anthonyjdella/twilio-cartoon-printer/actions/workflows/ci.yml/badge.svg)](https://github.com/anthonyjdella/twilio-cartoon-printer/actions/workflows/ci.yml)
+[![Deploy](https://github.com/anthonyjdella/twilio-cartoon-printer/actions/workflows/deploy.yml/badge.svg)](https://github.com/anthonyjdella/twilio-cartoon-printer/actions/workflows/deploy.yml)
+[![Relay App Release](https://github.com/anthonyjdella/twilio-cartoon-printer/actions/workflows/relay-release.yml/badge.svg)](https://github.com/anthonyjdella/twilio-cartoon-printer/actions/workflows/relay-release.yml)
+[![License: ISC](https://img.shields.io/badge/License-ISC-blue.svg)](#license)
+
+A photobooth-style app powered by Twilio and OpenAI. Attendees send a selfie by SMS/MMS or WhatsApp, choose an art style, and receive a printed portrait, a digital copy, or a share link depending on the event settings. Configuration is manageable at runtime through an OAuth-protected web admin UI -- no server restarts needed.
 
 ## How It Works
 
 ```mermaid
 flowchart TB
-  U["User sends selfie via SMS/MMS"] --> T["Twilio webhook receives the message"]
+  U["User sends selfie via SMS/MMS or WhatsApp"] --> T["Twilio webhook receives the message"]
   T --> Q["Job queued to disk (survives restarts)"]
 
   subgraph G["Generation (up to N concurrent)"]
     M["Content moderation (OpenAI)"]
     F["Face detection (rejects no-face photos)"]
     A["Scene analysis (counts subjects & pets)"]
-    I["Image generation (gpt-5.4 + gpt-image-2)"]
+    I["Image generation (gpt-5.5 + gpt-image-2)"]
     C["Template frame composited (optional)"]
-    R["Resized for print (5x7 @ 300 DPI)"]
+    R["Resized to configured PNG output @ 300 DPI"]
     M --> F --> A --> I --> C --> R
   end
 
   Q --> M
 
   subgraph P["Delivery"]
-    P1["Printed locally or via cloud relay"]
-    P2["MMS sent to user"]
+    P1["Digital delivery or share link"]
+    P2["Printed locally or via cloud relay"]
   end
 
-  R --> P1 --> P2
+  R --> P1
+  R --> P2
 ```
 
-After sending a selfie, users receive a numbered style menu and reply with a number or style name. The bot also responds conversationally to questions via AI. All SMS messages are fully configurable from the admin Settings panel at runtime.
+After sending a selfie, users usually receive a numbered style menu and reply with a number or style name. If only one style is active, or the caption already names a known style, the menu is skipped. The bot can also respond conversationally to questions with AI. All user-facing SMS copy is configurable from the admin Settings panel at runtime.
 
 ## Resources
 
@@ -45,17 +51,18 @@ After sending a selfie, users receive a numbered style menu and reply with a num
 | **Cloud (digital only)** | Cloud (Azure, Docker, etc.) | None needed | Remote/virtual events |
 | **Cloud + Print Station app** | Cloud | Local laptop at event | Large events, persistent data |
 
-See [Quick Start](#quick-start) for local setup, or [Cloud Deployment](#cloud-deployment) for hosting in the cloud.
+See [Installation](#installation), [Usage](#usage), and [Cloud Deployment](#cloud-deployment) for setup paths.
 
 ## Prerequisites
 
-- **Node.js** v18+
+- **Node.js** 22+
 - **pnpm** -- install with `npm install -g pnpm` ([docs](https://pnpm.io/installation))
-- **Twilio account** with a phone number that has SMS/MMS enabled
-- **OpenAI API key** with access to gpt-5.4 and gpt-image-2
+- **Twilio account** with an SMS/MMS sender, a Messaging Service, or a WhatsApp sender
+- **OpenAI API key** with access to the configured text and image models (`gpt-5.5`, `gpt-5.4-nano`, and `gpt-image-2-2026-04-21` by default)
+- **Google OAuth client** for the admin UI (`/home`, `/dashboard`, `/outreach`, and settings APIs)
 - **Printer** (optional) -- Epson EcoTank ET-8550 recommended, connected via USB/WiFi and registered in CUPS
 
-## Quick Start
+## Installation
 
 ### 1. Clone and install
 
@@ -65,7 +72,9 @@ cd twilio-cartoon-printer
 pnpm install
 ```
 
-### 2. Configure environment
+## Configuration
+
+### 1. Configure environment
 
 Copy `.env.example` to `.env` and fill in your credentials:
 
@@ -83,17 +92,31 @@ OPENAI_API_KEY=your_openai_key
 EVENT_NAME=YourEventName
 ```
 
-All other values have sensible defaults. See [docs/GUIDE.md](docs/GUIDE.md#environment-variables) for a full description of each variable.
+Configure at least one sender using `TWILIO_PHONE_NUMBER`, `TWILIO_MESSAGING_SERVICE_SID`, `TWILIO_WHATSAPP_NUMBER`, or `TWILIO_WHATSAPP_MESSAGING_SERVICE_SID`. The app exits at startup if no SMS or WhatsApp sender is configured.
 
-### 3. Start the server
+Admin pages require Google OAuth. For local admin access, create a Google OAuth web client and add `http://localhost:3000/auth/callback` as a redirect URI:
+
+```sh
+GOOGLE_CLIENT_ID=your-client-id.apps.googleusercontent.com
+GOOGLE_CLIENT_SECRET=your-client-secret
+SESSION_SECRET=random-long-secret
+```
+
+By default, sign-in is limited to verified `@twilio.com` Google accounts. Add `ALLOWED_EMAILS=person@example.com,other@example.com` for non-Twilio operators.
+
+All other values have defaults. See [docs/GUIDE.md](docs/GUIDE.md#environment-variables) for the full variable reference.
+
+## Usage
+
+### 1. Start the server
 
 ```sh
 pnpm start
 ```
 
-The server starts on port 3000. The admin home page opens automatically at `http://localhost:3000`.
+The server starts on port 3000 in local development. The home page is available at `http://localhost:3000`, but protected admin pages return `503` until Google OAuth is configured.
 
-### 4. Connect Twilio
+### 2. Connect Twilio
 
 Point your Twilio phone number's **Messaging webhook** (POST) to your server:
 
@@ -109,13 +132,13 @@ ngrok http 3000
 
 Copy the ngrok URL (e.g. `https://abc123.ngrok.io`) and set it as your Twilio webhook: `https://abc123.ngrok.io/inbound`
 
-### 5. Test it
+### 3. Test it
 
-Text a selfie to your Twilio phone number. You should receive a style menu, pick a style, and get your portrait back via MMS.
+Text a selfie to your Twilio phone number or WhatsApp sender. You should receive a style menu unless the event has only one active style, then get a digital portrait, print job, or share link based on the delivery settings.
 
 ## Printer Setup
 
-To enable printing, you need a CUPS-compatible printer connected to the machine running the server (or the print relay laptop -- see [Print Relay](#print-relay-cloud-printing)).
+To enable printing, set delivery mode to **Print + Digital** in the admin Settings panel or set `ENABLE_PRINTING=true`. You also need a CUPS-compatible printer connected to the machine running the server, or to the print relay laptop for cloud deployments. See [Print Relay](#print-relay-cloud-printing).
 
 ```sh
 # Find your printer name
@@ -163,7 +186,7 @@ docker run --rm -p 8080:8080 --env-file .env \
   twilio-cartoon-printer
 ```
 
-The startup script (`scripts/start.sh`) automatically symlinks `data/`, `queue/`, `downloads/`, `templates/`, `assets/`, and `brand-references/` to the mount. Set `DATA_MOUNT` to customize the mount path (defaults to `/app/appdata`).
+The startup script (`scripts/start.sh`) automatically symlinks runtime-mutable directories to the mount: `data/`, `queue/`, `downloads/`, `templates/`, `brand-references/`, `style-references/`, `background-references/`, and `booth-uploads/`. The shipped `assets/` directory is intentionally not persisted so CSS, fonts, and baked-in media update with each image deploy. Set `DATA_MOUNT` to customize the mount path (defaults to `/app/appdata`).
 
 On **Azure Container Apps**, use an Azure Files volume mount pointed at `/app/appdata`.
 
@@ -179,7 +202,7 @@ No ngrok needed -- the cloud app is already publicly accessible.
 
 ### Digital-only mode
 
-If you don't need printing, the cloud app works out of the box. Portraits are delivered via MMS directly. No printer or relay needed.
+If you don't need printing, use **Digital Only** mode. Portraits are delivered via MMS or share link directly. No printer or relay is needed.
 
 Set delivery mode to **Digital Only** in the Settings panel, or:
 
@@ -204,11 +227,11 @@ Cloud App (Azure/Docker)          Event Laptop
 └─────────────────────┘          └──────────────────────┘
 ```
 
-### Step 1: Set the relay key on the cloud app
+### Step 1: Enable cloud relay printing
 
-Open the admin Settings panel on the cloud app. Under **Delivery & Display**, enter a **Print Relay Key** -- any secret string (e.g. `my-event-secret-2026`). Save.
+Open the admin Settings panel on the cloud app. Under **Delivery & Display**, set delivery mode to **Print + Digital** and enter a strong, unique **Print Relay Key** (for example, generate one with `openssl rand -hex 32`). Save.
 
-This enables the relay API and tells the cloud app to queue jobs for relay printing instead of trying to print locally.
+`PRINT_RELAY_KEY` enables the relay API and authenticates relay agents. `ENABLE_PRINTING=true` is what causes generated jobs to enter `queue/ready/` for printing. If printing is disabled, completed jobs go digital-only and the relay has nothing to claim.
 
 ### Step 2: Run the relay on the event laptop
 
@@ -216,7 +239,7 @@ There are two ways to run the relay. **The Print Station app is recommended** fo
 
 #### Option A: Print Station App (Recommended)
 
-The Print Station is a desktop app with a visual interface for managing printing. No terminal required -- event staff enter the Cloud URL and Relay Key in the UI, select one or more printers from the checklist, and click Connect. When multiple printers are selected, jobs are distributed automatically across them.
+The Print Station is a desktop app with a visual interface for managing printing. No terminal required -- event staff click **Edit** to enter the Cloud URL and Relay Key, select one or more printers from the checklist, and click **Connect**. New installations do not include default credentials. When multiple printers are selected, jobs are distributed automatically across them.
 
 ```sh
 cd relay-app
@@ -231,8 +254,10 @@ To build a standalone `.app` bundle you can hand to event staff (no Node.js requ
 ```sh
 cd relay-app
 npm run make
-# Output: out/make/zip/darwin/arm64/Twilio Print Station-darwin-arm64-1.0.0.zip
+# Output: out/make/Twilio Print Station <version> (start here).zip
 ```
+
+Hand event staff the **`(start here)`** zip. It includes the `.app`, `READ ME FIRST.txt`, and a first-run `Open Twilio Print Station.command` helper for macOS Gatekeeper.
 
 See **[relay-app/README.md](relay-app/README.md)** for full documentation.
 
@@ -251,8 +276,10 @@ Create a `.env` file with:
 
 ```sh
 PRINT_RELAY_URL=https://your-cloud-app.example.com
-PRINT_RELAY_KEY=my-event-secret-2026
+PRINT_RELAY_KEY=<same-random-secret-configured-in-the-cloud-app>
 ```
+
+`ENABLE_PRINTING=true` must be set on the cloud app, not just on the relay laptop.
 
 Start the relay:
 
@@ -267,12 +294,12 @@ You should see:
 [10:30:00 PM]   Cloud URL: https://your-cloud-app.example.com
 [10:30:00 PM]   Poll interval: 5s
 [10:30:00 PM]   Dry run: false
-[10:30:01 PM] Connected to cloud app (printing: false, size: 5x7, quality: high)
+[10:30:01 PM] Connected to cloud app (printing: true, size: 5x7, quality: high)
 [10:30:01 PM] Printer found: EPSON_ET_8550_Series
 [10:30:01 PM] Polling for print jobs...
 ```
 
-The relay polls the cloud every 5 seconds. When a portrait finishes generating, the relay claims it, downloads the image, prints it, and reports back. The cloud app then sends the MMS to the user.
+The relay polls the cloud every 5 seconds. When a portrait finishes generating, the relay claims it, downloads the image, prints it, and reports back. By default the user receives the digital portrait immediately after generation; print completion suppresses duplicate MMS. If immediate digital delivery is disabled, the completion MMS waits until the relay reports success.
 
 ### CLI relay options
 
@@ -300,7 +327,7 @@ PRINT_RELAY_DRY_RUN=true
 Both the Print Station app and CLI relay share these capabilities:
 
 - **Auto-reconnects** -- if the cloud app or network drops, the relay keeps polling and reconnects automatically
-- **Crash recovery** -- Print Station v1.1+ heartbeats the cloud every 20s while holding a job; if beats stop for >60s the cloud re-queues the job. (Older v1.0 relays without heartbeats fall back to a 15-minute `printingAt`-age threshold.)
+- **Crash recovery** -- Print Station v1.1+ heartbeats the cloud every 20s while holding a job; if beats stop for >60s after the first heartbeat, the cloud re-queues the job. A crash before the first heartbeat falls back to the 15-minute `printingAt`-age threshold used by older relays.
 - **Multi-printer** -- select multiple printers (Print Station) or use `--printers` (CLI) to distribute jobs across printers automatically
 - **Race-safe** -- multiple relay agents can run with the same key; only one claims each job
 - **Printer error detection** -- detects offline/stopped printers and fails fast instead of hanging
@@ -323,6 +350,13 @@ Both the Print Station app and CLI relay share these capabilities:
 | `/dashboard` | Real-time admin dashboard with metrics and monitoring |
 | `/outreach` | Broadcast messaging, raffles, lead capture reports |
 | `/s/:id` | Shareable portrait page with OG meta tags and social share buttons |
+| `/auth/*` | Google OAuth login/callback/logout routes |
+| `/review/*` | Mobile review flow and review-token routes |
+| `/api/generate` | Programmatic/kiosk generation API |
+| `/kiosk` | Browser-based kiosk submission surface |
+| `/eval` | Prompt experiment and evaluation tools |
+| `/api/print-relay/*` | Relay polling, claim, heartbeat, image download, completion, and reprint API |
+| `/healthz` | Lightweight health check for CI and cloud probes |
 
 ## Key Features
 
@@ -373,3 +407,7 @@ Each event can configure nine art styles × five brand wardrobes × a contextual
 - `colorPalette` — optional prompt fragment. When set, applied as a final recoloring instruction unless the chosen style sets `acceptsColorPalette: false`.
 
 Users now see a "None" option at the bottom of the brand menu so they can skip the brand layer entirely.
+
+## License
+
+ISC. See `package.json`.

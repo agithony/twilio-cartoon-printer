@@ -134,6 +134,44 @@ test("send: includes mediaUrl when provided", async () => {
     assert.deepEqual(lastPayload.mediaUrl, ["https://example.com/img.jpg"]);
 });
 
+test("send: selects compressed JPEG only for SMS", async () => {
+    settingsStub._data.contentTemplates = {};
+    const mediaUrls = {
+        sms: "https://example.com/portrait_output_mms.jpg",
+        whatsapp: "https://example.com/portrait_output.png",
+    };
+    await messaging.send("+14155551234", "_raw", {}, { adapter: smsAdapter, _body: "Portrait", mediaUrls });
+    assert.deepEqual(lastPayload.mediaUrl, [mediaUrls.sms]);
+});
+
+test("send: selects final PNG for WhatsApp", async () => {
+    settingsStub._data.contentTemplates = {};
+    settingsStub._data.twilioWhatsappNumber = "+14155238886";
+    contactsStub._tsByChannel.whatsapp = Date.now();
+    lastPayload = null;
+    const mediaUrls = {
+        sms: "https://example.com/portrait_output_mms.jpg",
+        whatsapp: "https://example.com/portrait_output.png",
+    };
+    await messaging.send("+14155551234", "_raw", {}, { adapter: waAdapter, _body: "Portrait", mediaUrls });
+    assert.deepEqual(lastPayload.mediaUrl, [mediaUrls.whatsapp]);
+});
+
+test("send: uses channel-specific fallback body", async () => {
+    settingsStub._data.contentTemplates = {};
+    settingsStub._data.twilioWhatsappNumber = "+14155238886";
+    contactsStub._tsByChannel.whatsapp = Date.now();
+    lastPayload = null;
+    await messaging.send("+14155551234", "_raw", {}, {
+        adapter: waAdapter,
+        _body: "Portrait",
+        bodyByChannel: { whatsapp: "Portrait\nhttps://example.com/portrait_output.png" },
+        mediaUrls: { sms: "https://example.com/portrait_output_mms.jpg", whatsapp: null },
+    });
+    assert.equal(lastPayload.body, "Portrait\nhttps://example.com/portrait_output.png");
+    assert.equal(lastPayload.mediaUrl, undefined);
+});
+
 test("send: resolves adapter from preferredChannel when no opts.adapter", async () => {
     settingsStub._data.contentTemplates = {};
     settingsStub._data.twilioPhoneNumber = "+12065551234";
@@ -157,4 +195,49 @@ test("getFallbackCounts: increments counter on each template fallback", async ()
     await messaging.send("+14155551234", "testCounter", {}, { adapter: smsAdapter });
     const counts = messaging.getFallbackCounts();
     assert.ok(counts.testCounter >= 2);
+});
+
+test("send: throws when no adapter is available", async () => {
+    contactsStub._channel = null;
+    // Temporarily make getConfiguredAdapters return empty
+    const channels = require("../lib/channels");
+    const original = channels.getConfiguredAdapters;
+    channels.getConfiguredAdapters = () => [];
+    try {
+        await assert.rejects(
+            () => messaging.send("+14155551234", "enqueued", {}),
+            /No channel adapter available/
+        );
+    } finally {
+        channels.getConfiguredAdapters = original;
+    }
+});
+
+test("send: _raw with empty body and no mediaUrl throws", async () => {
+    await assert.rejects(
+        () => messaging.send("+14155551234", "_raw", {}, { adapter: smsAdapter, _body: "" }),
+        /_raw send requires/
+    );
+});
+
+test("send: mediaUrl is NOT attached when contentSid is present", async () => {
+    settingsStub._data.contentTemplates = { enqueued: "HXdef" };
+    settingsStub._data.twilioPhoneNumber = "+12065551234";
+    lastPayload = null;
+    await messaging.send("+14155551234", "enqueued", {}, { adapter: smsAdapter, mediaUrl: "https://example.com/img.jpg" });
+    assert.equal(lastPayload.mediaUrl, undefined);
+    assert.equal(lastPayload.contentSid, "HXdef");
+});
+
+test("send: stale preferredChannel falls back to configured adapter", async () => {
+    settingsStub._data.contentTemplates = {};
+    settingsStub._data.twilioPhoneNumber = "+12065551234";
+    delete settingsStub._data.twilioWhatsappNumber;
+    delete settingsStub._data.twilioWhatsappMessagingServiceSid;
+    contactsStub._channel = "whatsapp"; // preferred but unconfigured
+    lastPayload = null;
+    await messaging.send("+14155551234", "enqueued", {});
+    // Should have fallen back to SMS (no whatsapp: prefix)
+    assert.ok(lastPayload !== null);
+    assert.equal(lastPayload.to, "+14155551234");
 });

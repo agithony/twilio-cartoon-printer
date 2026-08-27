@@ -1,14 +1,15 @@
 // Relay Engine — adapted from scripts/print-relay.js for use in Electron.
 // Emits events instead of console.log, controlled via start/stop.
 
-const { exec } = require("child_process");
+const { exec, execFile } = require("child_process");
 const fs = require("fs");
 const path = require("path");
 const https = require("https");
 const http = require("http");
 const { EventEmitter } = require("events");
 const { buildPrintCommand } = require("./cups-command");
-const { RELAY_TEMP_DIR, cleanupOldRelayFiles } = require("./job-files");
+const { RELAY_TEMP_DIR, cleanupOldRelayFiles, autoSaveRelayImage } = require("./job-files");
+const RELAY_VERSION = require("./package.json").version;
 
 class RelayEngine extends EventEmitter {
     constructor() {
@@ -30,7 +31,9 @@ class RelayEngine extends EventEmitter {
         // within seconds if the relay crashes or hangs, instead of waiting
         // the 15-minute printingAt-based stale threshold.
         this.heartbeatTimer = null;
+        this.activeHeartbeat = null;
         this.HEARTBEAT_MS = 20 * 1000;
+        this.COMPLETION_RETRY_MS = 3000;
         // Cached cloud settings (refreshed in background every STATUS_REFRESH_MS).
         // Avoids a blocking /status fetch before every single print — makes
         // prints resilient to brief cloud hiccups and drops per-print latency.
@@ -38,6 +41,9 @@ class RelayEngine extends EventEmitter {
         this.cachedStatusAt = 0;
         this.statusRefreshTimer = null;
         this.STATUS_REFRESH_MS = 60 * 1000;
+        this.printerCapabilities = new Map();
+        this.cacheCleanupTimer = setInterval(() => cleanupOldRelayFiles().catch(() => {}), 60 * 60 * 1000);
+        if (this.cacheCleanupTimer.unref) this.cacheCleanupTimer.unref();
     }
 
     start(config) {
@@ -62,6 +68,10 @@ class RelayEngine extends EventEmitter {
         if (this.statusRefreshTimer) {
             clearInterval(this.statusRefreshTimer);
             this.statusRefreshTimer = null;
+        }
+        if (this.cacheCleanupTimer) {
+            clearInterval(this.cacheCleanupTimer);
+            this.cacheCleanupTimer = null;
         }
         this.log("Relay stopped.");
         this.emit("status", { cloud: "disconnected", printer: "unknown" });
@@ -210,21 +220,10 @@ class RelayEngine extends EventEmitter {
                 // hangs, or the operator closes the window, the timer dies
                 // with the process and the cloud sees missing heartbeats
                 // and recovers the job within ~60s instead of 15 minutes.
-                this._startHeartbeat(job.filename);
-
-                // Fire-and-forget MMS thumbnail download. Non-blocking so it
-                // never slows the print path; if it fails we just don't
-                // show a thumbnail for this row. The renderer shows an
-                // empty placeholder when thumbPath isn't delivered.
-                if (ackData.mmsFile) {
-                    const mmsUrl = `/api/print-relay/image-mms/${encodeURIComponent(ackData.eventName)}/${ackData.mmsFile}`;
-                    const thumbPath = path.join(this.tempDir, ackData.mmsFile);
-                    this._downloadFile(mmsUrl, thumbPath).then(() => {
-                        this.emit("job", { filename: job.filename, thumbPath });
-                    }).catch(() => { /* no thumb, no row update — harmless */ });
-                }
+                this._startHeartbeat(job.filename, ackData.claimId);
 
                 let imageDownloaded = false;
+                let printSucceeded = false;
                 try {
                     this.log(`Downloading ${ackData.imageFile}...`);
                     this.emit("job", {
@@ -234,16 +233,26 @@ class RelayEngine extends EventEmitter {
                     });
                     await this._downloadFile(imageUrl, localPath);
                     imageDownloaded = true;
-                    this.emit("job", { filename: job.filename, imagePath: localPath });
+                    this.emit("job", { filename: job.filename, thumbPath: localPath, imagePath: localPath });
+                    if (this.config.outputDirectory) {
+                        autoSaveRelayImage(localPath, this.config.outputDirectory).then((savedPath) => {
+                            this.log(`Portrait saved automatically: ${savedPath}`);
+                            this.emit("job", { filename: job.filename, savedPath });
+                        }).catch((saveErr) => {
+                            this.log(`Automatic save failed (printing will continue): ${saveErr.message}`);
+                        });
+                    }
 
                     if (this.config.dryRun) {
                         this.log(`[DRY RUN] Would print: ${ackData.imageFile}`);
-                        await this._request("POST", `/api/print-relay/jobs/${job.filename}/complete`, { success: true });
+                        printSucceeded = true;
+                        await this._completeJob(job.filename, { success: true, claimId: ackData.claimId });
                     } else {
                         this.log(`Printing ${ackData.imageFile} on ${printerName}...`);
                         this.emit("job", { filename: job.filename, status: "printing" });
-                        await this._printImage(localPath, printerName);
-                        await this._request("POST", `/api/print-relay/jobs/${job.filename}/complete`, { success: true });
+                        await this._printImage(localPath, printerName, ackData.outputProfile);
+                        printSucceeded = true;
+                        await this._completeJob(job.filename, { success: true, claimId: ackData.claimId });
                     }
 
                     this.jobCount++;
@@ -251,17 +260,21 @@ class RelayEngine extends EventEmitter {
                     this.emit("job", { filename: job.filename, status: "done" });
                     this.emit("stats", { jobCount: this.jobCount });
                     this.processedJobs.set(job.filename, Date.now());
+                    cleanupOldRelayFiles().catch(() => {});
                 } catch (err) {
                     this.log(`Print failed: ${job.filename} — ${err.message}`);
                     const isPrinterError = /printer is |timed out/i.test(err.message);
                     this.emit("job", { filename: job.filename, status: "failed", error: err.message });
-                    if (isPrinterError) {
+                    if (printSucceeded) {
+                        this.log(`Physical print succeeded but cloud completion was not accepted: ${err.message}`);
+                        this.processedJobs.set(job.filename, Date.now());
+                    } else if (isPrinterError) {
                         // Report failure so server re-queues the job to ready/
                         // immediately — another printer's engine can claim it
                         // on its next poll (~5s) instead of waiting 15 min.
-                        await this._request("POST", `/api/print-relay/jobs/${job.filename}/complete`, {
-                            success: false, error: err.message,
-                        }).catch(() => {});
+                        await this._completeJob(job.filename, {
+                            success: false, error: err.message, claimId: ackData.claimId,
+                        });
                         this.processedJobs.set(job.filename, Date.now());
                         const reason = err.message.replace(/^Printer is /i, "").replace(/^Print job timed out.*/, "offline or stuck");
                         this.emit("status", { printer: "error", printerDetail: reason });
@@ -269,9 +282,9 @@ class RelayEngine extends EventEmitter {
                         break; // Stop claiming more jobs — this printer is broken
                     } else {
                         // Non-printer error (download fail, etc.) — report to server
-                        await this._request("POST", `/api/print-relay/jobs/${job.filename}/complete`, {
-                            success: false, error: err.message,
-                        }).catch(() => {});
+                        await this._completeJob(job.filename, {
+                            success: false, error: err.message, claimId: ackData.claimId,
+                        });
                     }
                 } finally {
                     this._stopHeartbeat();
@@ -294,35 +307,56 @@ class RelayEngine extends EventEmitter {
         this.emit("log", `[${ts}] ${msg}`);
     }
 
-    _startHeartbeat(filename) {
+    _startHeartbeat(filename, claimId) {
         // Defensive: clear any previous timer first. Should never happen
         // (heartbeats are scoped to one job at a time by the serial
         // job loop), but if it ever does we'd rather leak the old
         // filename than double-beat.
         this._stopHeartbeat();
+        const heartbeat = { filename, claimId, timer: null };
+        this.activeHeartbeat = heartbeat;
         const beat = () => {
-            this._request("POST", `/api/print-relay/jobs/${filename}/heartbeat`, {})
+            this._request("POST", `/api/print-relay/jobs/${filename}/heartbeat`, { claimId })
                 .then(({ status }) => {
-                    // 404 means the cloud already recovered this job (we
-                    // went AWOL long enough for stale recovery to fire,
-                    // and now we're back). Nothing to do — the main loop
-                    // will stop the timer when the print finishes or
-                    // fails. Silent is correct here.
-                    if (status !== 200 && status !== 404) {
+                    // A late response from an old job must not stop a newer
+                    // job's heartbeat, so only the active token may clear it.
+                    if ((status === 404 || status === 409) && this.activeHeartbeat === heartbeat) {
+                        this._stopHeartbeat(heartbeat);
+                    } else if (status !== 200) {
                         // Other errors are noisy in the logs but not fatal.
                         // The cloud will recover on missing beats.
                     }
                 })
                 .catch(() => { /* network blip, next beat will retry */ });
         };
-        this.heartbeatTimer = setInterval(beat, this.HEARTBEAT_MS);
+        heartbeat.timer = setInterval(beat, this.HEARTBEAT_MS);
+        this.heartbeatTimer = heartbeat.timer;
+        beat();
     }
 
-    _stopHeartbeat() {
-        if (this.heartbeatTimer) {
-            clearInterval(this.heartbeatTimer);
-            this.heartbeatTimer = null;
+    _stopHeartbeat(expectedHeartbeat = null) {
+        if (expectedHeartbeat && this.activeHeartbeat !== expectedHeartbeat) return;
+        const timer = this.activeHeartbeat && this.activeHeartbeat.timer || this.heartbeatTimer;
+        if (timer) clearInterval(timer);
+        this.activeHeartbeat = null;
+        this.heartbeatTimer = null;
+    }
+
+    async _completeJob(filename, payload, attempts = 20) {
+        let lastError;
+        for (let attempt = 1; attempt <= attempts; attempt++) {
+            try {
+                const result = await this._request("POST", `/api/print-relay/jobs/${filename}/complete`, payload);
+                if (result.status === 200 && result.data && result.data.ok === true) return result.data;
+                if (result.status === 409) throw new Error("Print claim was recovered by another station");
+                lastError = new Error(`Cloud completion failed: HTTP ${result.status}${result.data && result.data.error ? ` (${result.data.error})` : ""}`);
+            } catch (err) {
+                lastError = err;
+                if (/recovered by another station/.test(err.message)) throw err;
+            }
+            if (attempt < attempts) await new Promise((resolve) => setTimeout(resolve, this.COMPLETION_RETRY_MS));
         }
+        throw lastError || new Error("Cloud completion failed");
     }
 
     // ── HTTP helpers ─────────────────────────────────────────────────────────
@@ -338,6 +372,7 @@ class RelayEngine extends EventEmitter {
                 path: fullUrl.pathname + fullUrl.search,
                 headers: {
                     "x-relay-key": this.config.key,
+                    "x-relay-version": RELAY_VERSION,
                     "Content-Type": "application/json",
                 },
                 timeout: 30000,
@@ -362,19 +397,33 @@ class RelayEngine extends EventEmitter {
 
     _downloadFile(urlPath, dest) {
         return new Promise((resolve, reject) => {
+            let settled = false;
+            let ws = null;
+            const fail = (err) => {
+                if (settled) return;
+                settled = true;
+                if (ws) ws.destroy();
+                try { fs.unlinkSync(dest); } catch {}
+                reject(err);
+            };
+            const succeed = () => {
+                if (settled) return;
+                settled = true;
+                resolve();
+            };
             const fullUrl = new URL(urlPath, this.config.url);
             const mod = fullUrl.protocol === "https:" ? https : http;
             const options = {
                 hostname: fullUrl.hostname,
                 port: fullUrl.port,
                 path: fullUrl.pathname + fullUrl.search,
-                headers: { "x-relay-key": this.config.key },
+                headers: { "x-relay-key": this.config.key, "x-relay-version": RELAY_VERSION },
                 timeout: 60000,
             };
             const req = mod.get(options, (res) => {
                 if (res.statusCode !== 200) {
-                    reject(new Error(`Download failed: HTTP ${res.statusCode}`));
                     res.resume();
+                    fail(new Error(`Download failed: HTTP ${res.statusCode}`));
                     return;
                 }
                 // Track bytes so we can verify the download completed.
@@ -384,29 +433,27 @@ class RelayEngine extends EventEmitter {
                 const expected = parseInt(res.headers["content-length"] || "0", 10);
                 let received = 0;
                 res.on("data", (chunk) => { received += chunk.length; });
-                const ws = fs.createWriteStream(dest);
+                ws = fs.createWriteStream(dest);
                 res.pipe(ws);
+                res.on("aborted", () => fail(new Error("Download aborted before completion")));
+                res.on("error", fail);
                 ws.on("finish", () => {
                     ws.close(() => {
                         if (expected > 0 && received !== expected) {
-                            // Kill the bad file so it can't accidentally
-                            // be printed by a later code path.
-                            try { fs.unlinkSync(dest); } catch {}
-                            return reject(new Error(
+                            return fail(new Error(
                                 `Download truncated: expected ${expected} bytes, got ${received}`,
                             ));
                         }
                         if (received === 0) {
-                            try { fs.unlinkSync(dest); } catch {}
-                            return reject(new Error("Download produced an empty file"));
+                            return fail(new Error("Download produced an empty file"));
                         }
-                        resolve();
+                        succeed();
                     });
                 });
-                ws.on("error", reject);
+                ws.on("error", fail);
             });
-            req.on("timeout", () => { req.destroy(); reject(new Error("Download timed out")); });
-            req.on("error", reject);
+            req.on("timeout", () => { req.destroy(); fail(new Error("Download timed out")); });
+            req.on("error", fail);
         });
     }
 
@@ -433,26 +480,36 @@ class RelayEngine extends EventEmitter {
         });
     }
 
-    _printImage(filepath, printerName) {
+    async _printerCapabilities(printerName) {
+        if (this.printerCapabilities.has(printerName)) return this.printerCapabilities.get(printerName);
+        const capabilities = await new Promise((resolve) => {
+            execFile("lpoptions", ["-p", printerName, "-l"], { timeout: 10000 }, (err, stdout) => resolve(err ? "" : stdout));
+        });
+        this.printerCapabilities.set(printerName, capabilities);
+        return capabilities;
+    }
+
+    async _printImage(filepath, printerName, outputProfile) {
+        const data = this.cachedStatus || {};
+        const printerCapabilities = await this._printerCapabilities(printerName);
+        const command = buildPrintCommand({
+            filepath,
+            printerName,
+            printerCapabilities,
+            printSize: data.printSize,
+            printQuality: data.printQuality,
+            customFlags: data.customPrintFlags || "",
+            outputProfile: outputProfile || data.outputProfile || null,
+        });
+        this.log(`Sending to printer: ${command}`);
         return new Promise((resolve, reject) => {
-            // Read printSize/printQuality from the cached /status response
-            // rather than making a fresh HTTP call per print. The cache is
-            // seeded at startup and refreshed every STATUS_REFRESH_MS by
-            // the background timer in _verifyAndStart. Falls through to
-            // safe defaults if the cache is somehow empty.
-            Promise.resolve({ data: this.cachedStatus || {} }).then(({ data }) => {
-                const printSize = data.printSize || "5x7";
-                const printQuality = data.printQuality || "high";
-                const command = buildPrintCommand({ filepath, printerName, printSize, printQuality });
-                this.log(`Sending to printer: ${command}`);
-                exec(command, { timeout: 60000 }, (err, stdout) => {
-                    if (err) return reject(err);
-                    this.log(`Print job accepted: ${stdout.trim()}`);
-                    const match = stdout.match(/request id is (\S+)/);
-                    if (!match) return resolve();
-                    this._waitForPrintComplete(match[1], printerName, resolve, reject);
-                });
-            }).catch(reject);
+            exec(command, { timeout: 60000 }, (err, stdout) => {
+                if (err) return reject(err);
+                this.log(`Print job accepted: ${stdout.trim()}`);
+                const match = stdout.match(/request id is (\S+)/);
+                if (!match) return resolve();
+                this._waitForPrintComplete(match[1], printerName, resolve, reject);
+            });
         });
     }
 

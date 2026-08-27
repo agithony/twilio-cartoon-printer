@@ -16,12 +16,13 @@
 //   --dry-run   Download image but skip actual printing
 
 require("dotenv").config();
-const { exec } = require("child_process");
+const { exec, execFile } = require("child_process");
 const fs = require("fs");
 const path = require("path");
 const https = require("https");
 const http = require("http");
 const { buildPrintCommand } = require("../relay-app/cups-command");
+const RELAY_VERSION = require("../relay-app/package.json").version + "-cli";
 
 // ── Parse CLI args ───────────────────────────────────────────────────────────
 
@@ -68,6 +69,7 @@ function request(method, urlPath, body) {
             path: fullUrl.pathname + fullUrl.search,
             headers: {
                 "x-relay-key": RELAY_KEY,
+                "x-relay-version": RELAY_VERSION,
                 "Content-Type": "application/json",
             },
             timeout: 30000,
@@ -92,28 +94,53 @@ function request(method, urlPath, body) {
 
 function downloadFile(urlPath, dest) {
     return new Promise((resolve, reject) => {
+        let settled = false;
+        let ws = null;
+        const fail = (err) => {
+            if (settled) return;
+            settled = true;
+            if (ws) ws.destroy();
+            try { fs.unlinkSync(dest); } catch {}
+            reject(err);
+        };
+        const succeed = () => {
+            if (settled) return;
+            settled = true;
+            resolve();
+        };
         const fullUrl = new URL(urlPath, BASE_URL);
         const mod = fullUrl.protocol === "https:" ? https : http;
         const options = {
             hostname: fullUrl.hostname,
             port: fullUrl.port,
             path: fullUrl.pathname + fullUrl.search,
-            headers: { "x-relay-key": RELAY_KEY },
+            headers: { "x-relay-key": RELAY_KEY, "x-relay-version": RELAY_VERSION },
             timeout: 60000,
         };
         const req = mod.get(options, (res) => {
             if (res.statusCode !== 200) {
-                reject(new Error(`Download failed: HTTP ${res.statusCode}`));
                 res.resume();
+                fail(new Error(`Download failed: HTTP ${res.statusCode}`));
                 return;
             }
-            const ws = fs.createWriteStream(dest);
+            const expected = parseInt(res.headers["content-length"] || "0", 10);
+            let received = 0;
+            res.on("data", (chunk) => { received += chunk.length; });
+            ws = fs.createWriteStream(dest);
             res.pipe(ws);
-            ws.on("finish", () => ws.close(resolve));
-            ws.on("error", reject);
+            res.on("aborted", () => fail(new Error("Download aborted before completion")));
+            res.on("error", fail);
+            ws.on("finish", () => ws.close(() => {
+                if (expected > 0 && received !== expected) {
+                    return fail(new Error(`Download truncated: expected ${expected} bytes, got ${received}`));
+                }
+                if (received === 0) return fail(new Error("Download produced an empty file"));
+                succeed();
+            }));
+            ws.on("error", fail);
         });
-        req.on("timeout", () => { req.destroy(); reject(new Error("Download timed out")); });
-        req.on("error", reject);
+        req.on("timeout", () => { req.destroy(); fail(new Error("Download timed out")); });
+        req.on("error", fail);
     });
 }
 
@@ -155,16 +182,34 @@ function findPrinter(override) {
     });
 }
 
-function printImage(filepath, printerName) {
+const printerCapabilitiesCache = new Map();
+function getPrinterCapabilities(printerName) {
+    if (printerCapabilitiesCache.has(printerName)) return Promise.resolve(printerCapabilitiesCache.get(printerName));
+    return new Promise((resolve) => {
+        execFile("lpoptions", ["-p", printerName, "-l"], { timeout: 10000 }, (err, stdout) => {
+            const capabilities = err ? "" : stdout;
+            printerCapabilitiesCache.set(printerName, capabilities);
+            resolve(capabilities);
+        });
+    });
+}
+
+function printImage(filepath, printerName, outputProfile) {
     return new Promise((resolve, reject) => {
         // Read print settings from the cached /status (seeded at startup,
         // refreshed every STATUS_REFRESH_MS) instead of a blocking fetch per
         // print. Falls through to safe defaults if the cache is somehow empty.
-        Promise.resolve({ data: cachedStatus || {} }).then(({ data }) => {
-            const printSize = data.printSize || "5x7";
-            const printQuality = data.printQuality || "high";
-
-            const command = buildPrintCommand({ filepath, printerName, printSize, printQuality });
+        Promise.resolve({ data: cachedStatus || {} }).then(async ({ data }) => {
+            const printerCapabilities = await getPrinterCapabilities(printerName);
+            const command = buildPrintCommand({
+                filepath,
+                printerName,
+                printerCapabilities,
+                printSize: data.printSize,
+                printQuality: data.printQuality,
+                customFlags: data.customPrintFlags || "",
+                outputProfile: outputProfile || data.outputProfile || null,
+            });
             log(`[${printerName}] Sending to printer: ${command}`);
             exec(command, { timeout: 60000 }, (err, stdout) => {
                 if (err) return reject(err);
@@ -260,18 +305,50 @@ function createWorker(printerOverride) {
     // and recovers the job in ~60s instead of waiting the 15-min printingAt
     // fallback. The job loop is serial, so at most one heartbeat runs at a time.
     let heartbeatTimer = null;
+    let activeHeartbeat = null;
     const HEARTBEAT_MS = 20 * 1000;
 
-    function startHeartbeat(filename) {
+    function startHeartbeat(filename, claimId) {
         stopHeartbeat();
-        heartbeatTimer = setInterval(() => {
-            request("POST", `/api/print-relay/jobs/${filename}/heartbeat`, {})
+        const heartbeat = { filename, claimId, timer: null };
+        activeHeartbeat = heartbeat;
+        const beat = () => {
+            request("POST", `/api/print-relay/jobs/${filename}/heartbeat`, { claimId })
+                .then(({ status }) => {
+                    if ((status === 404 || status === 409) && activeHeartbeat === heartbeat) {
+                        stopHeartbeat(heartbeat);
+                    }
+                })
                 .catch(() => { /* network blip — next beat retries; cloud recovers on missing beats */ });
-        }, HEARTBEAT_MS);
+        };
+        heartbeat.timer = setInterval(beat, HEARTBEAT_MS);
+        heartbeatTimer = heartbeat.timer;
+        beat();
     }
 
-    function stopHeartbeat() {
-        if (heartbeatTimer) { clearInterval(heartbeatTimer); heartbeatTimer = null; }
+    async function completeJob(filename, payload, attempts = 20) {
+        let lastError;
+        for (let attempt = 1; attempt <= attempts; attempt++) {
+            try {
+                const result = await request("POST", `/api/print-relay/jobs/${filename}/complete`, payload);
+                if (result.status === 200 && result.data && result.data.ok === true) return result.data;
+                if (result.status === 409) throw new Error("Print claim was recovered by another station");
+                lastError = new Error(`Cloud completion failed: HTTP ${result.status}${result.data && result.data.error ? ` (${result.data.error})` : ""}`);
+            } catch (err) {
+                lastError = err;
+                if (/recovered by another station/.test(err.message)) throw err;
+            }
+            if (attempt < attempts) await new Promise((resolve) => setTimeout(resolve, 3000));
+        }
+        throw lastError || new Error("Cloud completion failed");
+    }
+
+    function stopHeartbeat(expectedHeartbeat = null) {
+        if (expectedHeartbeat && activeHeartbeat !== expectedHeartbeat) return;
+        const timerToStop = activeHeartbeat && activeHeartbeat.timer || heartbeatTimer;
+        if (timerToStop) clearInterval(timerToStop);
+        activeHeartbeat = null;
+        heartbeatTimer = null;
     }
 
     function cleanupProcessedJobs() {
@@ -334,8 +411,9 @@ function createWorker(printerOverride) {
 
                 // We own this job now — start beating so the cloud can recover
                 // it within ~60s if this process dies, instead of 15 minutes.
-                startHeartbeat(job.filename);
+                startHeartbeat(job.filename, ackData.claimId);
 
+                let printSucceeded = false;
                 try {
                     // Download image
                     log(`[${label}] Downloading ${ackData.imageFile}...`);
@@ -343,12 +421,14 @@ function createWorker(printerOverride) {
 
                     if (DRY_RUN) {
                         log(`[${label}] [DRY RUN] Would print: ${localPath}`);
-                        await request("POST", `/api/print-relay/jobs/${job.filename}/complete`, { success: true });
+                        printSucceeded = true;
+                        await completeJob(job.filename, { success: true, claimId: ackData.claimId });
                     } else {
                         // Print
                         log(`[${label}] Printing ${ackData.imageFile} on ${printerName}...`);
-                        await printImage(localPath, printerName);
-                        await request("POST", `/api/print-relay/jobs/${job.filename}/complete`, { success: true });
+                        await printImage(localPath, printerName, ackData.outputProfile);
+                        printSucceeded = true;
+                        await completeJob(job.filename, { success: true, claimId: ackData.claimId });
                         log(`[${label}] Job ${job.filename} completed successfully`);
                     }
 
@@ -356,20 +436,24 @@ function createWorker(printerOverride) {
                 } catch (err) {
                     log(`[${label}] Print failed for ${job.filename}: ${err.message}`);
                     const isPrinterError = /printer is |timed out/i.test(err.message);
-                    if (isPrinterError) {
+                    if (printSucceeded) {
+                        log(`[${label}] Physical print succeeded but cloud completion was not accepted`);
+                        processedJobs.set(job.filename, Date.now());
+                    } else if (isPrinterError) {
                         // Report failure so server re-queues the job to ready/
                         // immediately — another printer's engine can claim it
                         // on its next poll (~5s) instead of waiting 15 min.
-                        await request("POST", `/api/print-relay/jobs/${job.filename}/complete`, {
-                            success: false, error: err.message,
-                        }).catch(() => {});
+                        await completeJob(job.filename, {
+                            success: false, error: err.message, claimId: ackData.claimId,
+                        });
                         processedJobs.set(job.filename, Date.now());
                         break; // Stop claiming more jobs — this printer is broken
                     } else {
-                        await request("POST", `/api/print-relay/jobs/${job.filename}/complete`, {
+                        await completeJob(job.filename, {
                             success: false,
                             error: err.message,
-                        }).catch(() => {});
+                            claimId: ackData.claimId,
+                        });
                     }
                 } finally {
                     stopHeartbeat();

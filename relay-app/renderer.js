@@ -1,9 +1,10 @@
 // ── DOM refs ─────────────────────────────────────────────────────────────
 
-const DEFAULT_URL = "https://twilio-cartoon-printer.orangemeadow-7fe73fc6.centralus.azurecontainerapps.io";
-const DEFAULT_KEY = "mySecretKey123";
 const urlInput = document.getElementById("url");
 const keyInput = document.getElementById("key");
+const outputDirectoryInput = document.getElementById("outputDirectory");
+const chooseOutputDirectoryBtn = document.getElementById("chooseOutputDirectory");
+const clearOutputDirectoryBtn = document.getElementById("clearOutputDirectory");
 const printerList = document.getElementById("printerList");
 const refreshBtn = document.getElementById("refreshPrinters");
 const dryRunCheck = document.getElementById("dryRun");
@@ -27,9 +28,10 @@ const keyEditBtn = document.getElementById("keyEditBtn");
 
 (async function init() {
     const config = await window.relay.getConfig();
-    urlInput.value = config.url || DEFAULT_URL;
-    keyInput.value = config.key || DEFAULT_KEY;
+    urlInput.value = config.url || "";
+    keyInput.value = config.key || "";
     dryRunCheck.checked = !!config.dryRun;
+    outputDirectoryInput.value = config.outputDirectory || "";
 
     // Lock URL field by default
     urlInput.disabled = true;
@@ -66,6 +68,16 @@ const keyEditBtn = document.getElementById("keyEditBtn");
 
     await refreshPrinters(selectedPrinters);
 })();
+
+chooseOutputDirectoryBtn.addEventListener("click", async () => {
+    const selected = await window.relay.chooseOutputDirectory();
+    if (selected) outputDirectoryInput.value = selected;
+});
+
+clearOutputDirectoryBtn.addEventListener("click", async () => {
+    outputDirectoryInput.value = "";
+    await window.relay.setOutputDirectory("");
+});
 
 async function refreshPrinters(selectedPrinters) {
     if (!Array.isArray(selectedPrinters)) {
@@ -121,6 +133,7 @@ connectBtn.addEventListener("click", async () => {
         key,
         printers,
         dryRun: dryRunCheck.checked,
+        outputDirectory: outputDirectoryInput.value,
     };
 
     await window.relay.saveConfig(config);
@@ -138,6 +151,8 @@ function setConnected(printers) {
     keyEditBtn.disabled = true;
     dryRunCheck.disabled = true;
     refreshBtn.disabled = true;
+    chooseOutputDirectoryBtn.disabled = true;
+    clearOutputDirectoryBtn.disabled = true;
 
     // Disable printer checkboxes
     printerList.querySelectorAll('input[type="checkbox"]').forEach(cb => cb.disabled = true);
@@ -172,6 +187,8 @@ function setDisconnected() {
     keyEditBtn.textContent = "Edit";
     dryRunCheck.disabled = false;
     refreshBtn.disabled = false;
+    chooseOutputDirectoryBtn.disabled = false;
+    clearOutputDirectoryBtn.disabled = false;
 
     // Re-enable printer checkboxes
     printerList.querySelectorAll('input[type="checkbox"]').forEach(cb => cb.disabled = false);
@@ -388,8 +405,8 @@ function renderJobs() {
         // (printed or failed) — those are the jobs that exist in the cloud's
         // terminal queues and can be re-queued. In-flight jobs (claiming/
         // downloading/printing) get no button; reprinting them would risk a
-        // double print. The server re-validates (must be in done/, image must
-        // exist) and rejects otherwise, so this is just a convenience gate.
+        // double print. The server re-validates that the job is terminal and
+        // its image exists, so this is just a convenience gate.
         if (j.status === "done" || j.status === "failed") {
             const btn = document.createElement("button");
             btn.className = "job-action-btn job-reprint-btn";

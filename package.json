@@ -13,17 +13,27 @@
   "author": "",
   "license": "ISC",
   "packageManager": "pnpm@10.20.0",
+  "engines": {
+    "node": ">=22"
+  },
   "type": "commonjs",
   "dependencies": {
-    "axios": "1.13.5",
-    "body-parser": "2.2.2",
+    "axios": "1.20.0",
+    "body-parser": "2.3.0",
     "compression": "1.8.1",
     "dotenv": "17.2.4",
     "express": "5.2.1",
     "openai": "6.21.0",
     "pdfkit": "0.17.2",
     "qrcode": "1.5.4",
-    "sharp": "0.34.5",
+    "sharp": "0.35.4",
     "twilio": "5.12.1"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": ["sharp"],
+    "overrides": {
+      "path-to-regexp": "8.4.0",
+      "qs": "6.15.2"
+    }
   }
 }
