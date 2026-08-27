@@ -81,9 +81,8 @@ function tokenPayload(token) {
 }
 
 async function startOAuth(next = "/protected") {
-    const response = await fetch(`${baseUrl}/auth/login?next=${encodeURIComponent(next)}`);
-    const html = (await response.text()).replace(/&amp;/g, "&");
-    const authHref = html.match(/class="btn-google" href="([^"]+)"/)[1];
+    const response = await fetch(`${baseUrl}/auth/google?next=${encodeURIComponent(next)}`, { redirect: "manual" });
+    const authHref = response.headers.get("location");
     return {
         response,
         state: new URL(authHref).searchParams.get("state"),
@@ -149,7 +148,9 @@ test("login page shows only configured methods and sends defensive headers", asy
     let html = await response.text();
     assert.equal(response.status, 200);
     assert.match(html, /Sign in with Google/);
+    assert.match(html, /href="\/auth\/google\?next=%2Fprotected"/);
     assert.doesNotMatch(html, /name="pin"/);
+    assert.equal(response.headers.has("set-cookie"), false);
     assert.equal(response.headers.get("cache-control"), "no-store");
     assert.equal(response.headers.get("x-frame-options"), "DENY");
     assert.match(response.headers.get("content-security-policy"), /frame-ancestors 'none'/);
@@ -265,6 +266,11 @@ test("Google OAuth accepts a signed state only with its bound nonce cookie", asy
     assert.match(nonceSetCookie, /SameSite=Lax/i);
     assert.match(nonceSetCookie, /Path=\/auth\/callback/i);
     assert.match(nonceSetCookie, /Max-Age=600/i);
+
+    // Background requests that render the login page must not replace the
+    // nonce created by the explicit Google sign-in action.
+    const backgroundLogin = await fetch(`${baseUrl}/auth/login?next=%2Ffavicon.ico`);
+    assert.equal(backgroundLogin.headers.has("set-cookie"), false);
 
     const originalPost = axios.post;
     let exchanges = 0;
