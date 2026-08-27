@@ -239,7 +239,7 @@ test("next redirects accept local single-slash paths and reject open redirects",
     process.env.ADMIN_PIN = "Redirect8";
     for (const unsafe of ["https://evil.example/path", "//evil.example/path", "/\\evil.example/path"]) {
         const response = await postPin("Redirect8", { next: unsafe, client: "192.0.2.13" });
-        assert.equal(response.headers.get("location"), "/dashboard");
+        assert.equal(response.headers.get("location"), "/home");
     }
 
     const local = await postPin("Redirect8", { next: "/protected?tab=jobs", client: "192.0.2.13" });
@@ -250,7 +250,7 @@ test("next redirects accept local single-slash paths and reject open redirects",
     const oauth = await startOAuth("//evil.example/path");
     const state = tokenPayload(oauth.state);
     assert.equal(state.purpose, "oauth-state");
-    assert.equal(state.next, "/dashboard");
+    assert.equal(state.next, "/home");
     assert.match(state.nonce, /^[A-Za-z0-9_-]{43}$/);
     assert.ok(state.exp > Date.now());
 });
