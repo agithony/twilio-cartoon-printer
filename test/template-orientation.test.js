@@ -10,11 +10,13 @@ const EVENT = "__template_orientation_test__";
 const TEMPLATE = "__template_landscape_test__.png";
 const templatePath = path.join(settings.ROOT_DIR, "templates", TEMPLATE);
 const eventDir = path.join(settings.EVENTS_DIR, EVENT);
+const originalBasicCompatibility = settings.DEFAULTS.templateCompatibilityOverrides["basic.png"];
 
 before(async () => {
     await sharp({
         create: { width: 300, height: 200, channels: 4, background: "#ffffff" },
     }).png().toFile(templatePath);
+    settings.DEFAULTS.templateCompatibilityOverrides["basic.png"] = "both";
     fs.mkdirSync(eventDir, { recursive: true });
     fs.writeFileSync(path.join(eventDir, "settings.json"), JSON.stringify({
         templateFile: "basic.png",
@@ -22,13 +24,17 @@ before(async () => {
             portrait: "basic.png",
             landscape: TEMPLATE,
         },
-        templateCompatibilityOverrides: { "basic.png": "both" },
     }));
 });
 
 after(() => {
     fs.rmSync(templatePath, { force: true });
     fs.rmSync(eventDir, { recursive: true, force: true });
+    if (originalBasicCompatibility === undefined) {
+        delete settings.DEFAULTS.templateCompatibilityOverrides["basic.png"];
+    } else {
+        settings.DEFAULTS.templateCompatibilityOverrides["basic.png"] = originalBasicCompatibility;
+    }
 });
 
 test("template listing includes dimensions and orientation", async () => {
@@ -41,6 +47,7 @@ test("template listing includes dimensions and orientation", async () => {
         width: 300,
         height: 200,
         orientation: "landscape",
+        supported: true,
     });
     assert.equal(portrait.orientation, "portrait");
     assert.ok(portrait.width < portrait.height);
@@ -61,9 +68,14 @@ test("an explicit None selection does not fall back to the legacy frame", () => 
     assert.equal(settings.getTemplatePath(EVENT, "landscape"), "");
 });
 
-test("native override can opt a default Both frame back out", () => {
-    fs.writeFileSync(path.join(eventDir, "settings.json"), JSON.stringify({
-        templateCompatibilityOverrides: { "frame_-_overlay_-_low_center.png": "native" },
-    }));
-    assert.equal(settings.getTemplateCompatibility("frame_-_overlay_-_low_center.png", EVENT), "native");
+test("a global native override opts a default Both frame out for every event", () => {
+    const filename = "frame_-_overlay_-_low_center.png";
+    const original = settings.DEFAULTS.templateCompatibilityOverrides[filename];
+    try {
+        settings.DEFAULTS.templateCompatibilityOverrides[filename] = "native";
+        assert.equal(settings.getTemplateCompatibility(filename, EVENT), "native");
+        assert.equal(settings.getTemplateCompatibility(filename, "another-event"), "native");
+    } finally {
+        settings.DEFAULTS.templateCompatibilityOverrides[filename] = original;
+    }
 });
