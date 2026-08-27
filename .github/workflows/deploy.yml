@@ -237,6 +237,7 @@ jobs:
           export APP_NAME="${{ env.APP_NAME }}"
           export CONTAINER_IMAGE="${{ steps.acr-creds.outputs.server }}/${{ env.IMAGE_TAG }}"
           export BASE_URL="https://${FQDN}"
+          export DEPLOYMENT_RUN_ID="${{ github.run_id }}"
           export ALLOWED_EMAILS="${ALLOWED_EMAILS:-}"
           export TWILIO_WHATSAPP_NUMBER="${TWILIO_WHATSAPP_NUMBER:-}"
           export TWILIO_WHATSAPP_MESSAGING_SERVICE_SID="${TWILIO_WHATSAPP_MESSAGING_SERVICE_SID:-}"
@@ -250,7 +251,7 @@ jobs:
           export TWILIO_TEMPLATE_NUDGE_PT_BR="${TWILIO_TEMPLATE_NUDGE_PT_BR:-}"
           # shellcheck disable=SC2016
           # Restrict substitution to our known vars so no other ${...} in the template is touched.
-          envsubst '${APP_NAME} ${CONTAINER_IMAGE} ${BASE_URL} ${ALLOWED_EMAILS} ${TWILIO_WHATSAPP_NUMBER} ${TWILIO_WHATSAPP_MESSAGING_SERVICE_SID} ${TWILIO_TEMPLATE_DELIVERY} ${TWILIO_TEMPLATE_RATING} ${TWILIO_TEMPLATE_PROMO} ${TWILIO_TEMPLATE_NUDGE} ${TWILIO_TEMPLATE_DELIVERY_PT_BR} ${TWILIO_TEMPLATE_RATING_PT_BR} ${TWILIO_TEMPLATE_PROMO_PT_BR} ${TWILIO_TEMPLATE_NUDGE_PT_BR}' < .github/containerapp.yaml > /tmp/containerapp.yaml
+          envsubst '${APP_NAME} ${CONTAINER_IMAGE} ${BASE_URL} ${DEPLOYMENT_RUN_ID} ${ALLOWED_EMAILS} ${TWILIO_WHATSAPP_NUMBER} ${TWILIO_WHATSAPP_MESSAGING_SERVICE_SID} ${TWILIO_TEMPLATE_DELIVERY} ${TWILIO_TEMPLATE_RATING} ${TWILIO_TEMPLATE_PROMO} ${TWILIO_TEMPLATE_NUDGE} ${TWILIO_TEMPLATE_DELIVERY_PT_BR} ${TWILIO_TEMPLATE_RATING_PT_BR} ${TWILIO_TEMPLATE_PROMO_PT_BR} ${TWILIO_TEMPLATE_NUDGE_PT_BR}' < .github/containerapp.yaml > /tmp/containerapp.yaml
 
           echo "Updating container app registry credentials..."
           az containerapp registry set \
@@ -304,17 +305,42 @@ jobs:
             CODE=$(curl -s -o /dev/null -w "%{http_code}" "https://$REVISION_FQDN/healthz" || true)
             if [ "$CODE" = "200" ]; then
               echo "Healthz OK after attempt $i"
-              echo ""
-              echo "=========================================="
-              echo "  Deployment complete!"
-              echo "=========================================="
-              echo "  App URL:        https://${FQDN}"
-              echo "  Admin Console:  https://${FQDN}/home"
-              echo "  Dashboard:      https://${FQDN}/dashboard"
-              echo "  Twilio Webhook: https://${FQDN}/inbound (legacy /sms remains supported)"
-              echo "=========================================="
               exit 0
             fi
             echo "Attempt $i: status=$CODE — retrying in 10s"; sleep 10
           done
           echo "::error::Healthz never returned 200 after 7.5 minutes."; exit 1
+
+      - name: Smoke test admin PIN
+        env:
+          ADMIN_PIN: ${{ secrets.ADMIN_PIN }}
+          REVISION_FQDN: ${{ steps.fqdn.outputs.revision-fqdn }}
+        run: |
+          if [ -z "$ADMIN_PIN" ]; then
+            echo "ADMIN_PIN is not configured; skipping PIN smoke test."
+            exit 0
+          fi
+          CODE=$(printf '%s' "$ADMIN_PIN" | curl -s -o /dev/null -w "%{http_code}" \
+            -X POST \
+            --data-urlencode pin@- \
+            --data-urlencode next=/dashboard/ \
+            "https://$REVISION_FQDN/auth/pin")
+          if [ "$CODE" != "302" ]; then
+            echo "::error::Admin PIN authentication returned HTTP $CODE."
+            exit 1
+          fi
+          echo "Admin PIN authentication OK"
+
+      - name: Deployment summary
+        env:
+          FQDN: ${{ steps.fqdn.outputs.fqdn }}
+        run: |
+          echo ""
+          echo "=========================================="
+          echo "  Deployment complete!"
+          echo "=========================================="
+          echo "  App URL:        https://${FQDN}"
+          echo "  Admin Console:  https://${FQDN}/home"
+          echo "  Dashboard:      https://${FQDN}/dashboard"
+          echo "  Twilio Webhook: https://${FQDN}/inbound (legacy /sms remains supported)"
+          echo "=========================================="
