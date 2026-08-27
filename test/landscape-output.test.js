@@ -23,8 +23,10 @@ const bothEventDir = path.join(settings.EVENTS_DIR, EVENT_BOTH);
 const explicitEventDir = path.join(settings.EVENTS_DIR, EVENT_EXPLICIT);
 const templatePath = path.join(settings.ROOT_DIR, "templates", TEMPLATE);
 const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "cartoon-landscape-"));
+const originalTemplateCompatibility = settings.DEFAULTS.templateCompatibilityOverrides[TEMPLATE];
 
 before(async () => {
+    settings.DEFAULTS.templateCompatibilityOverrides[TEMPLATE] = "both";
     fs.mkdirSync(eventDir, { recursive: true });
     fs.writeFileSync(path.join(eventDir, "settings.json"), JSON.stringify({
         printSize: "6x4",
@@ -37,13 +39,11 @@ before(async () => {
         printQuality: "high",
         templateFile: TEMPLATE,
         templateFilesByOrientation: { portrait: TEMPLATE, landscape: TEMPLATE },
-        templateCompatibilityOverrides: { [TEMPLATE]: "both" },
     }));
     fs.mkdirSync(explicitEventDir, { recursive: true });
     fs.writeFileSync(path.join(explicitEventDir, "settings.json"), JSON.stringify({
         printSize: "6x4",
         templateFilesByOrientation: { portrait: TEMPLATE, landscape: TEMPLATE },
-        templateCompatibilityOverrides: { [TEMPLATE]: "landscape" },
     }));
     await sharp({
         create: { width: 100, height: 150, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 0 } },
@@ -60,6 +60,11 @@ after(() => {
     fs.rmSync(explicitEventDir, { recursive: true, force: true });
     fs.rmSync(templatePath, { force: true });
     fs.rmSync(tempDir, { recursive: true, force: true });
+    if (originalTemplateCompatibility === undefined) {
+        delete settings.DEFAULTS.templateCompatibilityOverrides[TEMPLATE];
+    } else {
+        settings.DEFAULTS.templateCompatibilityOverrides[TEMPLATE] = originalTemplateCompatibility;
+    }
 });
 
 test("6x4 output profile is an exact 1800x1200 PNG at 300 DPI", () => {
@@ -114,7 +119,12 @@ test("portrait templates are skipped for landscape output", async () => {
         create: { width: 300, height: 200, channels: 3, background: "#336699" },
     }).png().toFile(outputPath);
 
-    await compositeWithTemplate(outputPath, settings.getOutputProfile(EVENT), EVENT);
+    settings.DEFAULTS.templateCompatibilityOverrides[TEMPLATE] = "native";
+    try {
+        await compositeWithTemplate(outputPath, settings.getOutputProfile(EVENT), EVENT);
+    } finally {
+        settings.DEFAULTS.templateCompatibilityOverrides[TEMPLATE] = "both";
+    }
     const metadata = await sharp(outputPath).metadata();
 
     assert.equal(metadata.width, 300);
@@ -152,7 +162,7 @@ test("frames marked for both orientations adapt to landscape output", async () =
     assert.ok(right - left + 1 < 650, "adapted decoration should leave landscape breathing room");
 });
 
-test("an explicit landscape override adapts a portrait frame without cover-cropping", async () => {
+test("global compatibility adapts a portrait frame without cover-cropping for every event", async () => {
     const outputPath = path.join(tempDir, "explicit-landscape.png");
     await sharp({
         create: { width: 300, height: 200, channels: 3, background: "#336699" },
