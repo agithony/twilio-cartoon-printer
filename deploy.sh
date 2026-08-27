@@ -213,8 +213,8 @@ properties:
       - name: ${APP_NAME}
         image: ${ACR_SERVER}/${IMAGE}
         resources:
-          cpu: 1.0
-          memory: 2Gi
+          cpu: 0.5
+          memory: 1Gi
         env:
           - name: PORT
             value: "8080"

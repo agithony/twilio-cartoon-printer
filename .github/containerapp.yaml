@@ -8,8 +8,8 @@ properties:
       - name: ${APP_NAME}
         image: ${CONTAINER_IMAGE}
         resources:
-          cpu: 2.0
-          memory: 4Gi
+          cpu: 0.5
+          memory: 1Gi
         env:
           - name: PORT
             value: "8080"
