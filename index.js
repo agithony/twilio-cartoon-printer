@@ -115,11 +115,17 @@ app.use("/assets", express.static(path.join(__dirname, "assets"), {
 
 // Staging images (for review previews in dashboard)
 app.use("/images/staging", requireStagedMediaAuth, (req, res, next) => {
-    express.static(path.join(settings.getDownloadDir(), ".staging"))(req, res, next);
+    express.static(path.join(settings.getDownloadDir(), ".staging"), {
+        setHeaders: (response) => response.setHeader("Cache-Control", "private, no-store"),
+    })(req, res, next);
 });
 // Serve approved images — resolves download dir dynamically per request
 app.use("/images", (req, res, next) => {
-    express.static(settings.getDownloadDir())(req, res, next);
+    express.static(settings.getDownloadDir(), {
+        setHeaders: (response, filePath) => response.setHeader("Cache-Control", filePath.endsWith("_input.jpg")
+            ? "private, no-store"
+            : "public, max-age=0, must-revalidate"),
+    })(req, res, next);
 });
 
 // ── Twilio Webhook ───────────────────────────────────────────────────────────
