@@ -16,7 +16,7 @@ const {
     incrementUsage,
     recoverStaleRelayJobs,
     requeueDoneJobForReprint,
-    sweepPendingRelayEffects,
+    sweepPendingTerminalEffects,
 } = require("../lib/queue");
 const { mountPrintRelay } = require("../lib/print-relay");
 
@@ -358,6 +358,45 @@ test("stale recovery revokes the old claim before a new relay ACK", async () => 
     assert.deepEqual(current, { status: 200, body: { ok: true, state: "done" } });
 });
 
+test("stale recovery does not reread settled terminal history", async () => {
+    cleanupQueues();
+    writeDone(doneJob());
+    writeFailed({ ...doneJob(), failReason: "printer" });
+    const originalReadFile = fs.promises.readFile;
+    let terminalReads = 0;
+    fs.promises.readFile = async function patchedReadFile(filePath, ...args) {
+        const dir = path.dirname(String(filePath));
+        if (dir === DONE_DIR || dir === FAILED_DIR) terminalReads++;
+        return originalReadFile.call(this, filePath, ...args);
+    };
+
+    try {
+        await recoverStaleRelayJobs();
+    } finally {
+        fs.promises.readFile = originalReadFile;
+    }
+
+    assert.equal(terminalReads, 0);
+});
+
+test("terminal effect scan reports directory failures for a prompt retry", async () => {
+    cleanupQueues();
+    const originalReaddir = fs.promises.readdir;
+    fs.promises.readdir = async function patchedReaddir(dir, ...args) {
+        if (String(dir) === DONE_DIR) throw Object.assign(new Error("temporary Azure Files failure"), { code: "EIO" });
+        return originalReaddir.call(this, dir, ...args);
+    };
+
+    let complete;
+    try {
+        complete = await sweepPendingTerminalEffects();
+    } finally {
+        fs.promises.readdir = originalReaddir;
+    }
+
+    assert.equal(complete, false);
+});
+
 test("pending failed-reprint effects release restored quota across restart", async () => {
     cleanupQueues();
     const eventName = "__failed_reprint_restart_test__";
@@ -380,7 +419,7 @@ test("pending failed-reprint effects release restored quota across restart", asy
     // A restarted process rebuilds quota before the effect sweeper runs.
     await buildUsageCache();
     assert.equal(getUsageCount(userPhone, eventName), 0);
-    await sweepPendingRelayEffects();
+    await sweepPendingTerminalEffects();
 
     const failed = JSON.parse(fs.readFileSync(path.join(FAILED_DIR, PENDING_EFFECT_FNAME), "utf-8"));
     assert.equal(failed.failureEffectsPending, false);
