@@ -815,23 +815,23 @@ const server = app.listen(port, "0.0.0.0", async () => {
     mountKiosk(app);
     await mountExperiments(app);
     setReady();
-    let genPollRunning = false;
-    setInterval(async () => {
-        if (genPollRunning || settings.get("queuePaused")) return;
-        genPollRunning = true;
-        try {
-            await processGenerationQueue();
-        } finally { genPollRunning = false; }
-    }, POLL_INTERVAL);
-    let printPollRunning = false;
-    setInterval(async () => {
-        if (printPollRunning || settings.get("queuePaused")) return;
-        printPollRunning = true;
-        try {
-            await processPrintQueue();
+    const IDLE_POLL_INTERVAL = 10_000;
+    function startQueuePoller(label, worker) {
+        async function poll() {
+            let active = false;
+            try {
+                if (!settings.get("queuePaused")) active = (await worker()) === true;
+            } catch (err) {
+                active = true;
+                console.error(`⚠️  ${label} queue poll failed: ${err.message}`);
+            } finally {
+                setTimeout(poll, active ? POLL_INTERVAL : IDLE_POLL_INTERVAL);
+            }
         }
-        finally { printPollRunning = false; }
-    }, POLL_INTERVAL);
+        setTimeout(poll, POLL_INTERVAL);
+    }
+    startQueuePoller("Generation", processGenerationQueue);
+    startQueuePoller("Print", processPrintQueue);
 
     // Recovery thresholds range from one to fifteen minutes, so scanning the
     // Azure Files queues every second only creates SMB traffic without making
@@ -858,7 +858,7 @@ const server = app.listen(port, "0.0.0.0", async () => {
     setInterval(() => cleanupQueueTempFiles().catch((err) => {
         console.error(`⚠️  Queue temp cleanup failed: ${err.message}`);
     }), 60 * 60 * 1000);
-    console.log(`⏱️  Workers started (hot queues ${POLL_INTERVAL}ms, maintenance 30000ms, max ${settings.get("maxConcurrentGeneration")} concurrent generations)`);
+    console.log(`⏱️  Workers started (active queues ${POLL_INTERVAL}ms, idle queues ${IDLE_POLL_INTERVAL}ms, maintenance 30000ms, max ${settings.get("maxConcurrentGeneration")} concurrent generations)`);
 
     // Auto-open home page in the default browser (skip in production/Docker)
     const host = `http://localhost:${port}`;
