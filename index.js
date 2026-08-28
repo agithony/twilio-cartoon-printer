@@ -37,6 +37,7 @@ const {
     recoverStaleRelayJobs,
     clearStaleRelayTargets,
     sweepMissingOutputJobs,
+    sweepPendingTerminalEffects,
     cleanupQueueTempFiles,
 } = require("./lib/queue");
 const { parseStyle, detectStyle } = require("./lib/styles");
@@ -802,7 +803,7 @@ const server = app.listen(port, "0.0.0.0", async () => {
     nps.load();
     contacts.load();
     settings.onEventNameChange(() => buildUsageCache());
-    await recoverStaleJobs();
+    const terminalEffectsRecovered = await recoverStaleJobs();
     mountHome(app);
     mountPhotoGallery(app);
     mountDashboard(app);
@@ -836,12 +837,18 @@ const server = app.listen(port, "0.0.0.0", async () => {
     // Azure Files queues every second only creates SMB traffic without making
     // recovery meaningfully faster.
     let maintenanceRunning = false;
+    let nextTerminalEffectSweepAt = Date.now() + (terminalEffectsRecovered ? 60 * 60 * 1000 : 30_000);
     setInterval(async () => {
         if (maintenanceRunning || settings.get("queuePaused")) return;
         maintenanceRunning = true;
         try {
+            const terminalSweepDue = Date.now() >= nextTerminalEffectSweepAt;
+            if (terminalSweepDue) {
+                const complete = await sweepPendingTerminalEffects();
+                nextTerminalEffectSweepAt = Date.now() + (complete ? 60 * 60 * 1000 : 30_000);
+            }
             await sweepStaleGenerating();
-            await recoverStaleRelayJobs();
+            await recoverStaleRelayJobs({ retryPendingEffects: !terminalSweepDue });
             await clearStaleRelayTargets();
             await sweepMissingOutputJobs();
         } finally { maintenanceRunning = false; }
