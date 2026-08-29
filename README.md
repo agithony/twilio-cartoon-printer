@@ -5,7 +5,35 @@
 [![Relay App Release](https://github.com/anthonyjdella/twilio-cartoon-printer/actions/workflows/relay-release.yml/badge.svg)](https://github.com/anthonyjdella/twilio-cartoon-printer/actions/workflows/relay-release.yml)
 [![License: ISC](https://img.shields.io/badge/License-ISC-blue.svg)](#license)
 
-A photobooth-style app powered by Twilio and OpenAI. Attendees send a selfie by SMS/MMS or WhatsApp, choose an art style, and receive a printed portrait, a digital copy, or a share link depending on the event settings. Configuration is manageable at runtime through an OAuth-protected web admin UI -- no server restarts needed.
+A photobooth-style app powered by Twilio and OpenAI. Attendees send a selfie by SMS/MMS or WhatsApp, choose an art style, and receive a digital portrait, share link, or optional print. Operators manage the entire event at runtime through the authenticated web UI -- no server restarts needed.
+
+## See It in Action
+
+<table>
+  <tr>
+    <td width="33%" align="center"><img src="docs/images/readme/cartoon.jpg" alt="Cartoon-style generated portrait" width="100%"><br><sub><strong>Cartoon</strong></sub></td>
+    <td width="33%" align="center"><img src="docs/images/readme/manga.jpg" alt="Manga-style generated portrait" width="100%"><br><sub><strong>Manga</strong></sub></td>
+    <td width="33%" align="center"><img src="docs/images/readme/watercolor.jpg" alt="Watercolor generated portrait" width="100%"><br><sub><strong>Watercolor</strong></sub></td>
+  </tr>
+  <tr>
+    <td width="33%" align="center"><img src="docs/images/readme/pixel-art.jpg" alt="Pixel-art generated portrait" width="100%"><br><sub><strong>Pixel Art</strong></sub></td>
+    <td width="33%" align="center"><img src="docs/images/readme/pop-art.jpg" alt="Pop-art generated portrait" width="100%"><br><sub><strong>Pop Art</strong></sub></td>
+    <td width="33%" align="center"><img src="docs/images/readme/pencil-sketch.jpg" alt="Pencil-sketch generated portrait" width="100%"><br><sub><strong>Pencil Sketch</strong></sub></td>
+  </tr>
+</table>
+
+### Before and After
+
+<table>
+  <tr>
+    <th width="50%">Selfie in</th>
+    <th width="50%">Event-ready portrait out</th>
+  </tr>
+  <tr>
+    <td align="center"><img src="docs/images/readme/before-selfie.jpg" alt="Original selfie before processing" width="360"></td>
+    <td align="center"><img src="docs/images/readme/after-cartoon.jpg" alt="Manga portrait generated from the selfie" width="360"></td>
+  </tr>
+</table>
 
 ## How It Works
 
