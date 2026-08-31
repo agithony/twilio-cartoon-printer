@@ -23,7 +23,7 @@
     "compression": "1.8.1",
     "dotenv": "17.2.4",
     "express": "5.2.1",
-    "openai": "6.21.0",
+    "openai": "7.8.0",
     "pdfkit": "0.17.2",
     "qrcode": "1.5.4",
     "sharp": "0.35.4",
