@@ -27,7 +27,7 @@
     "pdfkit": "0.17.2",
     "qrcode": "1.5.4",
     "sharp": "0.35.4",
-    "twilio": "5.12.1"
+    "twilio": "6.1.0"
   },
   "pnpm": {
     "onlyBuiltDependencies": ["sharp"],
