@@ -27,7 +27,7 @@ merge to main ─▶ deploy.yml (push)
 | **Security** | `pnpm audit` + `npm audit` (advisory, `\|\| true`) and **gitleaks** secret scan (hard, via Docker CLI) | gitleaks hard; audits soft |
 | **Validate** | Aggregator — succeeds only if all three jobs succeed | the gate |
 
-Runtime is pinned to **Node 22** to match production (`Dockerfile: node:22-bullseye-slim`).
+Runtime is pinned to **Node 22** to match production (`Dockerfile: node:22-bookworm-slim`).
 
 ## Why a few things are the way they are
 

@@ -1,18 +1,17 @@
-FROM node:22-bullseye-slim
+FROM node:22-bookworm-slim
 
 WORKDIR /app
 
 ENV NODE_ENV=production
 ENV PORT=8080
 
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends ca-certificates \
-    && rm -rf /var/lib/apt/lists/*
+# Node uses its bundled CA store for outbound HTTPS. Keep the image build free
+# from Debian mirror availability by avoiding unnecessary OS package installs.
 
 COPY package.json pnpm-lock.yaml ./
 
 RUN corepack enable \
-    && corepack prepare pnpm@9.15.1 --activate \
+    && corepack prepare pnpm@10.20.0 --activate \
     && pnpm install --frozen-lockfile --prod
 
 COPY . .

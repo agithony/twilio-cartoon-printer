@@ -22,7 +22,7 @@ jobs:
       - uses: pnpm/action-setup@v5
       - uses: actions/setup-node@v6
         with:
-          node-version: 22 # matches the Dockerfile (node:22-bullseye-slim)
+          node-version: 22 # matches the Dockerfile (node:22-bookworm-slim)
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       # `pnpm test` runs files sequentially because several suites isolate
