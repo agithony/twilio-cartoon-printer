@@ -13,6 +13,7 @@ data/*.jsonl
 .DS_Store
 .relay-temp/
 relay-app/out/
+.worktrees/
 data/settings.json
 data/events/
 data/experiments/

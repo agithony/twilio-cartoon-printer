@@ -7,6 +7,9 @@ style-references
 background-references
 booth-uploads
 .git
+.worktrees
+relay-app/node_modules
+relay-app/out
 .env
 npm-debug.log
 pnpm-debug.log
