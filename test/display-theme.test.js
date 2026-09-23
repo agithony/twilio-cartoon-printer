@@ -76,12 +76,12 @@ test("light photo book uses a Twilio red ambient gradient", () => {
     assert.match(html, /linear-gradient\(155deg, #FFFFFF 0%, #FFF7F8 48%, #F3F6FF 100%\)/);
 });
 
-test("portrait combo theme changes synchronize both panes", () => {
+test("combo theme changes synchronize both panes in every orientation", () => {
     const html = buildComboHtml();
     assert.match(html, /twilio-theme-change/);
     assert.match(html, /\[leftPane, rightPane\]/);
     assert.match(html, /frame\.contentDocument\.documentElement\.setAttribute/);
-    assert.match(html, /if \(!isPortrait\(\)\) return/);
+    assert.doesNotMatch(html, /if \(!isPortrait\(\)\) return/);
 });
 
 test("generated display scripts remain syntactically valid", () => {

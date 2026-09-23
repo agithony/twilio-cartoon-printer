@@ -31,10 +31,10 @@ The relay key authenticates this app. Printing must also be enabled on the cloud
 2. Quit and remove any older Twilio Print Station app, then unzip the new bundle.
 3. Keep the app and `Open Twilio Print Station.command` in the same folder.
 4. On first launch, right-click `Open Twilio Print Station.command`, choose **Open**, then confirm **Open**. The helper clears macOS quarantine and launches the app.
-5. Select `Dai_Nippon_Printing_DS_RX1`, enter the Cloud URL and Relay Key, then click **Connect**.
+5. Enter the Cloud URL and Relay Key, select the event and `Dai_Nippon_Printing_DS_RX1`, then click **Connect**.
 6. In the cloud app's Delivery & Printing settings, select Print Size **4x6** for RX1 6x4 media.
 
-The Cloud URL, Relay Key, and printer selection persist when upgrading from an older release.
+The Cloud URL, Relay Key, event, and printer selection persist after the first connection with this release.
 
 ## Quick Start
 
@@ -61,9 +61,10 @@ In the app UI:
 
 1. **Cloud URL** -- Click **Edit**, enter your cloud app URL (e.g. `https://your-app.azurecontainerapps.io`), then lock it again if desired.
 2. **Relay Key** -- Click **Edit**, enter the same secret key you set in the cloud app's Settings panel, then lock it again if desired. New installations leave both credential fields blank.
-3. **Printers** -- Check one or more printers from the list. Leave all unchecked only for simple single-printer auto mode.
-4. **Save Downloaded Portraits To** -- Optionally choose a folder where every final PNG should be copied automatically.
-5. Click **Connect**
+3. **Event to Print** -- Select the event whose jobs this station may print. There is no all-events default.
+4. **Printers** -- Check one or more printers from the list. Leave all unchecked only for simple single-printer auto mode.
+5. **Save Downloaded Portraits To** -- Optionally choose a folder where every final PNG should be copied automatically.
+6. Click **Connect**
 
 The status indicators will turn green when the cloud connection and printers are ready. Print jobs appear automatically as users submit selfies.
 
@@ -97,6 +98,7 @@ Send the **`(start here)`** zip to event staff. They unzip it, right-click **Ope
 ### Configuration Section
 - **Cloud URL** -- The base URL of your cloud-hosted photobooth server. The field is locked by default; click **Edit** to change it while disconnected. It is locked again while connected.
 - **Relay Key** -- The shared secret that authenticates this station with the cloud app. Shown as a password field, locked by default, and saved when you connect.
+- **Event to Print** -- Required event boundary. The station requests, validates, and displays jobs only for this event.
 - **Printers** -- Checkbox list of all CUPS printers on this machine. Select one or more. Click the refresh button to re-scan. Leave all unchecked only for single-worker auto mode, which picks the first healthy printer. If a connected printer is missing, install its driver so a CUPS queue exists, then refresh the list.
 - **Save Downloaded Portraits To** -- Optional persistent folder for automatic full-resolution PNG copies. Clear it to use only the temporary 24-hour cache.
 - **Dry Run** -- Check this to download images without actually printing (useful for testing).
@@ -108,7 +110,7 @@ Dynamic status cards show the current state at a glance:
 - **Printed** -- Running count of successfully printed jobs this session (aggregated across all printers)
 
 ### Recent Jobs
-Shows the last several print jobs with their current state. Each job shows which printer handled it:
+Shows the last several print jobs with their event, style, current state, and handling printer:
 - **Claiming** -- Reserving the job from the cloud queue
 - **Downloading** -- Fetching the print-ready image
 - **Printing** -- Sending to the local printer
@@ -125,7 +127,8 @@ Expandable section with timestamped messages for debugging. Shows connection eve
 - **Auto-reconnect** -- If the network drops or the cloud app restarts, the station reconnects automatically with exponential backoff
 - **Printer health monitoring** -- Detects offline/stopped printers and reports status in real time
 - **Multi-printer support** -- Select multiple printers to share the workload; jobs are distributed automatically across printers
-- **Persistent configuration** -- Cloud URL, Relay Key, and printer selections are saved on Connect and persist between launches (via electron-store)
+- **Persistent configuration** -- Cloud URL, Relay Key, event, and printer selections are saved on Connect and persist between launches (via electron-store)
+- **Event isolation** -- Requires an explicit event and validates it when listing, claiming, and reprinting jobs.
 - **Dark/light theme** -- Toggle in the header, persists via localStorage
 - **Dry-run mode** -- Download and process images without printing (for testing or demos)
 - **Job deduplication** -- Won't re-print a job it already handled
@@ -138,7 +141,7 @@ Expandable section with timestamped messages for debugging. Shows connection eve
 - **Epson and DNP support** -- Printer-specific CUPS flags and media mappings prevent Epson options from leaking into DNP jobs.
 - **Save portraits** -- Retains authenticated full-resolution PNGs for 24 hours and lets operators save them from Recent Jobs through the native macOS save dialog.
 - **Automatic portrait folder** -- Optionally copies every downloaded final PNG into an operator-selected folder without overwriting existing files or blocking printing if a copy fails.
-- **Graceful shutdown** -- Close the window to stop cleanly.
+- **Graceful shutdown** -- Close the window or disconnect to stop claiming jobs; any in-flight print finishes before the app exits or switches events.
 
 ## Relay API
 
@@ -148,8 +151,9 @@ The app uses this flow:
 
 | Request | Purpose |
 |---|---|
+| `GET /api/print-relay/events` | List the events available to this authenticated station. |
 | `GET /api/print-relay/status` | Check cloud connectivity and fetch print size/quality. Runs at startup and refreshes every 60 seconds. |
-| `GET /api/print-relay/jobs?printer=<name>` | Poll for ready jobs. Selected-printer workers send their printer name; unchecked auto mode sends no printer filter. |
+| `GET /api/print-relay/jobs?event=<event>&printer=<name>` | Poll for ready jobs in the selected event. Selected-printer workers also send their printer name; unchecked auto mode sends no printer filter. |
 | `POST /api/print-relay/jobs/:filename/ack` | Atomically claim a ready job by moving it to `printing/`. |
 | `GET /api/print-relay/image/...` | Download the final print-resolution PNG for the claimed job. |
 | `POST /api/print-relay/jobs/:filename/heartbeat` | Report that this station is still working on the job. |

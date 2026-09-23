@@ -4,6 +4,7 @@ contextBridge.exposeInMainWorld("relay", {
     getConfig: () => ipcRenderer.invoke("get-config"),
     saveConfig: (config) => ipcRenderer.invoke("save-config", config),
     listPrinters: () => ipcRenderer.invoke("list-printers"),
+    listEvents: (config) => ipcRenderer.invoke("list-events", config),
     chooseOutputDirectory: () => ipcRenderer.invoke("choose-output-directory"),
     setOutputDirectory: (outputDirectory) => ipcRenderer.invoke("set-output-directory", outputDirectory),
     start: (config) => ipcRenderer.invoke("start-relay", config),

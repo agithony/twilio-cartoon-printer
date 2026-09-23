@@ -30,7 +30,7 @@ after(() => {
     fs.rmSync(serverDownloadDirectory, { recursive: true, force: true });
 });
 
-function postRelay(urlPath, body) {
+function postRelay(urlPath, body, version = "1.3.1", requireEvent = false) {
     const app = express();
     mountPrintRelay(app);
     const originalGet = settings.get;
@@ -41,16 +41,18 @@ function postRelay(urlPath, body) {
     return new Promise((resolve, reject) => {
         const server = app.listen(0, () => {
             const data = JSON.stringify(body);
+            const headers = {
+                "content-type": "application/json",
+                "content-length": Buffer.byteLength(data),
+                "x-relay-key": RELAY_KEY,
+                "x-relay-version": version,
+            };
+            if (requireEvent) headers["x-relay-event-filter"] = "required";
             const req = http.request({
                 port: server.address().port,
                 method: "POST",
                 path: `/api/print-relay${urlPath}`,
-                headers: {
-                    "content-type": "application/json",
-                    "content-length": Buffer.byteLength(data),
-                    "x-relay-key": RELAY_KEY,
-                    "x-relay-version": "1.3.1",
-                },
+                headers,
             }, (res) => {
                 let chunks = "";
                 res.on("data", (chunk) => { chunks += chunk; });
@@ -84,7 +86,7 @@ test("relay forwards the acknowledged per-job output profile to printing", async
     const logs = [];
     engine.on("log", (message) => logs.push(message));
     engine.running = true;
-    engine.config = { url: "https://example.test", key: "key", printer: "EPSON_ET_8550_Series", dryRun: false };
+    engine.config = { url: "https://example.test", key: "key", eventName: "event", printer: "EPSON_ET_8550_Series", dryRun: false };
     engine._findPrinter = async () => "EPSON_ET_8550_Series";
     engine._startHeartbeat = () => {};
     engine._stopHeartbeat = () => {};
@@ -124,7 +126,7 @@ test("relay forwards the acknowledged per-job output profile to printing", async
 test("relay includes the ACK claim ID when reporting a pre-print failure", async () => {
     const engine = new RelayEngine();
     engine.running = true;
-    engine.config = { url: "https://example.test", key: "key", printer: "EPSON_ET_8550_Series", dryRun: false };
+    engine.config = { url: "https://example.test", key: "key", eventName: "event", printer: "EPSON_ET_8550_Series", dryRun: false };
     engine._findPrinter = async () => "EPSON_ET_8550_Series";
     engine._startHeartbeat = () => {};
     engine._stopHeartbeat = () => {};
@@ -159,7 +161,7 @@ test("relay includes the ACK claim ID when reporting a pre-print failure", async
     });
 });
 
-test("relay identifies itself as 1.3.1 on cloud API requests", async () => {
+test("relay identifies itself with its package version on cloud API requests", async () => {
     let relayVersion = null;
     const server = http.createServer((req, res) => {
         relayVersion = req.headers["x-relay-version"];
@@ -176,7 +178,7 @@ test("relay identifies itself as 1.3.1 on cloud API requests", async () => {
     try {
         const response = await engine._request("GET", "/api/print-relay/status");
         assert.equal(response.status, 200);
-        assert.equal(relayVersion, "1.3.1");
+        assert.equal(relayVersion, require("../relay-app/package.json").version);
     } finally {
         await new Promise((resolve) => server.close(resolve));
     }
@@ -200,7 +202,23 @@ test("server ACK returns and persists the job output profile with a fenced claim
         outputProfile: profile,
     }));
 
-    const response = await postRelay(`/jobs/${SERVER_FILENAME}/ack`, { printerName: "EPSON_ET_8550_Series" });
+    const missingEvent = await postRelay(`/jobs/${SERVER_FILENAME}/ack`, {
+        printerName: "EPSON_ET_8550_Series",
+    }, "1.4.0", true);
+    assert.equal(missingEvent.status, 400);
+    assert.equal(fs.existsSync(serverReadyPath), true);
+
+    const wrongEvent = await postRelay(`/jobs/${SERVER_FILENAME}/ack`, {
+        printerName: "EPSON_ET_8550_Series",
+        eventName: "__wrong_event__",
+    });
+    assert.equal(wrongEvent.status, 404);
+    assert.equal(fs.existsSync(serverReadyPath), true, "an event mismatch must leave the job ready");
+
+    const response = await postRelay(`/jobs/${SERVER_FILENAME}/ack`, {
+        printerName: "EPSON_ET_8550_Series",
+        eventName: SERVER_EVENT,
+    });
 
     assert.equal(response.status, 200);
     assert.deepEqual(response.body.job.outputProfile, profile);
@@ -211,9 +229,18 @@ test("server ACK returns and persists the job output profile with a fenced claim
     assert.equal(claimed.printerName, "EPSON_ET_8550_Series");
 });
 
+test("event-aware Print Station cannot reprint without an event", async () => {
+    const response = await postRelay("/jobs/29991231_235949.json/reprint", {
+        printerName: "EPSON_ET_8550_Series",
+    }, "1.4.0", true);
+
+    assert.equal(response.status, 400);
+    assert.match(response.body.error, /event selection/i);
+});
+
 test("targeted reprint clears local dedupe and sends printer name", async () => {
     const engine = new RelayEngine();
-    engine.config = { printer: "EPSON_ET_8550_Series" };
+    engine.config = { printer: "EPSON_ET_8550_Series", eventName: "event" };
     engine.processedJobs.set(FILENAME, Date.now());
     let body = null;
     engine._request = async (_method, _path, requestBody) => {
@@ -224,6 +251,6 @@ test("targeted reprint clears local dedupe and sends printer name", async () => 
     const result = await engine.reprint(FILENAME);
 
     assert.equal(result.status, 200);
-    assert.deepEqual(body, { printerName: "EPSON_ET_8550_Series" });
+    assert.deepEqual(body, { printerName: "EPSON_ET_8550_Series", eventName: "event" });
     assert.equal(engine.processedJobs.has(FILENAME), false);
 });

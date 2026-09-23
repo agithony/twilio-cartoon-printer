@@ -11,6 +11,53 @@ const { buildPrintCommand } = require("./cups-command");
 const { RELAY_TEMP_DIR, cleanupOldRelayFiles, autoSaveRelayImage } = require("./job-files");
 const RELAY_VERSION = require("./package.json").version;
 
+function requestRelayApi(config, method, urlPath, body) {
+    return new Promise((resolve, reject) => {
+        const fullUrl = new URL(urlPath, config.url);
+        const mod = fullUrl.protocol === "https:" ? https : http;
+        const options = {
+            method,
+            hostname: fullUrl.hostname,
+            port: fullUrl.port,
+            path: fullUrl.pathname + fullUrl.search,
+            headers: {
+                "x-relay-key": config.key,
+                "x-relay-version": RELAY_VERSION,
+                "x-relay-event-filter": "required",
+                "Content-Type": "application/json",
+            },
+            timeout: 30000,
+        };
+        const req = mod.request(options, (res) => {
+            let data = "";
+            res.on("data", (chunk) => data += chunk);
+            res.on("end", () => {
+                try {
+                    resolve({ status: res.statusCode, data: JSON.parse(data) });
+                } catch {
+                    resolve({ status: res.statusCode, data });
+                }
+            });
+        });
+        req.on("timeout", () => { req.destroy(); reject(new Error("Request timed out")); });
+        req.on("error", reject);
+        if (body) req.write(JSON.stringify(body));
+        req.end();
+    });
+}
+
+async function listCloudEvents(config) {
+    const { status, data } = await requestRelayApi(config, "GET", "/api/print-relay/events");
+    if (status !== 200) {
+        const detail = data && data.error ? `: ${data.error}` : "";
+        throw new Error(`Cloud returned HTTP ${status}${detail}`);
+    }
+    if (!data || !Array.isArray(data.events)) throw new Error("Cloud returned an invalid event list");
+    const events = [...new Set(data.events.filter((name) => typeof name === "string" && name))].sort();
+    const currentEvent = typeof data.currentEvent === "string" ? data.currentEvent : "";
+    return { events, currentEvent };
+}
+
 class RelayEngine extends EventEmitter {
     constructor() {
         super();
@@ -44,13 +91,22 @@ class RelayEngine extends EventEmitter {
         this.printerCapabilities = new Map();
         this.cacheCleanupTimer = setInterval(() => cleanupOldRelayFiles().catch(() => {}), 60 * 60 * 1000);
         if (this.cacheCleanupTimer.unref) this.cacheCleanupTimer.unref();
+        this.stopPromise = null;
+        this.resolveStop = null;
+        this.stopNotified = false;
     }
 
     start(config) {
         if (this.running) return;
+        if (!config || typeof config.eventName !== "string" || !config.eventName.trim()) {
+            throw new Error("Select an event before connecting");
+        }
+        this.stopPromise = null;
+        this.resolveStop = null;
+        this.stopNotified = false;
         this.config = config;
         this.running = true;
-        this.log("Starting relay...");
+        this.log(`Starting relay for event: ${config.eventName}`);
         this.emit("status", { cloud: "connecting", printer: "unknown" });
 
         // Verify connectivity then start polling
@@ -58,13 +114,15 @@ class RelayEngine extends EventEmitter {
     }
 
     stop() {
-        if (!this.running) return;
+        if (!this.running) return this.stopPromise || Promise.resolve();
         this.running = false;
+        if (this.polling && !this.stopPromise) {
+            this.stopPromise = new Promise((resolve) => { this.resolveStop = resolve; });
+        }
         if (this.interval) {
             clearTimeout(this.interval);
             this.interval = null;
         }
-        this._stopHeartbeat();
         if (this.statusRefreshTimer) {
             clearInterval(this.statusRefreshTimer);
             this.statusRefreshTimer = null;
@@ -73,8 +131,20 @@ class RelayEngine extends EventEmitter {
             clearInterval(this.cacheCleanupTimer);
             this.cacheCleanupTimer = null;
         }
+        if (!this.polling) this._finishStop();
+        return this.stopPromise || Promise.resolve();
+    }
+
+    _finishStop() {
+        if (this.stopNotified) return;
+        this.stopNotified = true;
+        this._stopHeartbeat();
         this.log("Relay stopped.");
         this.emit("status", { cloud: "disconnected", printer: "unknown" });
+        if (this.resolveStop) {
+            this.resolveStop();
+            this.resolveStop = null;
+        }
     }
 
     // Ask the cloud to re-queue a terminal job so it prints again. The job
@@ -83,7 +153,8 @@ class RelayEngine extends EventEmitter {
     // { status, data } so the caller can surface success/failure to the UI.
     async reprint(filename) {
         const printerName = this.config && this.config.printer || null;
-        const { status, data } = await this._request("POST", `/api/print-relay/jobs/${filename}/reprint`, { printerName });
+        const eventName = this.config && this.config.eventName || null;
+        const { status, data } = await this._request("POST", `/api/print-relay/jobs/${filename}/reprint`, { printerName, eventName });
         if (status === 200) {
             this.processedJobs.delete(filename);
             this.log(`Reprint queued: ${filename}`);
@@ -97,6 +168,7 @@ class RelayEngine extends EventEmitter {
         // Check cloud + seed the status cache in one call
         try {
             const { status, data } = await this._request("GET", "/api/print-relay/status");
+            if (!this.running) return;
             if (status === 200) {
                 this.cachedStatus = data;
                 this.cachedStatusAt = Date.now();
@@ -107,17 +179,21 @@ class RelayEngine extends EventEmitter {
                 this.emit("status", { cloud: "error" });
             }
         } catch (err) {
+            if (!this.running) return;
             this.log(`Cannot reach cloud: ${err.message}`);
             this.emit("status", { cloud: "error" });
         }
 
+        if (!this.running) return;
         // Check printer
         if (!this.config.dryRun) {
             try {
                 const printer = await this._findPrinter();
+                if (!this.running) return;
                 this.log(`Printer found: ${printer}`);
                 this.emit("status", { printer: "online" });
             } catch (err) {
+                if (!this.running) return;
                 this.log(`Printer: ${err.message}`);
                 this.emit("status", { printer: "error" });
             }
@@ -154,13 +230,14 @@ class RelayEngine extends EventEmitter {
     }
 
     async _pollOnce() {
-        if (this.polling || !this.running) return;
+        if (this.polling || !this.running || !this.config || !this.config.eventName) return;
         this.polling = true;
 
         try {
             this._cleanupProcessedJobs();
-            const printerParam = this.config.printer ? `?printer=${encodeURIComponent(this.config.printer)}` : "";
-            const { status, data } = await this._request("GET", `/api/print-relay/jobs${printerParam}`);
+            const params = new URLSearchParams({ event: this.config.eventName });
+            if (this.config.printer) params.set("printer", this.config.printer);
+            const { status, data } = await this._request("GET", `/api/print-relay/jobs?${params.toString()}`);
             if (status !== 200) {
                 this.consecutiveErrors++;
                 this.log(`Poll failed: HTTP ${status} (retry in ${Math.min(this.basePollMs * Math.pow(2, this.consecutiveErrors), 120000) / 1000}s)`);
@@ -170,7 +247,9 @@ class RelayEngine extends EventEmitter {
             this.consecutiveErrors = 0;
             this.emit("status", { cloud: "connected" });
 
-            const jobs = data.jobs || [];
+            const jobs = Array.isArray(data.jobs)
+                ? data.jobs.filter((job) => job && job.eventName === this.config.eventName)
+                : [];
             if (jobs.length === 0) return;
 
             let printerName = "dry-run";
@@ -202,7 +281,10 @@ class RelayEngine extends EventEmitter {
                     status: "claiming",
                 });
 
-                const ack = await this._request("POST", `/api/print-relay/jobs/${job.filename}/ack`, { printerName });
+                const ack = await this._request("POST", `/api/print-relay/jobs/${job.filename}/ack`, {
+                    printerName,
+                    eventName: this.config.eventName,
+                });
                 if (ack.status !== 200) {
                     this.log(`Failed to claim ${job.filename}: ${JSON.stringify(ack.data)}`);
                     if (ack.status === 400 || ack.status === 404) {
@@ -213,6 +295,14 @@ class RelayEngine extends EventEmitter {
                 }
 
                 const ackData = ack.data.job;
+                if (ackData.eventName !== this.config.eventName) {
+                    const error = `Claimed job belongs to ${ackData.eventName || "an unknown event"}, not ${this.config.eventName}`;
+                    this.log(`Event mismatch: ${error}`);
+                    await this._completeJob(job.filename, { success: false, error, claimId: ackData.claimId });
+                    this.processedJobs.set(job.filename, Date.now());
+                    this.emit("job", { filename: job.filename, status: "skipped" });
+                    continue;
+                }
                 const imageUrl = `/api/print-relay/image/${encodeURIComponent(ackData.eventName)}/${ackData.imageFile}`;
                 const localPath = path.join(this.tempDir, ackData.imageFile);
 
@@ -228,6 +318,7 @@ class RelayEngine extends EventEmitter {
                     this.log(`Downloading ${ackData.imageFile}...`);
                     this.emit("job", {
                         filename: job.filename,
+                        event: ackData.eventName,
                         userPhone: ackData.userPhone || job.userPhone || null,
                         status: "downloading",
                     });
@@ -299,6 +390,7 @@ class RelayEngine extends EventEmitter {
             this.emit("status", { cloud: "error" });
         } finally {
             this.polling = false;
+            if (!this.running) this._finishStop();
         }
     }
 
@@ -362,37 +454,7 @@ class RelayEngine extends EventEmitter {
     // ── HTTP helpers ─────────────────────────────────────────────────────────
 
     _request(method, urlPath, body) {
-        return new Promise((resolve, reject) => {
-            const fullUrl = new URL(urlPath, this.config.url);
-            const mod = fullUrl.protocol === "https:" ? https : http;
-            const options = {
-                method,
-                hostname: fullUrl.hostname,
-                port: fullUrl.port,
-                path: fullUrl.pathname + fullUrl.search,
-                headers: {
-                    "x-relay-key": this.config.key,
-                    "x-relay-version": RELAY_VERSION,
-                    "Content-Type": "application/json",
-                },
-                timeout: 30000,
-            };
-            const req = mod.request(options, (res) => {
-                let data = "";
-                res.on("data", (chunk) => data += chunk);
-                res.on("end", () => {
-                    try {
-                        resolve({ status: res.statusCode, data: JSON.parse(data) });
-                    } catch {
-                        resolve({ status: res.statusCode, data });
-                    }
-                });
-            });
-            req.on("timeout", () => { req.destroy(); reject(new Error("Request timed out")); });
-            req.on("error", reject);
-            if (body) req.write(JSON.stringify(body));
-            req.end();
-        });
+        return requestRelayApi(this.config, method, urlPath, body);
     }
 
     _downloadFile(urlPath, dest) {
@@ -572,4 +634,4 @@ function listPrinters() {
     });
 }
 
-module.exports = { RelayEngine, listPrinters };
+module.exports = { RelayEngine, listPrinters, listCloudEvents };

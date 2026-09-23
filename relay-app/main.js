@@ -1,11 +1,11 @@
 const { app, BrowserWindow, dialog, ipcMain } = require("electron");
 const path = require("path");
 const Store = require("electron-store");
-const { RelayEngine, listPrinters } = require("./relay");
+const { RelayEngine, listCloudEvents, listPrinters } = require("./relay");
 const { copyRelayImage, isRelayTempFile } = require("./job-files");
 
 const store = new Store({
-    defaults: { url: "", key: "", printers: [], dryRun: false, outputDirectory: "" },
+    defaults: { url: "", key: "", eventName: "", printers: [], dryRun: false, outputDirectory: "" },
 });
 
 // Migrate old "printer" (string) → "printers" (array)
@@ -35,13 +35,20 @@ function createWindow() {
         },
     });
     mainWindow.loadFile("index.html");
+    mainWindow.on("closed", () => { mainWindow = null; });
 }
 
 app.whenReady().then(createWindow);
-app.on("window-all-closed", () => {
-    for (const r of relays.values()) r.stop();
-    relays.clear();
-    app.quit();
+let closing = false;
+app.on("window-all-closed", async () => {
+    if (closing) return;
+    closing = true;
+    try {
+        await Promise.all([...relays.values()].map((relay) => relay.stop()));
+        relays.clear();
+    } finally {
+        app.quit();
+    }
 });
 
 // ── IPC Handlers ─────────────────────────────────────────────────────────
@@ -51,6 +58,7 @@ ipcMain.handle("get-config", () => store.store);
 ipcMain.handle("save-config", (_, config) => {
     store.set("url", config.url || "");
     store.set("key", config.key || "");
+    store.set("eventName", config.eventName || "");
     store.set("printers", Array.isArray(config.printers) ? config.printers : []);
     store.set("dryRun", !!config.dryRun);
     store.set("outputDirectory", config.outputDirectory || "");
@@ -59,6 +67,14 @@ ipcMain.handle("save-config", (_, config) => {
 
 ipcMain.handle("list-printers", async () => {
     return await listPrinters();
+});
+
+ipcMain.handle("list-events", async (_, config) => {
+    try {
+        return { ok: true, ...await listCloudEvents(config) };
+    } catch (err) {
+        return { ok: false, error: err.message };
+    }
 });
 
 ipcMain.handle("choose-output-directory", async () => {
@@ -77,9 +93,12 @@ ipcMain.handle("set-output-directory", (_, outputDirectory) => {
     return store.get("outputDirectory");
 });
 
-ipcMain.handle("start-relay", (_, config) => {
+ipcMain.handle("start-relay", async (_, config) => {
+    if (!config || typeof config.eventName !== "string" || !config.eventName.trim()) {
+        return { ok: false, error: "Select an event before connecting" };
+    }
     // Stop existing relays
-    for (const r of relays.values()) r.stop();
+    await Promise.all([...relays.values()].map((relay) => relay.stop()));
     relays.clear();
 
     const printers = Array.isArray(config.printers) ? [...config.printers] : [];
@@ -110,6 +129,7 @@ ipcMain.handle("start-relay", (_, config) => {
         engine.start({
             url: config.url,
             key: config.key,
+            eventName: config.eventName,
             printer: printer,
             dryRun: !!config.dryRun,
             outputDirectory: config.outputDirectory || "",
@@ -117,11 +137,11 @@ ipcMain.handle("start-relay", (_, config) => {
         });
         relays.set(printer, engine);
     }
-    return true;
+    return { ok: true };
 });
 
-ipcMain.handle("stop-relay", () => {
-    for (const r of relays.values()) r.stop();
+ipcMain.handle("stop-relay", async () => {
+    await Promise.all([...relays.values()].map((relay) => relay.stop()));
     relays.clear();
     return true;
 });

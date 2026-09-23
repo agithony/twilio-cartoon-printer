@@ -17,27 +17,40 @@ const { mountPrintRelay, relaySupportsLandscape, shouldHideFromPrinter } = requi
 const P = "EPSON_ET_8550_Series";
 const TARGETED_FNAME = "29991231_235954.json";
 const targetedPath = path.join(READY_DIR, TARGETED_FNAME);
+const EVENT_A_FNAME = "29991231_235946.json";
+const EVENT_B_FNAME = "29991231_235947.json";
+const COMPLETED_FNAME = "29991231_235948.json";
+const eventPaths = [EVENT_A_FNAME, EVENT_B_FNAME, COMPLETED_FNAME].map((filename) => path.join(READY_DIR, filename));
 const RELAY_KEY = "jobs-filter-test-key";
 
 fs.mkdirSync(READY_DIR, { recursive: true });
 
 after(() => {
     try { fs.unlinkSync(targetedPath); } catch {}
+    for (const filePath of eventPaths) { try { fs.unlinkSync(filePath); } catch {} }
     setImmediate(() => process.exit(0));
 });
 
-function getRelay(urlPath, version) {
+function getRelay(urlPath, version, overrides = {}) {
     const app = express();
     mountPrintRelay(app);
     const originalGet = settings.get;
+    const originalListEvents = settings.listEvents;
     settings.get = function patchedGet(key, ...args) {
         if (key === "printRelayKey") return RELAY_KEY;
+        if (key === "eventName" && overrides.currentEvent !== undefined) return overrides.currentEvent;
         return originalGet.call(settings, key, ...args);
+    };
+    if (overrides.events) settings.listEvents = () => overrides.events;
+    const restoreSettings = () => {
+        settings.get = originalGet;
+        settings.listEvents = originalListEvents;
     };
     return new Promise((resolve, reject) => {
         const server = app.listen(0, () => {
             const headers = { "x-relay-key": RELAY_KEY };
             if (version) headers["x-relay-version"] = version;
+            if (overrides.requireEvent) headers["x-relay-event-filter"] = "required";
             const req = http.get({
                 port: server.address().port,
                 path: `/api/print-relay${urlPath}`,
@@ -47,14 +60,14 @@ function getRelay(urlPath, version) {
                 res.on("data", (chunk) => { chunks += chunk; });
                 res.on("end", () => {
                     server.close(() => {
-                        settings.get = originalGet;
+                        restoreSettings();
                         resolve({ status: res.statusCode, body: chunks ? JSON.parse(chunks) : null });
                     });
                 });
             });
             req.on("error", (err) => {
                 server.close(() => {
-                    settings.get = originalGet;
+                    restoreSettings();
                     reject(err);
                 });
             });
@@ -111,11 +124,24 @@ test("relay version support starts at 1.3 and accepts later major versions", () 
 test("pre-1.3 Print Stations remain compatible with portrait polling", async () => {
     const missing = await getRelay("/jobs", null);
     const old = await getRelay("/jobs", "1.2.2");
+    const cli = await getRelay("/jobs", "1.4.0-cli");
 
     assert.equal(missing.status, 200);
     assert.ok(Array.isArray(missing.body.jobs));
     assert.equal(old.status, 200);
     assert.ok(Array.isArray(old.body.jobs));
+    assert.equal(cli.status, 200, "the legacy CLI does not declare event-filter capability");
+    assert.ok(Array.isArray(cli.body.jobs));
+});
+
+test("Print Station 1.4 must provide an event filter", async () => {
+    const missing = await getRelay("/jobs", "1.4.0", { requireEvent: true });
+    const selected = await getRelay("/jobs?event=testing", "1.4.0", { requireEvent: true });
+
+    assert.equal(missing.status, 400);
+    assert.match(missing.body.error, /event selection/i);
+    assert.equal(selected.status, 200);
+    assert.ok(Array.isArray(selected.body.jobs));
 });
 
 test("targeted jobs are visible only to the named 1.3 Print Station", async () => {
@@ -138,4 +164,42 @@ test("targeted jobs are visible only to the named 1.3 Print Station", async () =
     assert.equal(filenames(wrongPrinter).includes(TARGETED_FNAME), false);
     assert.equal(filenames(targetPrinter).includes(TARGETED_FNAME), true);
     assert.equal(filenames(oldTargetPrinter).includes(TARGETED_FNAME), false);
+});
+
+test("event filter returns only jobs from the selected event", async () => {
+    fs.writeFileSync(eventPaths[0], JSON.stringify({ filePrefix: "a", eventName: "Event A", style: "cartoon" }));
+    fs.writeFileSync(eventPaths[1], JSON.stringify({ filePrefix: "b", eventName: "Event B", style: "cartoon" }));
+    fs.writeFileSync(eventPaths[2], JSON.stringify({ filePrefix: "done", eventName: "Event A", completedAt: 1 }));
+
+    const unfiltered = await getRelay("/jobs", "1.3.1");
+    const eventA = await getRelay(`/jobs?event=${encodeURIComponent("Event A")}`, "1.3.1");
+    const unknown = await getRelay("/jobs?event=Unknown", "1.3.1");
+    const filenames = (response) => response.body.jobs.map((job) => job.filename);
+
+    assert.equal(filenames(unfiltered).includes(EVENT_A_FNAME), true, "legacy unfiltered polling remains compatible");
+    assert.equal(filenames(unfiltered).includes(EVENT_B_FNAME), true);
+    assert.equal(filenames(unfiltered).includes(COMPLETED_FNAME), false, "completed records cannot be claimed again");
+    assert.equal(filenames(eventA).includes(EVENT_A_FNAME), true);
+    assert.equal(filenames(eventA).includes(EVENT_B_FNAME), false);
+    assert.equal(filenames(unknown).includes(EVENT_A_FNAME), false);
+    assert.equal(filenames(unknown).includes(EVENT_B_FNAME), false);
+});
+
+test("event filter rejects ambiguous duplicate query values", async () => {
+    const response = await getRelay("/jobs?event=Event%20A&event=Event%20B", "1.3.1");
+    assert.equal(response.status, 400);
+    assert.match(response.body.error, /event filter/i);
+});
+
+test("relay event discovery is authenticated and includes the current event", async () => {
+    const response = await getRelay("/events", "1.3.1", {
+        events: ["Event B", "Event A", "Event A"],
+        currentEvent: "Current Event",
+    });
+
+    assert.equal(response.status, 200);
+    assert.deepEqual(response.body, {
+        events: ["Current Event", "Event A", "Event B"],
+        currentEvent: "Current Event",
+    });
 });

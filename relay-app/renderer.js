@@ -5,6 +5,8 @@ const keyInput = document.getElementById("key");
 const outputDirectoryInput = document.getElementById("outputDirectory");
 const chooseOutputDirectoryBtn = document.getElementById("chooseOutputDirectory");
 const clearOutputDirectoryBtn = document.getElementById("clearOutputDirectory");
+const eventSelect = document.getElementById("eventName");
+const refreshEventsBtn = document.getElementById("refreshEvents");
 const printerList = document.getElementById("printerList");
 const refreshBtn = document.getElementById("refreshPrinters");
 const dryRunCheck = document.getElementById("dryRun");
@@ -18,7 +20,8 @@ const jobList = document.getElementById("jobList");
 const logBox = document.getElementById("logBox");
 
 let connected = false;
-const jobs = []; // { filename, style, status, time, printerName }
+let eventRequestId = 0;
+const jobs = []; // { filename, event, style, status, time, printerName }
 const MAX_JOBS = 50;
 
 // ── Init ─────────────────────────────────────────────────────────────────
@@ -67,6 +70,7 @@ const keyEditBtn = document.getElementById("keyEditBtn");
     }
 
     await refreshPrinters(selectedPrinters);
+    await refreshEvents(config.eventName || "");
 })();
 
 chooseOutputDirectoryBtn.addEventListener("click", async () => {
@@ -110,12 +114,76 @@ function getSelectedPrinters() {
 
 refreshBtn.addEventListener("click", () => refreshPrinters());
 
+function populateEvents(events, selectedEvent, currentEvent) {
+    while (eventSelect.firstChild) eventSelect.removeChild(eventSelect.firstChild);
+    const placeholder = document.createElement("option");
+    placeholder.value = "";
+    placeholder.textContent = "Select an event...";
+    eventSelect.appendChild(placeholder);
+    for (const eventName of events) {
+        const option = document.createElement("option");
+        option.value = eventName;
+        option.textContent = eventName === currentEvent ? `${eventName} (active)` : eventName;
+        eventSelect.appendChild(option);
+    }
+    eventSelect.value = events.includes(selectedEvent) ? selectedEvent : "";
+}
+
+async function refreshEvents(selectedEvent = eventSelect.value) {
+    const requestId = ++eventRequestId;
+    const url = urlInput.value.trim();
+    const key = keyInput.value.trim();
+    if (!url || !key) {
+        populateEvents([], "", "");
+        return;
+    }
+    refreshEventsBtn.disabled = true;
+    try {
+        const result = await window.relay.listEvents({ url, key });
+        if (requestId !== eventRequestId) return;
+        if (!result || !result.ok) {
+            addLog(`Could not load events: ${(result && result.error) || "unknown error"}`);
+            return;
+        }
+        populateEvents(result.events || [], selectedEvent, result.currentEvent || "");
+        if (selectedEvent && eventSelect.value !== selectedEvent) {
+            addLog(`Previously selected event is unavailable: ${selectedEvent}`);
+        }
+    } catch (err) {
+        if (requestId !== eventRequestId) return;
+        addLog(`Could not load events: ${err.message}`);
+    } finally {
+        if (requestId === eventRequestId) refreshEventsBtn.disabled = connected;
+    }
+}
+
+function clearEventSelection() {
+    eventRequestId++;
+    populateEvents([], "", "");
+    refreshEventsBtn.disabled = connected;
+}
+
+refreshEventsBtn.addEventListener("click", () => refreshEvents());
+eventSelect.addEventListener("change", () => {
+    eventRequestId++;
+    refreshEventsBtn.disabled = connected;
+});
+urlInput.addEventListener("input", clearEventSelection);
+keyInput.addEventListener("input", clearEventSelection);
+
 // ── Connect / Disconnect ─────────────────────────────────────────────────
 
 connectBtn.addEventListener("click", async () => {
     if (connected) {
-        await window.relay.stop();
-        setDisconnected();
+        connectBtn.disabled = true;
+        try {
+            await window.relay.stop();
+            setDisconnected();
+        } catch (err) {
+            addLog(`Could not disconnect: ${err.message}`);
+        } finally {
+            connectBtn.disabled = false;
+        }
         return;
     }
 
@@ -125,30 +193,50 @@ connectBtn.addEventListener("click", async () => {
         addLog("Cloud URL and Relay Key are required.");
         return;
     }
+    const eventName = eventSelect.value;
+    if (!eventName) {
+        addLog("Select an event before connecting.");
+        return;
+    }
 
     const printers = getSelectedPrinters();
 
     const config = {
         url,
         key,
+        eventName,
         printers,
         dryRun: dryRunCheck.checked,
         outputDirectory: outputDirectoryInput.value,
     };
 
-    await window.relay.saveConfig(config);
-    await window.relay.start(config);
-    setConnected(printers);
+    connectBtn.disabled = true;
+    try {
+        await window.relay.saveConfig(config);
+        const result = await window.relay.start(config);
+        if (result && result.ok === false) {
+            addLog(`Could not connect: ${result.error || "unknown error"}`);
+            return;
+        }
+        setConnected(printers);
+    } catch (err) {
+        addLog(`Could not connect: ${err.message}`);
+    } finally {
+        connectBtn.disabled = false;
+    }
 });
 
 function setConnected(printers) {
     connected = true;
+    eventRequestId++;
     connectBtn.textContent = "Disconnect";
     connectBtn.classList.add("active");
     urlInput.disabled = true;
     urlEditBtn.disabled = true;
     keyInput.disabled = true;
     keyEditBtn.disabled = true;
+    eventSelect.disabled = true;
+    refreshEventsBtn.disabled = true;
     dryRunCheck.disabled = true;
     refreshBtn.disabled = true;
     chooseOutputDirectoryBtn.disabled = true;
@@ -185,6 +273,8 @@ function setDisconnected() {
     keyInput.disabled = true;
     keyEditBtn.disabled = false;
     keyEditBtn.textContent = "Edit";
+    eventSelect.disabled = false;
+    refreshEventsBtn.disabled = false;
     dryRunCheck.disabled = false;
     refreshBtn.disabled = false;
     chooseOutputDirectoryBtn.disabled = false;
@@ -304,12 +394,14 @@ window.relay.onJob((j) => {
         if (j.status !== undefined) existing.status = j.status;
         if (j.printerName) existing.printerName = j.printerName;
         if (j.userPhone) existing.userPhone = j.userPhone;
+        if (j.event) existing.event = j.event;
         if (j.style) existing.style = j.style;
         if (j.thumbPath) existing.thumbPath = j.thumbPath;
         if (j.imagePath) existing.imagePath = j.imagePath;
     } else {
         jobs.unshift({
             filename: j.filename,
+            event: j.event || "",
             style: j.style || "",
             status: j.status,
             time: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
@@ -373,10 +465,17 @@ function renderJobs() {
         phone.textContent = j.userPhone || "—";
         row.appendChild(phone);
 
+        const details = document.createElement("span");
+        details.className = "job-details";
+        const event = document.createElement("span");
+        event.className = "job-event";
+        event.textContent = j.event || "";
+        details.appendChild(event);
         const style = document.createElement("span");
         style.className = "job-style";
         style.textContent = j.style || "";
-        row.appendChild(style);
+        details.appendChild(style);
+        row.appendChild(details);
 
         const printer = document.createElement("span");
         printer.className = "job-printer";

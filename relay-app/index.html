@@ -58,7 +58,15 @@
         </div>
       </div>
       <div class="field-row">
-        <div class="flex-1"></div>
+        <div class="field flex-1">
+          <label for="eventName">Event to Print</label>
+          <div class="input-row">
+            <select id="eventName">
+              <option value="">Select an event...</option>
+            </select>
+            <button id="refreshEvents" type="button" class="edit-btn">Refresh</button>
+          </div>
+        </div>
         <label class="toggle-label">
           <input type="checkbox" id="dryRun">
           <span>Dry Run</span>

@@ -25,6 +25,26 @@ test("Print Station source package wires the persistent output-folder picker", (
     assert.match(renderer, /window\.relay\.setOutputDirectory\(""\)/);
 });
 
+test("Print Station source package requires and persists an event selection", () => {
+    const index = fs.readFileSync(path.join(sourceResources, "index.html"), "utf-8");
+    const main = fs.readFileSync(path.join(sourceResources, "main.js"), "utf-8");
+    const preload = fs.readFileSync(path.join(sourceResources, "preload.js"), "utf-8");
+    const renderer = fs.readFileSync(path.join(sourceResources, "renderer.js"), "utf-8");
+
+    assert.match(index, /id="eventName"/);
+    assert.match(index, /id="refreshEvents"/);
+    assert.match(main, /defaults:[^\n]*eventName: ""/);
+    assert.match(main, /ipcMain\.handle\("list-events"/);
+    assert.match(main, /eventName: config\.eventName/);
+    assert.match(preload, /listEvents:/);
+    assert.match(renderer, /Select an event before connecting/);
+    assert.match(renderer, /eventSelect\.disabled = true/);
+    assert.match(renderer, /eventRequestId/);
+    assert.match(renderer, /eventSelect\.addEventListener\("change"/);
+    assert.match(main, /await Promise\.all\(\[\.\.\.relays\.values\(\)\]/);
+    assert.match(main, /mainWindow\.on\("closed"/);
+});
+
 test("packaged Print Station is ad-hoc signed and contains tested print modules", { skip: !appPath }, () => {
     const resources = path.join(appPath, "Contents", "Resources", "app");
     const packageJson = JSON.parse(fs.readFileSync(path.join(resources, "package.json"), "utf-8"));
@@ -43,6 +63,9 @@ test("packaged Print Station is ad-hoc signed and contains tested print modules"
     assert.match(fs.readFileSync(path.join(resources, "main.js"), "utf-8"), /properties:\s*\["openDirectory", "createDirectory"\]/);
     assert.match(fs.readFileSync(path.join(resources, "preload.js"), "utf-8"), /chooseOutputDirectory/);
     assert.match(fs.readFileSync(path.join(resources, "renderer.js"), "utf-8"), /setOutputDirectory\(""\)/);
+    assert.match(fs.readFileSync(path.join(resources, "index.html"), "utf-8"), /id="eventName"/);
+    assert.match(fs.readFileSync(path.join(resources, "main.js"), "utf-8"), /ipcMain\.handle\("list-events"/);
+    assert.match(fs.readFileSync(path.join(resources, "preload.js"), "utf-8"), /listEvents/);
     const command = buildPrintCommand({
         filepath: "/tmp/output.png",
         printerName: "EPSON_ET_8550_Series",
