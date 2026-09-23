@@ -4,7 +4,7 @@ const { RelayEngine } = require("../relay-app/relay");
 
 test("successful reprint targets the selected printer and clears deduplication", async () => {
     const engine = new RelayEngine();
-    engine.config = { printer: "Dai_Nippon_Printing_DS_RX1" };
+    engine.config = { printer: "Dai_Nippon_Printing_DS_RX1", eventName: "Event A" };
     engine.processedJobs.set("portrait.json", Date.now());
     engine.processedJobs.set("another.json", Date.now());
     let request;
@@ -18,7 +18,7 @@ test("successful reprint targets the selected printer and clears deduplication",
     assert.deepEqual(request, {
         method: "POST",
         urlPath: "/api/print-relay/jobs/portrait.json/reprint",
-        body: { printerName: "Dai_Nippon_Printing_DS_RX1" },
+        body: { printerName: "Dai_Nippon_Printing_DS_RX1", eventName: "Event A" },
     });
     assert.equal(engine.processedJobs.has("portrait.json"), false);
     assert.equal(engine.processedJobs.has("another.json"), true);
@@ -26,7 +26,7 @@ test("successful reprint targets the selected printer and clears deduplication",
 
 test("failed reprint keeps the local dedupe entry so the terminal row is not reprocessed", async () => {
     const engine = new RelayEngine();
-    engine.config = { printer: "EPSON_ET_8550_Series" };
+    engine.config = { printer: "EPSON_ET_8550_Series", eventName: "Event B" };
     engine.processedJobs.set("portrait.json", Date.now());
     let request;
     engine._request = async (method, urlPath, body) => {
@@ -37,7 +37,7 @@ test("failed reprint keeps the local dedupe entry so the terminal row is not rep
     const result = await engine.reprint("portrait.json");
 
     assert.equal(result.status, 409);
-    assert.deepEqual(request.body, { printerName: "EPSON_ET_8550_Series" });
+    assert.deepEqual(request.body, { printerName: "EPSON_ET_8550_Series", eventName: "Event B" });
     assert.equal(engine.processedJobs.has("portrait.json"), true);
 });
 

@@ -227,7 +227,7 @@ The page includes BRB and Fullscreen buttons. When no QR code is uploaded, a pla
 
 ### Booth Display
 
-The booth display at `/home/combo` is responsive to monitor orientation and opens as a normal page without a popup or fullscreen prompt. Landscape screens retain the original side-by-side layout. Portrait screens place the content pane above the photo book and synchronize theme changes across both panes. The divider is draggable horizontally or vertically to resize the panes.
+The booth display at `/home/combo` is responsive to monitor orientation and opens as a normal page without a popup or fullscreen prompt. Landscape screens retain the original side-by-side layout. Portrait screens place the content pane above the photo book. Theme changes synchronize across both panes in either orientation, and the divider is draggable horizontally or vertically to resize the panes.
 
 The **Display Mode** setting (under Booth Display in the Settings panel) controls what shows on the left side:
 
@@ -484,8 +484,9 @@ npm start
 **In the app UI:**
 1. Click **Edit** next to **Cloud URL**, enter your cloud URL (e.g. `https://your-app.azurecontainerapps.io`), then lock it again if desired
 2. Click **Edit** next to **Relay Key**, enter the same key you set in the cloud app's Settings, then lock it again if desired
-3. Select one or more **Printers** from the checklist (or leave all unchecked for auto-detect)
-4. Click **Connect**
+3. Select the **Event to Print**; the station will not connect without an explicit event
+4. Select one or more **Printers** from the checklist (or leave all unchecked for auto-detect)
+5. Click **Connect**
 
 The status bar shows live indicators for cloud connection (green/yellow/red), per-printer status, and a printed job count. Jobs appear in the Recent Jobs list (showing which printer handled each job) as users submit selfies.
 
@@ -554,11 +555,11 @@ Text a selfie to your Twilio number. The relay should claim the job, download th
 - **Multiple printers** -- Select multiple printers in the Print Station app or use `--printers "A,B"` in the CLI to distribute jobs across printers automatically. Each selected/listed printer gets its own worker. In the Print Station app, leaving every printer unchecked starts one unfiltered auto worker that picks the first healthy printer; for production multi-printer setups, explicitly check the printers you want to use. In the CLI, omitting printer flags auto-detects all healthy printers.
 - **Multiple agents** -- You can run multiple relay agents with the same key for redundancy. They race to claim jobs; only one wins each job. The others gracefully skip it.
 - **Image missing** -- If the output image doesn't exist on the server (e.g. disk error), the relay is told to skip the job and it won't retry for 1 hour.
-- **Graceful shutdown** -- Press Ctrl+C to stop the relay cleanly.
+- **Graceful shutdown** -- Press Ctrl+C in the CLI, or close Print Station. The desktop app lets an in-flight print finish before exiting or switching events.
 
 ### Print settings
 
-The relay reads fallback print settings from a cached `/status` response, while each claimed job carries its own snapshotted size, orientation, quality, and validated custom flags. Print Station 1.3.1 supports Epson ET-8550 and DNP DS-RX1 printer-specific CUPS mappings; transient cloud outages do not change an already-claimed job's profile.
+The relay reads fallback print settings from a cached `/status` response, while each claimed job carries its own snapshotted size, orientation, quality, and validated custom flags. Print Station 1.4.0 adds required event selection and supports Epson ET-8550 and DNP DS-RX1 printer-specific CUPS mappings; transient cloud outages do not change an already-claimed job's profile.
 
 ## Cloud Deployment
 

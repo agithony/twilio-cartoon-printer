@@ -31,6 +31,7 @@ const FAILED_COMPLETE_FNAME = "29991231_235955.json";
 const RECOVERED_FNAME = "29991231_235954.json";
 const RECOVERED_PREFIX = RECOVERED_FNAME.replace(/\.json$/, "");
 const PENDING_EFFECT_FNAME = "29991231_235952.json";
+const PREDELIVERED_COMPLETE_FNAME = "29991231_235951.json";
 const RELAY_KEY = "reprint-test-key";
 
 function doneJob() {
@@ -51,7 +52,7 @@ function track(p) { created.push(p); return p; }
 after(() => {
     for (const p of created) { try { fs.unlinkSync(p); } catch {} }
     for (const dir of [DONE_DIR, FAILED_DIR, READY_DIR, PRINTING_DIR]) {
-        for (const filename of [FNAME, DONE_COMPLETE_FNAME, FAILED_COMPLETE_FNAME, RECOVERED_FNAME, PENDING_EFFECT_FNAME]) {
+        for (const filename of [FNAME, DONE_COMPLETE_FNAME, FAILED_COMPLETE_FNAME, RECOVERED_FNAME, PENDING_EFFECT_FNAME, PREDELIVERED_COMPLETE_FNAME]) {
             try { fs.unlinkSync(path.join(dir, filename)); } catch {}
         }
     }
@@ -73,7 +74,7 @@ function writeOutputImage() {
 }
 function cleanupQueues() {
     for (const dir of [DONE_DIR, FAILED_DIR, READY_DIR, PRINTING_DIR]) {
-        for (const filename of [FNAME, DONE_COMPLETE_FNAME, FAILED_COMPLETE_FNAME, RECOVERED_FNAME, PENDING_EFFECT_FNAME]) {
+        for (const filename of [FNAME, DONE_COMPLETE_FNAME, FAILED_COMPLETE_FNAME, RECOVERED_FNAME, PENDING_EFFECT_FNAME, PREDELIVERED_COMPLETE_FNAME]) {
             try { fs.unlinkSync(path.join(dir, filename)); } catch {}
         }
     }
@@ -207,6 +208,19 @@ test("requeue: targetPrinter is recorded when provided", () => {
     assert.equal(job.targetPrinter, "EPSON_ET_8550_Series");
 });
 
+test("requeue: selected event must match the completed job", () => {
+    cleanupQueues();
+    writeOutputImage();
+    writeDone(doneJob());
+
+    const res = requeueDoneJobForReprint(FNAME, { eventName: "__other_event__" });
+
+    assert.equal(res.ok, false);
+    assert.equal(res.status, 404);
+    assert.equal(fs.existsSync(path.join(DONE_DIR, FNAME)), true);
+    assert.equal(fs.existsSync(path.join(READY_DIR, FNAME)), false);
+});
+
 test("requeue: stale target and claim metadata are cleared when no printer is requested", () => {
     cleanupQueues();
     writeOutputImage();
@@ -271,6 +285,32 @@ test("relay completion is idempotent in done and preserves quota after delivery"
     assert.deepEqual(repeated, { status: 200, body: { ok: true, state: "already_done" } });
     assert.equal(getUsageCount(userPhone, eventName), usageBefore + 1);
     decrementUsage(userPhone, eventName);
+});
+
+test("relay completion moves a previously delivered print to done", async () => {
+    cleanupQueues();
+    const claimId = "predelivered-claim";
+    const smsSentAt = 12345;
+    fs.writeFileSync(path.join(PRINTING_DIR, PREDELIVERED_COMPLETE_FNAME), JSON.stringify({
+        filePrefix: PREDELIVERED_COMPLETE_FNAME.replace(/\.json$/, ""),
+        eventName: "__relay_predelivered_completion_test__",
+        smsSentAt,
+        claimId,
+        retries: 0,
+        printerName: "Dai_Nippon_Printing_DS_RX1",
+    }));
+
+    const first = await postRelay(`/jobs/${PREDELIVERED_COMPLETE_FNAME}/complete`, { success: true, claimId });
+
+    assert.deepEqual(first, { status: 200, body: { ok: true, state: "done" } });
+    assert.equal(fs.existsSync(path.join(PRINTING_DIR, PREDELIVERED_COMPLETE_FNAME)), false);
+    const completed = JSON.parse(fs.readFileSync(path.join(DONE_DIR, PREDELIVERED_COMPLETE_FNAME), "utf-8"));
+    assert.equal(completed.smsSentAt, smsSentAt);
+    assert.equal(completed.deliveryPending, false);
+    assert.ok(completed.completedAt);
+
+    const repeated = await postRelay(`/jobs/${PREDELIVERED_COMPLETE_FNAME}/complete`, { success: true, claimId });
+    assert.deepEqual(repeated, { status: 200, body: { ok: true, state: "already_done" } });
 });
 
 test("terminal relay failure releases quota and completes fallback delivery only once", async () => {
