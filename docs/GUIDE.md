@@ -559,7 +559,7 @@ Text a selfie to your Twilio number. The relay should claim the job, download th
 
 ### Print settings
 
-The relay reads fallback print settings from a cached `/status` response, while each claimed job carries its own snapshotted size, orientation, quality, and validated custom flags. Print Station 1.4.0 adds required event selection and supports Epson ET-8550 and DNP DS-RX1 printer-specific CUPS mappings; transient cloud outages do not change an already-claimed job's profile.
+The relay reads fallback print settings from a cached `/status` response, while each claimed job carries its own snapshotted size, orientation, quality, and validated custom flags. Print Station 1.4.0 adds required event selection, and 1.4.1 adds the DNP DS620 mapping alongside the existing Epson ET-8550 and DNP DS-RX1 mappings. Transient cloud outages do not change an already-claimed job's profile.
 
 ## Cloud Deployment
 

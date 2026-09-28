@@ -19,7 +19,7 @@ The Print Station polls the cloud app for print-ready portraits, downloads them,
 
 - **macOS** (the app builds for macOS ARM64; other platforms need Electron Forge config changes)
 - **Node.js** 22+ and **npm** only when running from source; the release app is standalone
-- A **CUPS-compatible printer** connected via USB or WiFi (e.g. Epson EcoTank ET-8550 or DNP DS-RX1), with its **driver installed** so a CUPS queue exists. A printer with no driver/queue will not appear in the app's printer list.
+- A **CUPS-compatible printer** connected via USB or WiFi (e.g. Epson EcoTank ET-8550, DNP DS-RX1, or DNP DS620), with its **driver installed** so a CUPS queue exists. A printer with no driver/queue will not appear in the app's printer list.
 - Local CUPS commands available: `lpstat`, `lp`, `lpoptions`, `cancel`
 - The cloud app running in **Print + Digital** mode with a **Print Relay Key** configured in Settings > Delivery & Printing
 
@@ -137,7 +137,7 @@ Expandable section with timestamped messages for debugging. Shows connection eve
 - **Status caching** -- Fetches cloud print settings (size, quality) at startup and refreshes every 60s in the background instead of before every print, so transient cloud hiccups don't fail prints mid-job.
 - **Reprint terminal jobs** -- Re-queues completed or failed jobs immediately on the printer that handled them.
 - **Per-job print profiles** -- Each claimed job carries its own size, quality, orientation, and custom flags, so queued jobs are not changed by later Settings edits.
-- **Landscape 6x4 and DNP DS-RX1 support** -- Epson jobs use 4x6 media with an explicit landscape orientation; DNP jobs map app size 4x6 to the driver's native `300dnp6x4` media token.
+- **Landscape 6x4 and DNP support** -- Epson jobs use 4x6 media with an explicit landscape orientation; DS-RX1 and DS620 jobs use their native `300dnp6x4` and `dnp6x4` media tokens without an extra rotation.
 - **Epson and DNP support** -- Printer-specific CUPS flags and media mappings prevent Epson options from leaking into DNP jobs.
 - **Save portraits** -- Retains authenticated full-resolution PNGs for 24 hours and lets operators save them from Recent Jobs through the native macOS save dialog.
 - **Automatic portrait folder** -- Optionally copies every downloaded final PNG into an operator-selected folder without overwriting existing files or blocking printing if a copy fails.

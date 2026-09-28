@@ -1,7 +1,7 @@
 {
   "name": "print-relay",
   "productName": "Twilio Print Station",
-  "version": "1.4.0",
+  "version": "1.4.1",
   "description": "Electron GUI for the Twilio AI Photobooth print relay agent",
   "main": "main.js",
   "scripts": {

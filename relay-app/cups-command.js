@@ -17,16 +17,37 @@ const DNP_DS_RX1_PAGE_SIZES = {
     "5x7": "210dnp5x7",
 };
 
+const DNP_DS620_PAGE_SIZES = {
+    "4x6": "dnp6x4",
+    "6x4": "dnp6x4",
+    "5x7": "dnp5x7",
+};
+
 const DNP_DS_RX1_QUALITIES = {
     standard: "300x300dpi",
     high: "300x600dpi",
     max: "300x600dpi",
 };
 
-function isDnpDsRx1(printerName, printerCapabilities = "") {
+function detectDnpModel(printerName, printerCapabilities = "") {
     const normalized = String(printerName || "").toLowerCase().replace(/[^a-z0-9]/g, "");
-    const capabilities = String(printerCapabilities || "").toLowerCase();
-    return normalized.includes("dsrx1") || (capabilities.includes("300dnp6x4") && capabilities.includes("210dnp5x7"));
+    if (normalized.includes("dsrx1")) return "ds-rx1";
+    if (normalized.includes("ds620")) return "ds620";
+
+    const capabilityTokens = new Set(
+        String(printerCapabilities || "").toLowerCase().split(/\s+/).map((token) => token.replace(/^\*/, "")),
+    );
+    if (capabilityTokens.has("300dnp6x4") && capabilityTokens.has("210dnp5x7")) return "ds-rx1";
+    if (capabilityTokens.has("dnp6x4") && capabilityTokens.has("dnp5x7")) return "ds620";
+    return null;
+}
+
+function isDnpDsRx1(printerName, printerCapabilities = "") {
+    return detectDnpModel(printerName, printerCapabilities) === "ds-rx1";
+}
+
+function isDnpPrinter(printerName, printerCapabilities = "") {
+    return detectDnpModel(printerName, printerCapabilities) !== null;
 }
 
 function sanitizeCustomFlags(customFlags) {
@@ -57,12 +78,14 @@ function resolvePrintSettings({ printSize, printQuality, customFlags, outputProf
 
 function buildPrintCommand({ filepath, printerName, printerCapabilities = "", printSize, printQuality, customFlags = "", outputProfile = null }) {
     const resolved = resolvePrintSettings({ printSize, printQuality, customFlags, outputProfile });
+    const dnpModel = detectDnpModel(printerName, printerCapabilities);
     let flags;
 
-    if (isDnpDsRx1(printerName, printerCapabilities)) {
-        const pageSize = DNP_DS_RX1_PAGE_SIZES[resolved.printSize];
+    if (dnpModel) {
+        const pageSizes = dnpModel === "ds620" ? DNP_DS620_PAGE_SIZES : DNP_DS_RX1_PAGE_SIZES;
+        const pageSize = pageSizes[resolved.printSize];
         if (!pageSize) {
-            throw new Error(`DNP DS-RX1 does not support print size "${resolved.printSize}".`);
+            throw new Error(`DNP ${dnpModel === "ds620" ? "DS620" : "DS-RX1"} does not support print size "${resolved.printSize}".`);
         }
         const resolution = DNP_DS_RX1_QUALITIES[resolved.printQuality] || DNP_DS_RX1_QUALITIES.high;
         flags = [
@@ -96,4 +119,4 @@ function buildPrintCommand({ filepath, printerName, printerCapabilities = "", pr
     return `lp ${flags.join(" ")} "${filepath}"`;
 }
 
-module.exports = { buildPrintCommand, isDnpDsRx1, resolvePrintSettings, sanitizeCustomFlags };
+module.exports = { buildPrintCommand, isDnpDsRx1, isDnpPrinter, resolvePrintSettings, sanitizeCustomFlags };
