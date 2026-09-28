@@ -385,7 +385,7 @@ Both the Print Station app and CLI relay share these capabilities:
 | `/auth/*` | Google OAuth login/callback/logout routes |
 | `/review/*` | Mobile review flow and review-token routes |
 | `/api/generate` | Programmatic/kiosk generation API |
-| `/kiosk` | Browser-based kiosk submission surface |
+| `/kiosk` | Browser kiosk submission with SMS or approved-template WhatsApp portrait delivery |
 | `/eval` | Prompt experiment and evaluation tools |
 | `/api/print-relay/*` | Relay polling, claim, heartbeat, image download, completion, and reprint API |
 | `/healthz` | Lightweight health check for CI and cloud probes |
