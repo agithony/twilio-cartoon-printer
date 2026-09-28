@@ -184,11 +184,13 @@ Current mounted routes:
 | `/s/:filePrefix` | Public | Share page for delivered portraits |
 | `/review/*` | Public token/PIN flow | Mobile review flow for approved reviewers |
 | `/api/generate` | Admin/API | Programmatic generation endpoint used by kiosk/API clients |
-| `/kiosk` | Admin/API | Browser kiosk submission UI |
+| `/kiosk` | Admin/API | Browser kiosk submission UI with SMS/WhatsApp portrait delivery |
 | `/eval` | Admin | Prompt experiments and evaluation tools |
 | `/api/print-relay/*` | Relay key | Print Station and CLI relay API |
 | `/auth/*` | Public | Google OAuth login, callback, and logout |
 | `/healthz` | Public | Health check |
+
+The kiosk offers the delivery channels enabled for the active event. WhatsApp appears only when its sender and locale-specific approved `delivery` Content SID are configured, and when the event is Digital Only or sends the digital copy immediately.
 
 ### Home Page
 
