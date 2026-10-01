@@ -10,6 +10,7 @@ const { PENDING_DIR, GENERATING_DIR, READY_DIR, REVIEW_DIR, DONE_DIR, FAILED_DIR
 const { jobPaths } = require("../lib/pipeline");
 const { createVoiceStore } = require("../lib/voice/store");
 const { submitVoiceEdit } = require("../lib/voice/submit");
+const { createVoiceDelivery } = require("../lib/voice/delivery");
 
 const BRIEF = {
     visualStyle: "watercolor", clothingOrSubject: "blue jacket", setting: "a garden",
@@ -112,6 +113,59 @@ test("three variants each have an input copy, and a partial group resumes with i
     assert.deepEqual(resumed.filePrefixes, first.filePrefixes);
     assert.equal((await queue.getVoiceGroup(f.groupId)).status, "committed");
     assert.equal((await fs.stat(path.join(PENDING_DIR, `${first.filePrefixes[2]}.json`))).isFile(), true);
+    assert.equal(queue.getUsageCount(f.userPhone, f.eventName), 1);
+});
+
+test("re-analyze all keeps the Voice brief, private inputs, delivery mode, and one quota charge", async (t) => {
+    const f = await fixture({ variants: 2, reviewMode: "human" });
+    let originalPrefixes = [];
+    let replacementPrefixes = [];
+    t.after(async () => {
+        for (const prefix of [...originalPrefixes, ...replacementPrefixes]) {
+            for (const dir of [PENDING_DIR, GENERATING_DIR, REVIEW_DIR, READY_DIR, DONE_DIR, FAILED_DIR]) {
+                await fs.rm(path.join(dir, `${prefix}.json`), { force: true });
+            }
+        }
+        await f.cleanup();
+    });
+    await f.store.patch(f.request.id, { channel: "whatsapp", locale: "pt_BR",
+        baseUrl: "https://booth.example" });
+    const original = await submitVoiceEdit({ store: f.store, requestId: f.request.id,
+        brief: BRIEF, locale: "pt_BR", queue, settings: f.snapshot });
+    originalPrefixes = original.filePrefixes;
+    for (const prefix of originalPrefixes) {
+        await fs.rename(path.join(PENDING_DIR, `${prefix}.json`), path.join(REVIEW_DIR, `${prefix}.json`));
+    }
+    await queue.rejectParent(f.groupId, "", true, "Make the background warmer");
+    const files = (await fs.readdir(PENDING_DIR)).filter((name) => name.endsWith(".json"));
+    const replacements = [];
+    for (const name of files) {
+        const job = JSON.parse(await fs.readFile(path.join(PENDING_DIR, name), "utf8"));
+        if (job.eventName === f.eventName && job.reanalyzedFrom === f.groupId) replacements.push(job);
+    }
+    replacementPrefixes = replacements.map((job) => job.filePrefix);
+    assert.equal(replacements.length, 2);
+    for (const job of replacements) {
+        assert.equal(job.inputMode, "voice");
+        assert.equal(job.voiceGroupId, f.groupId);
+        assert.deepEqual(job.voiceBrief, BRIEF);
+        assert.equal(job.voiceEventSettings.promptPreserve, "Keep the original freckles.");
+        assert.equal(job.appPhone, f.request.appPhone);
+        assert.equal(job.channel, "whatsapp");
+        assert.equal(job.locale, "pt_BR");
+        assert.equal((await sharp(jobPaths(job, { staged: true }).inputPath).metadata()).format, "jpeg");
+    }
+    const sent = [];
+    const delivery = createVoiceDelivery({
+        settings: { getContentSid: () => "HXapproved" },
+        send: async (...args) => { sent.push(args); return { sid: "SMresult" }; },
+    });
+    await delivery.sendVoiceDelivery(replacements[0]);
+    assert.equal(sent[0][1], "voiceDelivery");
+    assert.equal(sent[0][3].allowOutOfSession, true);
+    assert.equal(sent[0][3].fromPhone, f.request.appPhone);
+    assert.deepEqual(new Set((await queue.getVoiceGroup(f.groupId)).filePrefixes), new Set(replacementPrefixes));
+    await queue.buildUsageCache();
     assert.equal(queue.getUsageCount(f.userPhone, f.eventName), 1);
 });
 

@@ -189,6 +189,83 @@ test("after-delivery survey starts only after the Voice result is accepted", asy
     assert.deepEqual(events.slice(0, 2), ["portrait", "survey"]);
 });
 
+test("print completion cannot overwrite a Voice result delivered during printing", async (t) => {
+    const originalSend = messaging.send;
+    let sends = 0;
+    messaging.send = async () => ({ sid: `SMdelivered${++sends}` });
+    t.after(() => { messaging.send = originalSend; });
+    const job = voiceJob({ channel: "sms", locale: "en", voiceEventSettings: {
+        enablePrinting: true, leadCaptureMode: "disabled", enableNps: false,
+    }, voiceDeliveryKind: "result", voiceDeliveryState: "pending",
+    voiceDeliveryPendingAt: Date.now(), retries: 0 });
+    const filename = `${job.filePrefix}.json`;
+    await fs.mkdir(READY_DIR, { recursive: true });
+    await fs.writeFile(path.join(READY_DIR, filename), JSON.stringify(job));
+    t.after(async () => {
+        for (const dir of [READY_DIR, PRINTING_DIR, DONE_DIR, FAILED_DIR]) {
+            await fs.rm(path.join(dir, filename), { force: true });
+        }
+    });
+    let printingStarted;
+    const started = new Promise((resolve) => { printingStarted = resolve; });
+    let finishPrint;
+    const printing = new Promise((resolve) => { finishPrint = resolve; });
+    const worker = queue.processSinglePrint(filename, "Test Printer", async () => {
+        printingStarted();
+        await printing;
+    });
+    await started;
+    await queue.retryVoiceDelivery(filename);
+    finishPrint();
+    await worker;
+    const stored = JSON.parse(await fs.readFile(path.join(DONE_DIR, filename), "utf8"));
+    assert.equal(stored.voiceDeliveryState, "sent");
+    assert.equal(stored.voiceDeliverySid, "SMdelivered1");
+    await queue.retryVoiceDelivery(filename);
+    assert.equal(sends, 1);
+});
+
+test("print completion and an in-flight Voice send retain one delivery receipt", async (t) => {
+    const originalSend = messaging.send;
+    let releaseSend;
+    const heldSend = new Promise((resolve) => { releaseSend = resolve; });
+    let sendingStarted;
+    const startedSend = new Promise((resolve) => { sendingStarted = resolve; });
+    let sends = 0;
+    messaging.send = async () => { sends++; sendingStarted(); await heldSend; return { sid: "SMinflight" }; };
+    t.after(() => { messaging.send = originalSend; });
+    const job = voiceJob({ channel: "sms", locale: "en", voiceEventSettings: {
+        enablePrinting: true, leadCaptureMode: "disabled", enableNps: false,
+    }, voiceDeliveryKind: "result", voiceDeliveryState: "pending",
+    voiceDeliveryPendingAt: Date.now(), retries: 0 });
+    const filename = `${job.filePrefix}.json`;
+    await fs.mkdir(READY_DIR, { recursive: true });
+    await fs.writeFile(path.join(READY_DIR, filename), JSON.stringify(job));
+    t.after(async () => {
+        for (const dir of [READY_DIR, PRINTING_DIR, DONE_DIR, FAILED_DIR]) {
+            await fs.rm(path.join(dir, filename), { force: true });
+        }
+    });
+    let printingStarted;
+    const startedPrint = new Promise((resolve) => { printingStarted = resolve; });
+    let finishPrint;
+    const heldPrint = new Promise((resolve) => { finishPrint = resolve; });
+    const worker = queue.processSinglePrint(filename, "Test Printer", async () => {
+        printingStarted(); await heldPrint;
+    });
+    await startedPrint;
+    const delivery = queue.retryVoiceDelivery(filename);
+    await startedSend;
+    finishPrint();
+    releaseSend();
+    await Promise.all([worker, delivery]);
+    const stored = JSON.parse(await fs.readFile(path.join(DONE_DIR, filename), "utf8"));
+    assert.equal(stored.voiceDeliveryState, "sent");
+    assert.equal(stored.voiceDeliverySid, "SMinflight");
+    await queue.retryVoiceDelivery(filename);
+    assert.equal(sends, 1);
+});
+
 test("template script defines approved utility cards and text failures in both locales", () => {
     for (const locale of ["en", "pt_BR"]) {
         const definitions = buildDefinitions("https://booth.example", "s/example/img", locale);

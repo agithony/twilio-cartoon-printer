@@ -32,7 +32,8 @@ async function fixture(overrides = {}) {
     const downloadImage = overrides.downloadImage || (async (_url, target) => fs.writeFile(target, bytes));
     const assessImage = overrides.assessImage || (async () => ({ flagged: false, hasFace: true, scene: { subjects: 1, pets: "none", positions: "centered" } }));
     const send = overrides.send || (async (...args) => { sent.push(args); return { sid: `SMout${sent.length}` }; });
-    const intake = createVoiceIntake({ store, downloadImage, assessImage, send, settings, now: () => time, mediaDir });
+    const intake = createVoiceIntake({ store, downloadImage, assessImage, send, settings,
+        now: () => time, mediaDir, recordInboundSession: overrides.recordInboundSession || (() => {}) });
     const selfie = {
         messageSid: `SMin${++sequence}`, phone: "+14155550123", appPhone: "+12065550199",
         channel: "sms", eventName: "Demo", locale: "en", receivedAt: time,
@@ -74,6 +75,20 @@ test("unknown locale receives a bilingual invitation", async (t) => {
     assert.equal((await f.store.get(record.id)).status, "awaiting_call");
     assert.match(f.sent[0][3]._body, /call.*\+12065550100/i);
     assert.match(f.sent[0][3]._body, /ligue.*\+12065550100/i);
+});
+
+test("recovered WhatsApp selfie restores the original inbound window before inviting", async (t) => {
+    let sessionAt = null;
+    const f = await fixture({
+        recordInboundSession: (_phone, _channel, receivedAt) => { sessionAt = receivedAt; },
+        send: async (...args) => sessionAt === NOW ? { sid: "SMinvited" } : { skipped: "out-of-session" },
+    });
+    t.after(f.cleanup);
+    const record = await f.intake.acceptSelfie({ ...f.selfie, channel: "whatsapp" });
+    assert.equal(sessionAt, null);
+    await f.intake.recover();
+    assert.equal(sessionAt, NOW);
+    assert.equal((await f.store.get(record.id)).status, "awaiting_call");
 });
 
 test("group selfie is rejected before invitation with localized notice", async (t) => {

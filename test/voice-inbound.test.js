@@ -4,6 +4,7 @@ const fs = require("node:fs/promises");
 const os = require("node:os");
 const path = require("node:path");
 const { createVoiceStore } = require("../lib/voice/store");
+const { createVoiceIntake } = require("../lib/voice/preflight");
 const { routeVoiceInbound } = require("../lib/voice/inbound-route");
 const queue = require("../lib/queue");
 const settings = require("../lib/settings");
@@ -13,6 +14,7 @@ const sharp = require("sharp");
 
 const PHONE = "+14155550100";
 const APP = "+14155550101";
+const VOICE_NUMBER = "+14155550102";
 
 async function fixture({ channel = "sms", locale = "en" } = {}) {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "voice-inbound-"));
@@ -35,7 +37,8 @@ async function fixture({ channel = "sms", locale = "en" } = {}) {
     const send = async (_to, _kind, _vars, options) => { sent.push(options._body); return { sid: "SMreply" }; };
     const defaults = { eventName: "Expo", sender: PHONE, appPhone: APP, adapter, locale,
         store, intake, send, quota: { used: 0, max: 2, unlimited: false }, enabled: true,
-        baseUrl: "https://example.com", eventSettings: { maxPrints: 2 } };
+        baseUrl: "https://example.com", eventSettings: { maxPrints: 2 },
+        recordInboundSession: () => {} };
     const route = (body, overrides = {}) => routeVoiceInbound({ ...defaults, body, ...overrides });
     const selfie = (sid = "SM1", extra = {}) => ({ From: channel === "whatsapp" ? `whatsapp:${PHONE}` : PHONE,
         To: channel === "whatsapp" ? `whatsapp:${APP}` : APP,
@@ -67,6 +70,47 @@ test("Voice route leaves multi-photo and text traffic to the existing flow; quot
     assert.deepEqual(result, { handled: true, status: 204 });
     assert.equal(f.calls.length, 0);
     assert.match(f.sent[0], /used|free|limit/i);
+});
+
+test("first WhatsApp selfie records its session before the invitation, and missing media gets one rejection", async (t) => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "voice-first-wa-"));
+    t.after(() => fs.rm(root, { recursive: true, force: true }));
+    const mediaDir = path.join(root, "media");
+    const store = createVoiceStore({ dir: path.join(root, "requests"), mediaDir });
+    const jpeg = await sharp({ create: { width: 32, height: 32, channels: 3,
+        background: "#bbbbbb" } }).jpeg().toBuffer();
+    let sessionOpen = false;
+    const sent = [];
+    const send = async (_to, _key, _vars, opts) => {
+        if (!sessionOpen) return { skipped: "out-of-session" };
+        sent.push(opts._body);
+        return { sid: `SMsent${sent.length}` };
+    };
+    const intake = createVoiceIntake({ store, mediaDir, send,
+        settings: { get: (key) => key === "eventName" ? "Expo" : VOICE_NUMBER },
+        downloadImage: async (_url, target) => fs.writeFile(target, jpeg),
+        assessImage: async () => ({ flagged: false, hasFace: true,
+            scene: { subjects: 1, pets: "none", positions: "centered" } }),
+        recordInboundSession: () => { sessionOpen = true; } });
+    const common = { eventName: "Expo", sender: PHONE, appPhone: APP,
+        adapter: { name: "whatsapp" }, locale: "en", store, intake, enabled: true,
+        send, quota: { used: 0, max: 2 }, eventSettings: { multiSubjectMode: "reject" },
+        recordInboundSession: () => { sessionOpen = true; } };
+    const first = await routeVoiceInbound({ ...common, body: { NumMedia: "1", MessageSid: "SMfirstWa",
+        MediaUrl0: "https://api.twilio.com/photo", MediaContentType0: "image/jpeg" } });
+    await intake.recover();
+    assert.deepEqual(first, { handled: true, status: 204 });
+    assert.equal((await store.list())[0].status, "awaiting_call");
+    assert.match(sent[0], /call/i);
+    sessionOpen = false;
+    const missing = await routeVoiceInbound({ ...common, body: { NumMedia: "1", MessageSid: "SMmissingWa",
+        MediaContentType0: "image/jpeg" } });
+    await intake.recover();
+    assert.deepEqual(missing, { handled: true, status: 204 });
+    const records = await store.list();
+    assert.equal(records.find((r) => r.messageSid === "SMmissingWa").status, "rejected");
+    assert.equal(sent.length, 2);
+    assert.doesNotMatch(sent[1], /call/i);
 });
 
 test("newer selfie supersedes unclaimed earlier selfie", async (t) => {

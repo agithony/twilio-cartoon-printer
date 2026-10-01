@@ -50,6 +50,18 @@ test("recordInbound: isolates session timestamps by channel", () => {
     assert.equal(contacts.getLastInboundAt("+14155556666", "whatsapp"), null);
 });
 
+test("recovered inbound timestamps do not reopen an old WhatsApp window or replace a newer channel", () => {
+    const phone = "+14155559006";
+    const original = Date.now() - 25 * 60 * 60 * 1000;
+    contacts.recordInbound(phone, "whatsapp", original);
+    assert.equal(contacts.getLastInboundAt(phone, "whatsapp"), original);
+    const newer = Date.now();
+    contacts.recordInbound(phone, "sms", newer);
+    contacts.recordInbound(phone, "whatsapp", original);
+    assert.equal(contacts.getLastInboundAt(phone, "whatsapp"), original);
+    assert.equal(contacts.getPreferredChannel(phone), "sms");
+});
+
 test("getLastInboundAt: returns null for unknown phone", () => {
     assert.equal(contacts.getLastInboundAt("+19995550000"), null);
 });

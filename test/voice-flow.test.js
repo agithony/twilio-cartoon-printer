@@ -62,7 +62,8 @@ async function createVoiceFlowHarness({ channel = "sms", locale = "en", reviewMo
     const intake = createVoiceIntake({ store, mediaDir, settings: voiceSettings,
         downloadImage: async (_url, target) => fs.writeFile(target, bytes),
         assessImage: async () => ({ flagged: false, hasFace: true,
-            scene: { subjects: 1, pets: "none", positions: "centered" } }), send });
+            scene: { subjects: 1, pets: "none", positions: "centered" } }), send,
+        recordInboundSession: () => {} });
     const agent = createVoiceAgent({ store,
         respond: async () => ({ speech: "That sounds good.", readyToConfirm: true, brief: BRIEF }),
         moderate: async () => ({ flagged: false }),
@@ -103,7 +104,8 @@ async function createVoiceFlowHarness({ channel = "sms", locale = "en", reviewMo
             MediaUrl0: `https://api.twilio.com/${messageSid}`, MediaContentType0: "image/png" },
         eventName, sender: PHONE, appPhone: APP, adapter: { name: channel }, locale,
         store, intake, quota: { used: queue.getUsageCount(PHONE, eventName), max: 2 },
-        enabled: true, baseUrl: BASE, eventSettings: rules, send, ...overrides });
+        enabled: true, baseUrl: BASE, eventSettings: rules, send,
+        recordInboundSession: () => {}, ...overrides });
         await intake.recover();
         return result;
     }
@@ -292,7 +294,7 @@ test("new selfie stays separate from active call and MENU waits until the call e
     const menuArgs = { body: { Body: "MENU", NumMedia: "0", MessageSid: "SMmenu" },
         eventName: f.eventName, sender: PHONE, appPhone: APP, adapter: { name: "sms" },
         locale: "en", store: f.store, intake: f.intake, enabled: false,
-        quota: { used: 0, max: 2 } };
+        quota: { used: 0, max: 2 }, recordInboundSession: () => {} };
     const busy = await routeVoiceInbound({ ...menuArgs, send: async (...args) => { f.sent.push(args); return { sid: "SMbusy" }; } });
     assert.deepEqual(busy, { handled: true, status: 204 });
     assert.equal((await f.store.get(first.id)).status, "claimed");

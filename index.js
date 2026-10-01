@@ -186,6 +186,7 @@ async function inboundHandler(req, res) {
     let body = getMessageBody(req.body);
 
     const eventName = settings.get("eventName");
+    contacts.recordContact(userPhone, appPhone, eventName);
     const activeStyles = settings.getActiveStyles(eventName);
     const activeStyleList = settings.getActiveStyleList(eventName);
     const leadMode = settings.getForEvent("leadCaptureMode", eventName);
@@ -225,8 +226,7 @@ async function inboundHandler(req, res) {
         return res.status(204).end();
     }
 
-    // Track first contact for drop-off detection
-    contacts.recordContact(userPhone, appPhone, eventName);
+    // Voice records its inbound session before replying; legacy messages record it here.
     contacts.recordInbound(userPhone, inboundAdapter.name);
 
     async function promptForLanguage() {
@@ -901,6 +901,7 @@ const server = app.listen(port, "0.0.0.0", async () => {
     // Ensure download dir for current event exists
     const dlDir = settings.getDownloadDir();
     if (!fs.existsSync(dlDir)) fs.mkdirSync(dlDir, { recursive: true });
+    contacts.load();
     await buildUsageCache();
     await voiceStore.reconcileClaims(voiceSocket.activeCallSids());
     await voiceStore.expire({ activeEventName: settings.get("eventName"),
@@ -910,7 +911,6 @@ const server = app.listen(port, "0.0.0.0", async () => {
     await sweepVoiceDeliveries();
     leads.load();
     nps.load();
-    contacts.load();
     settings.onEventNameChange(() => buildUsageCache());
     const terminalEffectsRecovered = await recoverStaleJobs();
     mountHome(app);
