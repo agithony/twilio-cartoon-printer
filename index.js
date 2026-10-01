@@ -44,7 +44,7 @@ const { parseStyle, detectStyle } = require("./lib/styles");
 const styleMenu = require("./lib/style-menu");
 const brandMenu = require("./lib/brand-menu");
 const backgroundMenu = require("./lib/background-menu");
-const { shouldShowMenu } = require("./lib/menu-routing");
+const { resolveBrandStep } = require("./lib/menu-routing");
 const { getActiveBrands } = require("./lib/brands");
 const { mountDashboard } = require("./lib/dashboard");
 const { mountApiGenerate } = require("./lib/api-generate");
@@ -422,14 +422,23 @@ async function inboundHandler(req, res) {
         const pendingContext = resolvePendingContext(context);
         const activeBrands = getActiveBrands();
         const activeBrandList = Object.keys(activeBrands);
-        if (shouldShowMenu(settings.get("enableBrandMenu"), activeBrandList)) {
-            brandMenu.setPending(userPhone, { imageUrl, messageSid, style, body, appPhone, includeNone: true, ...pendingContext });
+        const step = resolveBrandStep({
+            enabled: settings.get("enableBrandMenu"),
+            brandKeys: activeBrandList,
+            offerUnbranded: settings.get("offerUnbranded"),
+        });
+        if (step.kind === "auto") {
+            await showBackgroundMenuOrEnqueue(style, imageUrl, messageSid, step.brandKey, pendingContext);
+            return;
+        }
+        if (step.kind === "menu") {
+            brandMenu.setPending(userPhone, { imageUrl, messageSid, style, body, appPhone, includeNone: step.includeNone, ...pendingContext });
             const menuMsg = brandMenu.buildMenu(activeBrands, activeBrandList, {
-                includeNone: true,
+                includeNone: step.includeNone,
                 locale: pendingContext.locale,
                 eventName: pendingContext.eventName,
             });
-            await sendMenu("brandMenu", brandOptions(activeBrands, activeBrandList, true), {
+            await sendMenu("brandMenu", brandOptions(activeBrands, activeBrandList, step.includeNone), {
                 body: i18n.t(pendingContext.locale, "brandMenuIntro", {}, pendingContext.eventName),
                 button: pendingContext.locale === "pt_BR" ? "Escolher marca" : "Choose branding",
             }, menuMsg);
@@ -458,7 +467,7 @@ async function inboundHandler(req, res) {
     // Helper: show background menu or enqueue directly
     async function showBackgroundMenuOrEnqueue(style, imageUrl, messageSid, brand, context) {
         const pendingContext = resolvePendingContext(context);
-        const { selectBackgroundChoices } = require("./lib/prompt-assembler");
+        const { resolveBackgroundStep } = require("./lib/prompt-assembler");
 
         // The event's admin-configured flat backgroundChoices list, if any.
         const configuredChoices = settings.get("backgroundChoices") || [];
@@ -469,13 +478,21 @@ async function inboundHandler(req, res) {
         const activeBrands = getActiveBrands();
         const brandObj = brand ? activeBrands[brand] : null;
 
-        // selectBackgroundChoices serves the configured list for non-combo
-        // events and the combo-resolved menu otherwise. (Previously this used
-        // `resolved.length > 0`, which is always true and permanently shadowed
-        // the admin-configured list.)
-        const choices = selectBackgroundChoices(styleObj, brandObj, configuredChoices);
+        // Brand scenes are offered after that brand is chosen even when the
+        // general background menu is disabled for unbranded portraits.
+        const step = resolveBackgroundStep({
+            style: styleObj,
+            brand: brandObj,
+            configuredChoices,
+            enabled: settings.get("enableBackgroundMenu"),
+        });
 
-        if (shouldShowMenu(settings.get("enableBackgroundMenu"), choices)) {
+        if (step.kind === "auto") {
+            await confirmAndEnqueue(style, imageUrl, messageSid, step.backgroundKey, brand, pendingContext);
+            return;
+        }
+        if (step.kind === "menu") {
+            const choices = step.choices;
             backgroundMenu.setPending(userPhone, {
                 imageUrl, messageSid, style, brand, body, appPhone, ...pendingContext,
                 resolvedChoices: choices,
