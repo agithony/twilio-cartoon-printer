@@ -51,6 +51,14 @@ test("attendee language defaults to English and validates runtime modes", () => 
     assert.equal(settings.get("languageMode"), "ask");
 });
 
+test("existing events offer Unbranded by default and can disable it", () => {
+    const settings = freshSettings();
+    assert.equal(settings.getForEvent("offerUnbranded", "missing-unbranded-setting-test"), true);
+
+    settings.update({ offerUnbranded: false });
+    assert.equal(freshSettings().get("offerUnbranded"), false);
+});
+
 test("deployment template SIDs override stale persisted values", () => {
     const settings = freshSettings();
     const original = settings.DEFAULTS.contentTemplates.en.delivery;

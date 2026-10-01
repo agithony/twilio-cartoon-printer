@@ -422,7 +422,7 @@ For detailed documentation on all features, see **[docs/GUIDE.md](docs/GUIDE.md)
 
 ## Style × Brand × Background combos (per-event config)
 
-Each event can configure nine art styles × five brand wardrobes × a contextual set of backgrounds. The background menu is assembled at runtime from the chosen style and brand — no static list per event. See `docs/superpowers/specs/2026-04-24-style-brand-background-combos-design.md` for the full design.
+Each event can configure nine art styles × five brand wardrobes × a contextual set of backgrounds. When a chosen brand has scenes, its background menu is assembled from the style and brand even if general background selection is off. With general background selection off, an Unbranded portrait uses the default background. A sole effective background is applied automatically. See `docs/superpowers/specs/2026-04-24-style-brand-background-combos-design.md` for the full design.
 
 ### Custom style fields
 
@@ -438,7 +438,7 @@ Each event can configure nine art styles × five brand wardrobes × a contextual
 - `allowOriginal` — boolean (default `true`). Set to `false` to hide the "Original scene" option (appropriate for brands that force a themed scene).
 - `colorPalette` — optional prompt fragment. When set, applied as a final recoloring instruction unless the chosen style sets `acceptsColorPalette: false`.
 
-Users now see a "None" option at the bottom of the brand menu so they can skip the brand layer entirely.
+**Offer Unbranded** is on by default, so a single enabled brand still presents two choices: that brand and Unbranded. Turn it off in Branding settings to remove the opt-out. When only one brand remains, it is selected automatically and users go straight to its scene/background choices. With multiple enabled brands, the brand menu still appears.
 
 ## License
 

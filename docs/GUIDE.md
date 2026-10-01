@@ -344,7 +344,7 @@ Change the Multi-Subject Photos mode from **Styles & Art** when an event should 
 
 ## Branding
 
-Branding controls how the AI renders clothing, logos, and visual themes across all art styles. The Branding section in the Settings panel has two modes, toggled by the **Enable Brand Selection Menu** switch.
+Branding controls how the AI renders clothing, logos, and visual themes across all art styles. The Branding section in the Settings panel has two modes, toggled by the **Let Users Choose Brand** switch.
 
 ### Single Brand Mode
 
@@ -357,9 +357,9 @@ Configure from the Settings panel under **Branding**. Leave the brand prompt bla
 
 ### Multi-Brand Selection
 
-When the brand selection toggle is ON, users choose a brand/team via SMS after picking their art style. This mirrors the style and background selection menus.
+When the brand selection toggle is ON, users choose a brand/team via SMS or WhatsApp after picking their art style, when there is more than one effective choice.
 
-**SMS flow:** Selfie → Style → Brand → Background → Enqueue
+**Flow:** Selfie → Style → Brand (when needed) → Scene/background (when needed) → Enqueue
 
 Each brand is a card in the Settings panel with:
 
@@ -370,9 +370,10 @@ Each brand is a card in the Settings panel with:
 Brands are stored as a global library (`customBrands` in settings), shared across events. Per-event controls include:
 
 - **Enable/disable individual brands** -- toggle brands on or off per event without deleting them
+- **Offer Unbranded** -- on by default; lets users choose a portrait without a configured brand
 - **Brand prompt overrides** -- customize a brand's prompt for a specific event
 
-When the brand selection toggle is on, the menu is shown whenever at least one brand is active. A single active brand is still shown alongside the **None** option so the user can opt out. Brand menu messages (intro, footer, retry) are configurable under **Engagement & Messages**.
+With **Offer Unbranded** on, a single enabled brand appears alongside Unbranded. Turn it off to remove that choice. If only one brand is enabled, the app selects it automatically and continues to that brand's scene/background choices. With multiple enabled brands, users still get a brand menu. Brand menu messages (intro, footer, retry) are configurable under **Engagement & Messages**.
 
 Brand reference images are stored in the `brand-references/` folder. Uploading adds to the shared library; each brand selects which images to use. Deleting an image removes it from the library and from all brands that reference it.
 
@@ -382,7 +383,7 @@ The app includes a configurable background system for AI-generated portraits. By
 
 When **Enable Background Selection** is turned on, users get a numbered background menu via SMS after choosing their art style -- similar to the style selection menu. Admins configure the available background options (name + prompt) from the Settings panel. Each option tells the AI what background to render (e.g. "Solid White", "Original Scene", "City Skyline").
 
-When background selection is enabled, the menu is shown whenever at least one option is available, including a single option. If the background menu is disabled, the default background prompt is used for all portraits. Leave the default prompt blank to let the AI decide freely.
+When background selection is enabled, the menu is shown for multiple available options; a single option is applied automatically. Scenes configured under a chosen brand are offered even when general Background Selection is off. With that toggle off, an Unbranded portrait uses the default background prompt. Leave the default prompt blank to let the AI decide freely.
 
 Background menu SMS messages (intro, footer, retry) are configurable under **Engagement & Messages**.
 
