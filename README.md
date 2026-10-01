@@ -164,6 +164,21 @@ ngrok http 3000
 
 Copy the ngrok URL (e.g. `https://abc123.ngrok.io`) and set it as your Twilio webhook: `https://abc123.ngrok.io/inbound`
 
+### Optional Voice portraits
+
+Voice is a per-event switch in **Settings**, off by default. When enabled, a selfie sent by SMS/MMS or WhatsApp is checked privately, then the attendee receives an invitation to call your Twilio Voice number from the same phone. The agent asks how they want their **photo to look**, with examples, accepts freeform visual edits, and can be interrupted naturally. It reads back the approved edit and starts one portrait only after the caller confirms. The result returns to the original message conversation. The attendee can send `MENU` after ending the call to use the existing choices with that selfie.
+
+To set it up:
+
+1. Use a Voice-capable Twilio number. Set its E.164 value as the global `TWILIO_VOICE_NUMBER` (or enter it under global Twilio settings). It may also be your SMS number. Set `BASE_URL` to this app's public `https://` origin; your proxy must pass WebSocket upgrades through to the app.
+2. Complete [Conversation Relay onboarding](https://www.twilio.com/docs/voice/conversationrelay/onboarding) in your Twilio account. In the number's **Voice** configuration, set the incoming-call webhook to `POST https://your-server/voice/inbound`. The app's signed TwiML connects Twilio to `wss://your-server/voice/ws`; `/voice/action` is its signed completion callback. Keep the existing Messaging webhook on `/inbound`.
+3. For WhatsApp intake, create and obtain approval for the English and Brazilian Portuguese `voiceDelivery` and `voiceFailure` Content Templates. Inspect the definitions without calling Twilio with `BASE_URL=https://your-server TWILIO_TEMPLATE_SAMPLE_PORTRAIT_PATH=s/sample/img pnpm templates:create --print-only`, then run `pnpm templates:create` with valid credentials and a reachable sample image. Put the **approved** SIDs in Settings. A Voice call does not reopen WhatsApp's messaging window, so delayed results and failures use those templates.
+4. Turn on **Enable Voice** for the event in Settings. The readiness check requires the Voice number, public HTTPS URL, Twilio and OpenAI credentials, and WhatsApp templates when applicable. Voice cannot be combined with lead capture **before** the selfie; after-delivery surveys remain available. New selfies use the current setting, while already invited callers can finish until their 30-minute invitation expires. Switching the active event invalidates unfinished requests from the old event.
+
+The invitation and agent support English and Brazilian Portuguese. When the attendee's language is unknown, the invitation is bilingual and the call asks them to choose a language. They can change languages during the call. Caller phone matching needs no pairing code, but caller ID can be spoofed; the agent never reads photo-specific details aloud, and the finished image goes only to the original message conversation. Keep Voice on one app replica with the persistent `data/`, `queue/`, and `downloads/` mount; the file-backed claim store is designed for one replica.
+
+Before using Voice at an event, rehearse with your own phone number: send a selfie on each enabled channel, call from that same phone, describe an edit outside the old menu, interrupt the agent once, listen to the complete readback, confirm, and check the portrait arrives in the original chat. Also try `MENU`, an unmatched calling number, a rejected edit, and a delayed WhatsApp result. Check **Voice delivery retries** in the dashboard for any failed send. This live call verifies Twilio's external routing, speech timing, and the exact playback events that the local tests cannot observe.
+
 ### 3. Test it
 
 Text a selfie to your Twilio phone number or WhatsApp sender. You should receive a style menu unless the event has only one active style, then get a digital portrait, print job, or share link based on the delivery settings.

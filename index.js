@@ -63,7 +63,7 @@ const contacts = require("./lib/contacts");
 const { createVoiceStore } = require("./lib/voice/store");
 const { createVoiceIntake } = require("./lib/voice/preflight");
 const { createVoiceAgent } = require("./lib/voice/agent");
-const { submitVoiceEdit } = require("./lib/voice/submit");
+const { submitVoiceEdit, recoverVoiceSubmissions } = require("./lib/voice/submit");
 const { routeVoiceInbound } = require("./lib/voice/inbound-route");
 const { mountVoiceHttp, attachVoiceSocket } = require("./lib/voice/transport");
 
@@ -76,7 +76,7 @@ function voiceEventSnapshot(eventName) {
     const keys = ["maxPrints", "adminPhones", "multiSubjectMode", "reviewMode",
         "enableManualReview", "variantsPerReview", "enablePrinting", "leadCaptureMode",
         "promptPreserve", "promptComposition", "promptBackground", "brandPrompt",
-        "brandReferenceFiles", "aiReviewChecks", "immediateDigitalDelivery"];
+        "brandReferenceFiles", "aiReviewChecks", "immediateDigitalDelivery", "enableNps"];
     const result = Object.fromEntries(keys.map((key) => [key, settings.getForEvent(key, eventName)]));
     result.outputProfile = settings.getOutputProfile(eventName);
     return result;
@@ -906,6 +906,7 @@ const server = app.listen(port, "0.0.0.0", async () => {
     await voiceStore.expire({ activeEventName: settings.get("eventName"),
         activeCallSids: voiceSocket.activeCallSids() });
     await voiceIntake.recover();
+    await recoverVoiceSubmissions({ store: voiceStore, queue: require("./lib/queue"), settings });
     await sweepVoiceDeliveries();
     leads.load();
     nps.load();
@@ -972,6 +973,7 @@ const server = app.listen(port, "0.0.0.0", async () => {
             await voiceStore.expire({ activeEventName: settings.get("eventName"),
                 activeCallSids: voiceSocket.activeCallSids() });
             await voiceIntake.recover();
+            await recoverVoiceSubmissions({ store: voiceStore, queue: require("./lib/queue"), settings });
         } catch (error) {
             console.error(`Voice maintenance failed: ${String(error.message || error).slice(0, 120)}`);
         } finally { voiceMaintenanceRunning = false; }
