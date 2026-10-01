@@ -10,6 +10,25 @@ function buildDefinitions(baseUrl, samplePortraitPath, locale = "en") {
     const pt = locale === "pt_BR";
     const localeSlug = locale.toLowerCase();
     const definitions = {
+        voiceDelivery: {
+            friendlyName: `pb_voice_delivery_${localeSlug}`, language: locale,
+            variables: { 1: samplePortraitPath, 2: "photogallery" },
+            types: {
+                "twilio/card": {
+                    title: pt ? "Seu retrato criado por voz está pronto!" : "Your voice-guided portrait is ready!",
+                    subtitle: pt ? "Criado na cabine de fotos com IA da Twilio" : "Created at the Twilio AI Photo Booth",
+                    media: [`${baseUrl}/{{1}}`],
+                    actions: [{ type: "URL", title: pt ? "Ver e compartilhar" : "View & Share", url: `${baseUrl}/{{2}}` }],
+                },
+                "twilio/text": { body: pt ? `Seu retrato criado por voz está pronto. Veja e compartilhe: ${baseUrl}/{{2}}` : `Your voice-guided portrait is ready. View and share it: ${baseUrl}/{{2}}` },
+            },
+        },
+        voiceFailure: {
+            friendlyName: `pb_voice_failure_${localeSlug}`, language: locale,
+            types: { "twilio/text": { body: pt
+                ? "Não conseguimos finalizar seu retrato desta vez. Envie outra selfie para tentar novamente."
+                : "We couldn't finish your voice-guided portrait this time. Send another selfie to try again." } },
+        },
         delivery: {
             friendlyName: `pb_delivery_${localeSlug}`, language: locale,
             variables: { 1: "Cartoon", 2: samplePortraitPath, 3: "photogallery" },
@@ -65,6 +84,7 @@ function buildDefinitions(baseUrl, samplePortraitPath, locale = "en") {
 }
 
 const approvalCategories = {
+    voiceDelivery: "UTILITY", voiceFailure: "UTILITY",
     delivery: "UTILITY", rating: "UTILITY", promo: "MARKETING", nudgeDropoff: "MARKETING",
 };
 
@@ -132,6 +152,11 @@ async function main({ client, settingsModule = settings, baseUrl = process.env.B
         en: { ...(current.en || current), ...approvedSids.en },
         pt_BR: { ...(current.pt_BR || {}), ...approvedSids.pt_BR },
     };
+    for (const locale of ["en", "pt_BR"]) {
+        for (const key of ["voiceDelivery", "voiceFailure"]) {
+            if (!approvedSids[locale][key]) delete active[locale][key];
+        }
+    }
     settingsModule.update({ contentTemplates: active });
     console.log(`Saved ${Object.keys(approvedSids.en).length + Object.keys(approvedSids.pt_BR).length} approved template SID(s).`);
     return { allSids, approvedSids };

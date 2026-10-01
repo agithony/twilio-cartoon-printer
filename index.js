@@ -38,6 +38,7 @@ const {
     clearStaleRelayTargets,
     sweepMissingOutputJobs,
     sweepPendingTerminalEffects,
+    sweepVoiceDeliveries,
     cleanupQueueTempFiles,
 } = require("./lib/queue");
 const { parseStyle, detectStyle } = require("./lib/styles");
@@ -872,6 +873,7 @@ const server = app.listen(port, "0.0.0.0", async () => {
             }
             await sweepStaleGenerating();
             await recoverStaleRelayJobs({ retryPendingEffects: !terminalSweepDue });
+            await sweepVoiceDeliveries();
             await clearStaleRelayTargets();
             await sweepMissingOutputJobs();
         } finally { maintenanceRunning = false; }
