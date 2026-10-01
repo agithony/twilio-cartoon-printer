@@ -46,6 +46,25 @@ test("send: uses contentSid when configured", async () => {
     assert.equal(lastPayload.to, "+14155551234");
 });
 
+test("send: preserves the original SMS sender alongside a Messaging Service", async () => {
+    settingsStub._data.twilioMessagingServiceSid = "MGservice";
+    await messaging.send("+14155551234", "_raw", {}, { adapter: smsAdapter, _body: "Call us", fromPhone: "+12065550199" });
+    assert.equal(lastPayload.messagingServiceSid, "MGservice");
+    assert.equal(lastPayload.from, "+12065550199");
+    delete settingsStub._data.twilioMessagingServiceSid;
+});
+
+test("send: formats original WhatsApp sender and rejects malformed sender", async () => {
+    settingsStub._data.twilioWhatsappMessagingServiceSid = "MGwhatsapp";
+    contactsStub._tsByChannel.whatsapp = Date.now();
+    await messaging.send("+14155551234", "_raw", {}, { adapter: waAdapter, _body: "Call us", fromPhone: "+14155238886" });
+    assert.equal(lastPayload.from, "whatsapp:+14155238886");
+    await assert.rejects(() => messaging.send("+14155551234", "_raw", {}, {
+        adapter: waAdapter, _body: "Call us", fromPhone: "not a number",
+    }), /Invalid original sender/);
+    delete settingsStub._data.twilioWhatsappMessagingServiceSid;
+});
+
 test("send: explicit contentSid and variables override settings", async () => {
     settingsStub._data.contentTemplates = { styleMenu: "HXold" };
     await messaging.send("+14155551234", "styleMenu", { 1: "old" }, {
