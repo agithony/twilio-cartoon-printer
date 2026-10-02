@@ -4,9 +4,10 @@ const twilio = require("twilio");
 const { buildDefinitions, approvalCategories, getContentName, main } = require("../scripts/create-content-templates");
 
 test("static template inventory and samples are valid", () => {
-    const definitions = buildDefinitions("https://booth.example.com", "assets/template-samples/sample-portrait.jpg", "en");
+    const definitions = buildDefinitions("https://booth.example.com", "assets/template-sample-portrait.png", "en");
     assert.deepEqual(Object.keys(definitions).sort(), ["delivery", "nudgeDropoff", "promo", "rating", "voiceDelivery", "voiceFailure"]);
-    assert.equal(definitions.delivery.variables[2], "assets/template-samples/sample-portrait.jpg");
+    assert.equal(definitions.delivery.variables[2], "assets/template-sample-portrait.png");
+    assert.equal(definitions.voiceDelivery.variables[2], "assets/template-sample-portrait.png");
     assert.equal(definitions.delivery.types["twilio/card"].actions.length, 1);
     assert.equal(definitions.delivery.types["twilio/card"].subtitle, "Created at the Twilio AI Photo Booth");
     assert.equal(definitions.rating.types["twilio/quick-reply"].actions.length, 5);

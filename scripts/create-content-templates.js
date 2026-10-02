@@ -12,7 +12,7 @@ function buildDefinitions(baseUrl, samplePortraitPath, locale = "en") {
     const definitions = {
         voiceDelivery: {
             friendlyName: `pb_voice_delivery_${localeSlug}`, language: locale,
-            variables: { 1: samplePortraitPath, 2: "photogallery" },
+            variables: { 1: samplePortraitPath, 2: samplePortraitPath },
             types: {
                 "twilio/card": {
                     title: pt ? "Seu retrato criado por voz está pronto!" : "Your voice-guided portrait is ready!",
