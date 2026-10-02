@@ -38,6 +38,7 @@ const {
     clearStaleRelayTargets,
     sweepMissingOutputJobs,
     sweepPendingTerminalEffects,
+    sweepVoiceDeliveries,
     cleanupQueueTempFiles,
 } = require("./lib/queue");
 const { parseStyle, detectStyle } = require("./lib/styles");
@@ -59,6 +60,27 @@ const { mountPrintRelay } = require("./lib/print-relay");
 const leads = require("./lib/leads");
 const nps = require("./lib/nps");
 const contacts = require("./lib/contacts");
+const { createVoiceStore } = require("./lib/voice/store");
+const { createVoiceIntake } = require("./lib/voice/preflight");
+const { createVoiceAgent } = require("./lib/voice/agent");
+const { submitVoiceEdit, recoverVoiceSubmissions } = require("./lib/voice/submit");
+const { routeVoiceInbound } = require("./lib/voice/inbound-route");
+const { mountVoiceHttp, attachVoiceSocket } = require("./lib/voice/transport");
+
+const voiceStore = createVoiceStore();
+const voiceIntake = createVoiceIntake({ store: voiceStore });
+const voiceAgent = createVoiceAgent({ store: voiceStore,
+    submit: (args) => submitVoiceEdit({ ...args, queue: require("./lib/queue"), settings }) });
+
+function voiceEventSnapshot(eventName) {
+    const keys = ["maxPrints", "adminPhones", "multiSubjectMode", "reviewMode",
+        "enableManualReview", "variantsPerReview", "enablePrinting", "leadCaptureMode",
+        "promptPreserve", "promptComposition", "promptBackground", "brandPrompt",
+        "brandReferenceFiles", "aiReviewChecks", "immediateDigitalDelivery", "enableNps"];
+    const result = Object.fromEntries(keys.map((key) => [key, settings.getForEvent(key, eventName)]));
+    result.outputProfile = settings.getOutputProfile(eventName);
+    return result;
+}
 
 const app = express();
 app.set("trust proxy", 1);
@@ -153,29 +175,58 @@ async function inboundHandler(req, res) {
         console.log(`🌐 Base URL detected: ${baseUrl}`);
     }
 
-    // Skip duplicate webhook deliveries (Twilio retries)
-    if (markSid(req.body.MessageSid)) {
-        console.log(`⚠️  Duplicate webhook skipped: ${req.body.MessageSid}`);
-        return res.status(204).end();
-    }
-
     const inboundAdapter = channels.detectChannel(req.body);
     const userPhone = inboundAdapter.normalizeFrom(req.body.From);
     if (!userPhone) {
         console.warn("Inbound webhook with no From field — ignoring");
         return res.status(204).end();
     }
-    const appPhone = inboundAdapter.normalizeFrom(req.body.To);
+    let appPhone = inboundAdapter.normalizeFrom(req.body.To);
     let numMedia = parseInt(req.body.NumMedia || "0", 10);
     let body = getMessageBody(req.body);
 
     const eventName = settings.get("eventName");
+    contacts.recordContact(userPhone, appPhone, eventName);
     const activeStyles = settings.getActiveStyles(eventName);
     const activeStyleList = settings.getActiveStyleList(eventName);
     const leadMode = settings.getForEvent("leadCaptureMode", eventName);
 
-    // Track first contact for drop-off detection
-    contacts.recordContact(userPhone, appPhone, eventName);
+    // Voice intake owns durable MessageSid deduplication, so it runs before
+    // the legacy in-memory shortcut and before the message language picker.
+    const voiceLanguageMode = settings.getForEvent("languageMode", eventName) || "en";
+    const voiceLocale = i18n.resolveAttendeeLocale(voiceLanguageMode,
+        contacts.getPreferredLocale(userPhone, eventName));
+    const wantsMenuFallback = numMedia === 0 && /^MENU$/i.test(String(body || "").trim());
+    const voiceEnabled = settings.getForEvent("enableVoice", eventName) && leadMode !== "before";
+    let menuFallback = null;
+    if (wantsMenuFallback || (voiceEnabled && numMedia === 1)) {
+        const maxPrints = settings.getForEvent("maxPrints", eventName);
+        const routed = await routeVoiceInbound({ body: req.body, eventName,
+            sender: userPhone, appPhone, adapter: inboundAdapter, locale: voiceLocale,
+            store: voiceStore, intake: voiceIntake, enabled: voiceEnabled,
+            quota: { used: getUsageCount(userPhone, eventName), max: maxPrints,
+                unlimited: isAdmin(userPhone) || settings.isUnlimitedQuota(maxPrints) },
+            baseUrl, eventSettings: voiceEnabled ? voiceEventSnapshot(eventName) : null });
+        if (routed.handled) {
+            markSid(req.body.MessageSid);
+            if (voiceEnabled && numMedia === 1) {
+                languageMenu.clearPending(userPhone);
+                backgroundMenu.clearPending(userPhone);
+                brandMenu.clearPending(userPhone);
+                styleMenu.clearPending(userPhone);
+                leads.cancelSurvey(userPhone);
+            }
+            if (!routed.fallback) return res.status(routed.status).end();
+            menuFallback = routed.fallback;
+            appPhone = menuFallback.appPhone;
+        }
+    }
+    if (!menuFallback && markSid(req.body.MessageSid)) {
+        console.log(`⚠️  Duplicate webhook skipped: ${req.body.MessageSid}`);
+        return res.status(204).end();
+    }
+
+    // Voice records its inbound session before replying; legacy messages record it here.
     contacts.recordInbound(userPhone, inboundAdapter.name);
 
     async function promptForLanguage() {
@@ -245,7 +296,8 @@ async function inboundHandler(req, res) {
         pendingBrand = null;
         pendingStyle = null;
     }
-    const sessionChannel = (heldLanguageSelfie && heldLanguageSelfie.channel)
+    const sessionChannel = (menuFallback && menuFallback.channel)
+        || (heldLanguageSelfie && heldLanguageSelfie.channel)
         || (pendingBackground && pendingBackground.channel)
         || (pendingBrand && pendingBrand.channel)
         || (pendingStyle && pendingStyle.channel)
@@ -253,6 +305,20 @@ async function inboundHandler(req, res) {
     const sessionAdapter = channels.ADAPTERS[sessionChannel]?.isConfigured()
         ? channels.ADAPTERS[sessionChannel]
         : inboundAdapter;
+    const activeMenuFallback = !menuFallback && numMedia === 0
+        ? [pendingBackground, pendingBrand, pendingStyle].find((pending) => pending?.menuFallbackRequestId)
+        : null;
+    if (activeMenuFallback && !(await voiceStore.touchMenuFallback(activeMenuFallback.menuFallbackRequestId, eventName))) {
+        backgroundMenu.clearPending(userPhone);
+        brandMenu.clearPending(userPhone);
+        styleMenu.clearPending(userPhone);
+        const menuLocale = i18n.normalizeLocale(activeMenuFallback.locale) || "en";
+        const menuExpiredBody = menuLocale === "pt_BR"
+            ? "O tempo para escolher as opções da foto acabou. Envie outra selfie para começar de novo."
+            : "Time ran out while choosing your photo options. Please send a new selfie to start again.";
+        await messaging.send(userPhone, "_raw", {}, { _body: menuExpiredBody, adapter: sessionAdapter });
+        return res.status(204).end();
+    }
 
     const preferredLocale = contacts.getPreferredLocale(userPhone, eventName);
     const pendingRating = nps.getLatestPending(userPhone);
@@ -271,7 +337,8 @@ async function inboundHandler(req, res) {
         }
     }
 
-    const activeLocale = leads.getActiveLocale(userPhone)
+    const activeLocale = (menuFallback && (menuFallback.locale || i18n.DEFAULT_LOCALE))
+        || leads.getActiveLocale(userPhone)
         || (pendingBackground || {}).locale
         || (pendingBrand || {}).locale
         || (pendingStyle || {}).locale;
@@ -316,7 +383,7 @@ async function inboundHandler(req, res) {
         return res.status(204).end();
     }
 
-    if (staleInteractiveSession && numMedia === 0) {
+    if (staleInteractiveSession && numMedia === 0 && !menuFallback) {
         console.warn(`Discarded an interactive session after the active event changed to "${eventName}".`);
         await messaging.send(userPhone, "_raw", {}, { _body: i18n.t(locale, "welcome", {}, eventName), adapter: inboundAdapter });
         return res.status(204).end();
@@ -352,6 +419,8 @@ async function inboundHandler(req, res) {
             channel: context && context.channel || sessionChannel,
             baseUrl: context && context.baseUrl || baseUrl,
             locale: i18n.normalizeLocale(context && context.locale) || locale || i18n.DEFAULT_LOCALE,
+            sourceImagePath: context && context.sourceImagePath || null,
+            menuFallbackRequestId: context && context.menuFallbackRequestId || null,
         };
     }
 
@@ -383,11 +452,20 @@ async function inboundHandler(req, res) {
         const pickupMsg = ` ${pickupText}${twilioBlurb ? `\n\n${twilioBlurb}` : ""}`;
         const unit = pendingContext.locale === "pt_BR" ? (printingEnabled ? "impressão" : "retrato") : (printingEnabled ? "print" : "portrait");
         const units = pendingContext.locale === "pt_BR" ? (printingEnabled ? "impressões" : "retratos") : (printingEnabled ? "prints" : "portraits");
+        async function enqueue() {
+            const queued = enqueueJob(imageUrl, messageSid, userPhone, appPhone, style,
+                pendingContext.baseUrl, background, brand, { ...pendingContext, styleName });
+            if (queued && pendingContext.menuFallbackRequestId) {
+                await voiceStore.completeMenuFallback(pendingContext.menuFallbackRequestId, queued.filePrefix);
+            }
+            return queued;
+        }
 
         if (treatAsAdmin) {
             const msg = `${i18n.t(pendingContext.locale, "enqueued", { confirmLabel }, pendingContext.eventName)}${pickupMsg}`;
+            if (pendingContext.menuFallbackRequestId) await enqueue();
             await messaging.send(userPhone, "_raw", {}, { _body: msg, adapter: responseAdapter });
-            enqueueJob(imageUrl, messageSid, userPhone, appPhone, style, pendingContext.baseUrl, background, brand, { ...pendingContext, styleName });
+            if (!pendingContext.menuFallbackRequestId) await enqueue();
             require("./lib/still-working").arm(userPhone, appPhone, pendingContext.eventName, responseAdapter, pendingContext.locale);
         } else {
             const used = getUsageCount(userPhone, pendingContext.eventName);
@@ -411,8 +489,9 @@ async function inboundHandler(req, res) {
                 ? ""
                 : ` ${i18n.t(pendingContext.locale, "remainingCount", { remaining: afterThis, unit: afterThis === 1 ? unit : units }, pendingContext.eventName)}`;
             const msg = `${i18n.t(pendingContext.locale, "enqueued", { confirmLabel }, pendingContext.eventName)}${pickupMsg}${countMsg}`;
+            if (pendingContext.menuFallbackRequestId) await enqueue();
             await messaging.send(userPhone, "_raw", {}, { _body: msg, adapter: responseAdapter });
-            enqueueJob(imageUrl, messageSid, userPhone, appPhone, style, pendingContext.baseUrl, background, brand, { ...pendingContext, styleName });
+            if (!pendingContext.menuFallbackRequestId) await enqueue();
             require("./lib/still-working").arm(userPhone, appPhone, pendingContext.eventName, responseAdapter, pendingContext.locale);
         }
     }
@@ -508,6 +587,20 @@ async function inboundHandler(req, res) {
             return;
         }
         await confirmAndEnqueue(style, imageUrl, messageSid, undefined, brand, pendingContext);
+    }
+
+    if (menuFallback) {
+        languageMenu.clearPending(userPhone);
+        backgroundMenu.clearPending(userPhone);
+        brandMenu.clearPending(userPhone);
+        styleMenu.clearPending(userPhone);
+        await showMenuAndHold(menuFallback.imageUrl, menuFallback.messageSid, {
+            eventName: menuFallback.eventName, channel: menuFallback.channel,
+            baseUrl: menuFallback.baseUrl || baseUrl, locale: menuFallback.locale || locale,
+            sourceImagePath: menuFallback.sourceImagePath,
+            menuFallbackRequestId: menuFallback.requestId,
+        });
+        return res.status(204).end();
     }
 
     // ── 1. Lead capture active survey ───────────────────────────────────────
@@ -803,6 +896,7 @@ const validateTwilioWebhook = createTwilioWebhookValidator();
 const parseTwilioWebhook = bodyParser.urlencoded({ extended: false });
 app.post("/inbound", parseTwilioWebhook, validateTwilioWebhook, inboundHandler);
 app.post("/sms", parseTwilioWebhook, validateTwilioWebhook, inboundHandler);
+mountVoiceHttp(app, { store: voiceStore, settings, agent: voiceAgent });
 
 // ── Start ────────────────────────────────────────────────────────────────────
 
@@ -821,10 +915,16 @@ const server = app.listen(port, "0.0.0.0", async () => {
     // Ensure download dir for current event exists
     const dlDir = settings.getDownloadDir();
     if (!fs.existsSync(dlDir)) fs.mkdirSync(dlDir, { recursive: true });
+    contacts.load();
     await buildUsageCache();
+    await voiceStore.reconcileClaims(voiceSocket.activeCallSids());
+    await voiceStore.expire({ activeEventName: settings.get("eventName"),
+        activeCallSids: voiceSocket.activeCallSids() });
+    await voiceIntake.recover();
+    await recoverVoiceSubmissions({ store: voiceStore, queue: require("./lib/queue"), settings });
+    await sweepVoiceDeliveries();
     leads.load();
     nps.load();
-    contacts.load();
     settings.onEventNameChange(() => buildUsageCache());
     const terminalEffectsRecovered = await recoverStaleJobs();
     mountHome(app);
@@ -872,9 +972,25 @@ const server = app.listen(port, "0.0.0.0", async () => {
             }
             await sweepStaleGenerating();
             await recoverStaleRelayJobs({ retryPendingEffects: !terminalSweepDue });
+            await sweepVoiceDeliveries();
             await clearStaleRelayTargets();
             await sweepMissingOutputJobs();
         } finally { maintenanceRunning = false; }
+    }, 30_000);
+
+    let voiceMaintenanceRunning = false;
+    setInterval(async () => {
+        if (voiceMaintenanceRunning) return;
+        voiceMaintenanceRunning = true;
+        try {
+            await voiceStore.reconcileClaims(voiceSocket.activeCallSids());
+            await voiceStore.expire({ activeEventName: settings.get("eventName"),
+                activeCallSids: voiceSocket.activeCallSids() });
+            await voiceIntake.recover();
+            await recoverVoiceSubmissions({ store: voiceStore, queue: require("./lib/queue"), settings });
+        } catch (error) {
+            console.error(`Voice maintenance failed: ${String(error.message || error).slice(0, 120)}`);
+        } finally { voiceMaintenanceRunning = false; }
     }, 30_000);
 
     await cleanupQueueTempFiles();
@@ -894,3 +1010,4 @@ const server = app.listen(port, "0.0.0.0", async () => {
         console.log(`🏠 Home available at ${host}`);
     }
 });
+const voiceSocket = attachVoiceSocket(server, { store: voiceStore, settings, agent: voiceAgent });
