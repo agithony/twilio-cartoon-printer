@@ -36,6 +36,13 @@ async function fixture({ locale = "en", withRequest = true, respond } = {}) {
         moderate: async () => ({ flagged: false }),
         submit: async (args) => { submissions.push(args); return { status: "committed" }; },
     });
+    const playbackCompletions = [];
+    const onPlaybackComplete = agent.onPlaybackComplete;
+    agent.onPlaybackComplete = (session, generationId) => {
+        const completed = onPlaybackComplete(session, generationId);
+        playbackCompletions.push(completed);
+        return completed;
+    };
     const config = { eventName: "demo", twilioAccountSid: ACCOUNT, twilioAuthToken: TOKEN,
         twilioVoiceNumber: VOICE, enableVoice: false };
     const settings = { get: (key) => config[key] };
@@ -91,7 +98,7 @@ async function fixture({ locale = "en", withRequest = true, respond } = {}) {
         await store.reconcileClaims(new Set());
         await fs.rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 20 });
     }
-    return { store, request, submissions, post, connect, close };
+    return { store, request, submissions, playbackCompletions, post, connect, close };
 }
 
 function setup(requestId, overrides = {}) {
@@ -152,7 +159,7 @@ test("signed socket rejects mismatched setup and unsigned upgrades before agent 
     assert.equal((await f.store.get(f.request.id)).status, "claimed");
 });
 
-test("playback, early yes, interruption, and language switching gate submission", async (t) => {
+test("an interrupted readback needs content confirmation without looping", async (t) => {
     const f = await fixture({ locale: null }); t.after(f.close);
     const fields = { From: PHONE, To: VOICE, CallSid: "CA1", AccountSid: ACCOUNT };
     await f.post("/voice/inbound", fields);
@@ -166,34 +173,171 @@ test("playback, early yes, interruption, and language switching gate submission"
     const readback = await c.cycle();
     assert.match(readback.token, /aquarela|watercolor/i);
     assert.equal(f.submissions.length, 0);
+    c.send({ type: "interrupt", utteranceUntilInterrupt: "Entendi" });
     c.send({ type: "prompt", voicePrompt: "pode fazer", last: true });
-    const replay = await c.cycle();
+    const fallback = await c.cycle();
+    assert.match(fallback.token, /aquarela/i);
     assert.equal(f.submissions.length, 0);
-    // A delayed playback report for the interrupted first readback must not
-    // unlock a newer generation with identical spoken text.
+    // A late playback report from the interrupted readback is ignored.
     c.send({ type: "info", name: "tokensPlayed", value: readback.token });
     c.send({ type: "prompt", voicePrompt: "pode fazer", last: true });
-    await c.cycle();
+    assert.match((await c.cycle()).token, /repita/i);
     assert.equal(f.submissions.length, 0);
-    c.send({ type: "interrupt", utteranceUntilInterrupt: "Entendi que você" });
-    c.send({ type: "prompt", voicePrompt: "Ainda quero aquarela", last: true });
-    const revised = await c.cycle();
-    assert.equal(f.submissions.length, 0);
-    c.send({ type: "prompt", voicePrompt: "pode fazer", last: true });
-    const finalReadback = await c.cycle();
-    assert.equal(f.submissions.length, 0);
-    c.send({ type: "info", name: "agentSpeaking", value: "start" });
-    c.send({ type: "info", name: "tokensPlayed", value: finalReadback.chunks[0] });
-    c.send({ type: "prompt", voicePrompt: "pode fazer", last: true });
-    const afterPartial = await c.cycle();
-    assert.equal(f.submissions.length, 0);
-    c.send({ type: "info", name: "agentSpeaking", value: "start" });
-    for (const token of afterPartial.chunks) {
-        c.send({ type: "info", name: "tokensPlayed", value: token });
-    }
-    c.send({ type: "prompt", voicePrompt: "pode fazer", last: true });
+    c.send({ type: "prompt", voicePrompt: "sim, Aquarela em Marte", last: true });
     const closing = await c.cycle();
     assert.match(closing.token, /desligar/i);
+    assert.equal(f.submissions.length, 1);
+    assert.deepEqual(f.playbackCompletions, []);
+    c.ws.close();
+});
+
+test("speaker stop without matching played text requires content confirmation", async (t) => {
+    const f = await fixture(); t.after(f.close);
+    await f.post("/voice/inbound", { From: PHONE, To: VOICE, CallSid: "CA1", AccountSid: ACCOUNT });
+    const c = f.connect();
+    await new Promise((resolve) => c.ws.once("open", resolve));
+    c.send(setup(f.request.id));
+    c.send({ type: "prompt", voicePrompt: "Make it watercolor", last: true });
+    await c.cycle();
+    c.send({ type: "info", name: "agentSpeaking", value: "true" });
+    c.send({ type: "info", name: "tokensPlayed", value: "I heard your watercolor request." });
+    c.send({ type: "info", name: "agentSpeaking", value: "false" });
+    c.send({ type: "prompt", voicePrompt: "yes", last: true });
+    assert.match((await c.cycle()).token, /repeat each change.*watercolor/i);
+    assert.deepEqual(f.playbackCompletions, []);
+    assert.equal(f.submissions.length, 0);
+    c.send({ type: "prompt", voicePrompt: "yes, watercolor", last: true });
+    assert.match((await c.cycle()).token, /hang up/i);
+    assert.equal(f.submissions.length, 1);
+    c.ws.close();
+});
+
+test("content-bearing yes during readback confirms without repeating it", async (t) => {
+    const f = await fixture(); t.after(f.close);
+    await f.post("/voice/inbound", { From: PHONE, To: VOICE, CallSid: "CA1", AccountSid: ACCOUNT });
+    const c = f.connect();
+    await new Promise((resolve) => c.ws.once("open", resolve));
+    c.send(setup(f.request.id));
+    c.send({ type: "prompt", voicePrompt: "Make it watercolor", last: true });
+    await c.cycle();
+    c.send({ type: "prompt", voicePrompt: "yes, watercolor", last: true });
+    assert.match((await c.cycle()).token, /hang up/i);
+    assert.equal(f.submissions.length, 1);
+    c.ws.close();
+});
+
+test("yes during active readback requires content confirmation and never loops", async (t) => {
+    const f = await fixture(); t.after(f.close);
+    await f.post("/voice/inbound", { From: PHONE, To: VOICE, CallSid: "CA1", AccountSid: ACCOUNT });
+    const c = f.connect();
+    await new Promise((resolve) => c.ws.once("open", resolve));
+    c.send(setup(f.request.id));
+    c.send({ type: "prompt", voicePrompt: "Make it watercolor", last: true });
+    await c.cycle();
+    c.send({ type: "info", name: "agentSpeaking", value: "true" });
+    c.send({ type: "prompt", voicePrompt: "yes", last: true });
+    const fallback = await c.cycle();
+    assert.match(fallback.token, /watercolor/i);
+    assert.equal(f.submissions.length, 0);
+    c.send({ type: "prompt", voicePrompt: "yes", last: true });
+    assert.match((await c.cycle()).token, /repeat each change/i);
+    assert.equal(f.submissions.length, 0);
+    c.send({ type: "prompt", voicePrompt: "yes, watercolor", last: true });
+    const closing = await c.cycle();
+    assert.match(closing.token, /hang up/i);
+    assert.equal(f.submissions.length, 1);
+    c.ws.close();
+});
+
+test("yes before readback playback starts needs content confirmation", async (t) => {
+    const f = await fixture(); t.after(f.close);
+    await f.post("/voice/inbound", { From: PHONE, To: VOICE, CallSid: "CA1", AccountSid: ACCOUNT });
+    const c = f.connect();
+    await new Promise((resolve) => c.ws.once("open", resolve));
+    c.send(setup(f.request.id));
+    c.send({ type: "prompt", voicePrompt: "Make it watercolor", last: true });
+    await c.cycle();
+    c.send({ type: "prompt", voicePrompt: "yes", last: true });
+    assert.match((await c.cycle()).token, /watercolor/i);
+    assert.equal(f.submissions.length, 0);
+    c.send({ type: "prompt", voicePrompt: "yes", last: true });
+    assert.match((await c.cycle()).token, /repeat each change/i);
+    assert.equal(f.submissions.length, 0);
+    c.send({ type: "prompt", voicePrompt: "yes, watercolor", last: true });
+    assert.match((await c.cycle()).token, /hang up/i);
+    assert.equal(f.submissions.length, 1);
+    c.ws.close();
+});
+
+test("speaker stop followed by a late interrupt does not approve an unheard readback", async (t) => {
+    const f = await fixture(); t.after(f.close);
+    await f.post("/voice/inbound", { From: PHONE, To: VOICE, CallSid: "CA1", AccountSid: ACCOUNT });
+    const c = f.connect();
+    await new Promise((resolve) => c.ws.once("open", resolve));
+    c.send(setup(f.request.id));
+    c.send({ type: "prompt", voicePrompt: "Make it watercolor", last: true });
+    await c.cycle();
+    c.send({ type: "info", name: "agentSpeaking", value: "true" });
+    c.send({ type: "info", name: "agentSpeaking", value: "false" });
+    c.send({ type: "prompt", voicePrompt: "yes", last: true });
+    await new Promise((resolve) => setTimeout(resolve, 150));
+    c.send({ type: "interrupt", utteranceUntilInterrupt: "Got it: watercolor" });
+    const fallback = await c.cycle();
+    assert.match(fallback.token, /watercolor/i);
+    assert.equal(f.submissions.length, 0);
+    c.send({ type: "prompt", voicePrompt: "yes, watercolor", last: true });
+    assert.match((await c.cycle()).token, /hang up/i);
+    assert.equal(f.submissions.length, 1);
+    c.ws.close();
+});
+
+test("a late interrupt for the old readback does not cancel a revised model turn", async (t) => {
+    let releaseRevision;
+    let revisionStarted;
+    const started = new Promise((resolve) => { revisionStarted = resolve; });
+    const f = await fixture({ respond: async ({ text }) => {
+        if (/snowy/i.test(text)) {
+            revisionStarted();
+            return new Promise((resolve) => { releaseRevision = resolve; });
+        }
+        return { speech: "Ready", readyToConfirm: true, brief: BRIEF };
+    } });
+    t.after(f.close);
+    await f.post("/voice/inbound", { From: PHONE, To: VOICE, CallSid: "CA1", AccountSid: ACCOUNT });
+    const c = f.connect();
+    await new Promise((resolve) => c.ws.once("open", resolve));
+    c.send(setup(f.request.id));
+    c.send({ type: "prompt", voicePrompt: "Make it watercolor", last: true });
+    await c.cycle();
+    c.send({ type: "prompt", voicePrompt: "Actually make it snowy", last: true });
+    await started;
+    c.send({ type: "interrupt", utteranceUntilInterrupt: "Got it: water" });
+    releaseRevision({ speech: "Ready", readyToConfirm: true,
+        brief: { visualStyle: "snowy", clothingOrSubject: "", setting: "",
+            mood: "", importantDetails: "", preserve: "" } });
+    assert.match((await c.cycle()).token, /snowy/i);
+    assert.equal(f.submissions.length, 0);
+    c.ws.close();
+});
+
+test("cutting into a clarification does not invalidate a completed readback", async (t) => {
+    const f = await fixture(); t.after(f.close);
+    await f.post("/voice/inbound", { From: PHONE, To: VOICE, CallSid: "CA1", AccountSid: ACCOUNT });
+    const c = f.connect();
+    await new Promise((resolve) => c.ws.once("open", resolve));
+    c.send(setup(f.request.id));
+    c.send({ type: "prompt", voicePrompt: "Make it watercolor", last: true });
+    const readback = await c.cycle();
+    c.send({ type: "info", name: "agentSpeaking", value: "true" });
+    c.send({ type: "info", name: "tokensPlayed", value: readback.token });
+    c.send({ type: "info", name: "agentSpeaking", value: "false" });
+    c.send({ type: "prompt", voicePrompt: "okay", last: true });
+    const clarification = await c.cycle();
+    assert.match(clarification.token, /say yes/i);
+    c.send({ type: "interrupt", utteranceUntilInterrupt: "Please say" });
+    c.send({ type: "prompt", voicePrompt: "yes", last: true });
+    const closing = await c.cycle();
+    assert.match(closing.token, /hang up/i);
     assert.equal(f.submissions.length, 1);
     c.ws.close();
 });
