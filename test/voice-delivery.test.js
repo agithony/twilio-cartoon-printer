@@ -6,6 +6,7 @@ const { createVoiceDelivery } = require("../lib/voice/delivery");
 const { READY_DIR, PRINTING_DIR, REVIEW_DIR, DONE_DIR, FAILED_DIR } = require("../lib/config");
 const queue = require("../lib/queue");
 const messaging = require("../lib/messaging");
+const dub = require("../lib/dub");
 const leads = require("../lib/leads");
 const settings = require("../lib/settings");
 const { jobPaths } = require("../lib/pipeline");
@@ -62,12 +63,79 @@ test("SMS Voice result and failure stay in the selfie conversation", async () =>
     const sent = [];
     const delivery = createVoiceDelivery({ send: async (...args) => { sent.push(args); return { sid: "SMok" }; } });
     await delivery.sendVoiceDelivery(voiceJob({ channel: "sms", locale: "en" }));
+    await delivery.sendVoiceDelivery(voiceJob({ channel: "sms", locale: "en",
+        voiceShareMessage: "\n\nShare your portrait: booth.example/s/portrait" }));
     await delivery.sendVoiceFailure(voiceJob({ channel: "sms", locale: "en" }), "generation");
-    assert.deepEqual(sent.map((entry) => entry[1]), ["_raw", "_raw"]);
+    assert.deepEqual(sent.map((entry) => entry[1]), ["_raw", "_raw", "_raw"]);
     assert.equal(sent[0][3].fromPhone, "+12065550199");
     assert.match(sent[0][3].mediaUrl, /\/mms\?/);
     assert.match(sent[0][3]._body, /portrait/i);
-    assert.equal(sent[1][3].mediaUrl, undefined);
+    assert.match(sent[1][3].mediaUrl, /\/mms\?/);
+    assert.match(sent[1][3]._body, /Share your portrait: booth\.example/);
+    assert.equal(sent[2][3].mediaUrl, undefined);
+});
+
+test("Voice SMS share-only delivery persists one social link and sends no MMS on retry", async (t) => {
+    const job = voiceJob({ channel: "sms", locale: "en", voiceEventSettings: {
+        enablePrinting: false, leadCaptureMode: "disabled", enableNps: false,
+    }, voiceDeliveryKind: "result", voiceDeliveryState: "pending",
+    voiceDeliveryPendingAt: Date.now() });
+    const filename = `${job.filePrefix}.json`;
+    const file = path.join(DONE_DIR, filename);
+    const originalSend = messaging.send;
+    const originalShorten = dub.shortenUrl;
+    const originalGetForEvent = settings.getForEvent;
+    const originalIncrement = settings.incrementEventCounter;
+    const sent = [];
+    const slugs = [];
+    let counterCalls = 0;
+    settings.getForEvent = (key, eventName) => {
+        const shareSettings = {
+            enableShareLinks: true, sharePageOnly: true,
+            shareMessageText: "See and share:", dubSlugPrefix: "photo",
+        };
+        if (eventName === job.eventName && Object.hasOwn(shareSettings, key)) return shareSettings[key];
+        return originalGetForEvent(key, eventName);
+    };
+    settings.incrementEventCounter = () => { counterCalls++; return counterCalls; };
+    dub.shortenUrl = async (url, slug) => {
+        assert.equal(url, `https://booth.example/s/${job.filePrefix}?e=VoiceDemo`);
+        slugs.push(slug);
+        return "https://go.example/portrait";
+    };
+    messaging.send = async (...args) => {
+        sent.push({ args, stored: JSON.parse(await fs.readFile(file, "utf8")) });
+        return sent.length === 1 ? { error: "temporary" } : { sid: "SMdelivered" };
+    };
+    t.after(async () => {
+        messaging.send = originalSend;
+        dub.shortenUrl = originalShorten;
+        settings.getForEvent = originalGetForEvent;
+        settings.incrementEventCounter = originalIncrement;
+        await fs.rm(file, { force: true });
+    });
+    await fs.mkdir(DONE_DIR, { recursive: true });
+    await fs.writeFile(file, JSON.stringify(job));
+
+    await queue.retryVoiceDelivery(filename);
+    assert.equal((JSON.parse(await fs.readFile(file, "utf8"))).voiceDeliveryState, "pending");
+    await queue.retryVoiceDelivery(filename);
+
+    const stored = JSON.parse(await fs.readFile(file, "utf8"));
+    assert.equal(stored.voiceDeliveryState, "sent");
+    assert.equal(stored.shareUrl, "https://go.example/portrait");
+    assert.equal(stored.voiceShareMessage, "\n\nSee and share: go.example/portrait");
+    assert.equal(stored.voiceSkipMedia, true);
+    assert.deepEqual(sent.map((entry) => entry.args[3]._body), [
+        "Your voice-guided portrait is ready!\n\nSee and share: go.example/portrait",
+        "Your voice-guided portrait is ready!\n\nSee and share: go.example/portrait",
+    ]);
+    assert.equal(sent.every((entry) => entry.args[3].mediaUrl === undefined), true);
+    assert.equal(sent.every((entry) => entry.stored.shareUrl === "https://go.example/portrait"), true,
+        "the share link must exist on disk before Twilio accepts a send");
+    assert.equal(slugs.length, 1);
+    assert.match(slugs[0], /^photo-[a-f0-9]{16}$/);
+    assert.equal(counterCalls, 0);
 });
 
 test("ready, done, and failed Voice sends remain pending after failure and recover once", async (t) => {
