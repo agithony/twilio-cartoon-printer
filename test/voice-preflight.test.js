@@ -104,6 +104,34 @@ test("group selfie is rejected before invitation with localized notice", async (
     assert.equal(f.sent.length, 1);
 });
 
+test("selfie without a face gets a specific notice on first attempt and recovery", async (t) => {
+    const attempts = [];
+    const f = await fixture({
+        assessImage: async () => ({ flagged: false, hasFace: false, scene: { subjects: 1 } }),
+        send: async (...args) => {
+            attempts.push(args);
+            return attempts.length === 1 ? { error: "offline" } : { sid: "SMfaceNotice" };
+        },
+    });
+    t.after(f.cleanup);
+    const record = await f.intake.acceptSelfie(f.selfie);
+
+    await f.intake.recover();
+    const rejected = await f.store.get(record.id);
+    assert.equal(rejected.status, "rejected");
+    assert.equal(rejected.failureReason, "no-face");
+    assert.equal(rejected.noticePending, true);
+    assert.equal(attempts.length, 1);
+    assert.match(attempts[0][3]._body, /we need to see your face/i);
+
+    await f.intake.recover();
+    const recovered = await f.store.get(record.id);
+    assert.equal(recovered.noticePending, false);
+    assert.equal(recovered.noticeSid, "SMfaceNotice");
+    assert.equal(attempts.length, 2);
+    assert.match(attempts[1][3]._body, /we need to see your face/i);
+});
+
 test("invalid type, invalid bytes, oversized image, flagged image, and missing face never invite", async (t) => {
     const cases = [
         { contentType: "image/gif" },

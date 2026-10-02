@@ -88,6 +88,43 @@ test("expiry and event changes remove only private staged media", async (t) => {
     assert.equal(fs.existsSync(thirdPhoto), false);
 });
 
+test("MENU keeps its private selfie through later choices but expires within two hours", async (t) => {
+    const { mediaDir, store, setTime } = fixture(t);
+    await fsp.mkdir(mediaDir, { recursive: true });
+    const photo = path.join(mediaDir, "menu.jpg");
+    await fsp.writeFile(photo, "private selfie");
+    const request = await pending(store, "SMmenuLease", "+14155550100", 9_000);
+    await store.patch(request.id, { stagedInputPath: photo });
+    const originalExpiry = request.expiresAt;
+    const menuAt = originalExpiry - 1_000;
+
+    setTime(menuAt);
+    assert.equal((await store.menuFallback({ phone: request.phone, eventName: "Expo" })).status, "ready");
+    setTime(originalExpiry + 1);
+    await store.expire({ activeEventName: "Expo" });
+    assert.equal((await store.get(request.id)).status, "menu_fallback");
+    assert.equal(await fsp.readFile(photo, "utf8"), "private selfie");
+
+    for (const minutes of [30, 60, 90]) {
+        setTime(menuAt + minutes * 60_000);
+        assert.equal((await store.touchMenuFallback(request.id, "Expo")).status, "menu_fallback");
+        if (minutes < 90) {
+            setTime(menuAt + (minutes + 5) * 60_000 + 1);
+            assert.deepEqual(await store.expire({ activeEventName: "Expo" }), []);
+            assert.equal(await fsp.readFile(photo, "utf8"), "private selfie");
+        }
+    }
+    assert.equal((await store.menuFallback({ phone: request.phone, eventName: "Expo" })).request.menuFallbackAt, menuAt);
+    setTime(menuAt + 2 * 60 * 60_000 - 1);
+    assert.deepEqual(await store.expire({ activeEventName: "Expo" }), []);
+    assert.equal(await fsp.readFile(photo, "utf8"), "private selfie");
+    setTime(menuAt + 2 * 60 * 60_000);
+    assert.deepEqual(await store.expire({ activeEventName: "Expo" }), [request.id]);
+    assert.equal((await store.get(request.id)).status, "expired");
+    assert.equal(fs.existsSync(photo), false);
+    assert.equal(await store.touchMenuFallback(request.id, "Expo"), null);
+});
+
 test("claim lease survives a brief restart, then releases when no socket exists", async (t) => {
     const { dir, mediaDir, store, setTime } = fixture(t);
     const request = await pending(store, "SMlease", "+14155550100", 8_000);

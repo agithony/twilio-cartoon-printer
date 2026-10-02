@@ -305,6 +305,20 @@ async function inboundHandler(req, res) {
     const sessionAdapter = channels.ADAPTERS[sessionChannel]?.isConfigured()
         ? channels.ADAPTERS[sessionChannel]
         : inboundAdapter;
+    const activeMenuFallback = !menuFallback && numMedia === 0
+        ? [pendingBackground, pendingBrand, pendingStyle].find((pending) => pending?.menuFallbackRequestId)
+        : null;
+    if (activeMenuFallback && !(await voiceStore.touchMenuFallback(activeMenuFallback.menuFallbackRequestId, eventName))) {
+        backgroundMenu.clearPending(userPhone);
+        brandMenu.clearPending(userPhone);
+        styleMenu.clearPending(userPhone);
+        const menuLocale = i18n.normalizeLocale(activeMenuFallback.locale) || "en";
+        const menuExpiredBody = menuLocale === "pt_BR"
+            ? "O tempo para escolher as opções da foto acabou. Envie outra selfie para começar de novo."
+            : "Time ran out while choosing your photo options. Please send a new selfie to start again.";
+        await messaging.send(userPhone, "_raw", {}, { _body: menuExpiredBody, adapter: sessionAdapter });
+        return res.status(204).end();
+    }
 
     const preferredLocale = contacts.getPreferredLocale(userPhone, eventName);
     const pendingRating = nps.getLatestPending(userPhone);

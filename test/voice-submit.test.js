@@ -18,7 +18,7 @@ const BRIEF = {
 };
 let seq = 0;
 
-async function fixture({ variants = 1, reviewMode = "off" } = {}) {
+async function fixture({ variants = 1, reviewMode = "off", maxPrints = 2 } = {}) {
     const suffix = `${process.pid}-${++seq}`;
     const eventName = `VoiceSubmit${suffix}`;
     const userPhone = `+1415555${String(seq).padStart(4, "0")}`;
@@ -30,7 +30,7 @@ async function fixture({ variants = 1, reviewMode = "off" } = {}) {
     const now = Date.now();
     const store = createVoiceStore({ dir: path.join(dir, "requests"), mediaDir: dir, now: () => now });
     const eventSettings = {
-        maxPrints: 2, reviewMode, variantsPerReview: variants, enablePrinting: true,
+        maxPrints, reviewMode, variantsPerReview: variants, enablePrinting: true,
         outputProfile: { width: 1500, height: 2100, aiSize: "1024x1536", orientation: "portrait" },
         promptPreserve: "Keep the original freckles.", promptComposition: "Leave room above the head.",
         promptBackground: "Keep the original background.", brandPrompt: "Add the Expo logo on a pin.",
@@ -180,6 +180,15 @@ test("submission requires server approval, active event, quota, and a live claim
     await assert.rejects(() => submitVoiceEdit({ ...input, queue: { ...queue, getUsageCount: () => 2 } }), /quota/i);
     await f.store.patch(f.request.id, { status: "superseded" });
     await assert.rejects(() => submitVoiceEdit(input), /claimed/i);
+});
+
+test("unlimited Voice quota still submits after 100 portraits", async (t) => {
+    const f = await fixture({ maxPrints: 100 }); t.after(f.cleanup);
+    const group = await submitVoiceEdit({ store: f.store, requestId: f.request.id,
+        brief: BRIEF, locale: "en", queue: { ...queue, getUsageCount: () => 100 },
+        settings: f.snapshot });
+    assert.equal(group.status, "committed");
+    assert.equal(group.filePrefixes.length, 1);
 });
 
 test("pending Voice job is not claimed before its group manifest is committed", async (t) => {

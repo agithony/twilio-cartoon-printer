@@ -35,6 +35,13 @@ test("opening asks specifically how the selfie should look and gives examples", 
     assert.match(opening.speech, /outfit|Mars|watercolor/i);
 });
 
+test("opening compliments the accepted selfie in English and Portuguese", () => {
+    const english = fixture();
+    assert.match(english.agent.opening(english.session).speech, /great (selfie|photo)/i);
+    const portuguese = fixture({ locale: "pt_BR" });
+    assert.match(portuguese.agent.opening(portuguese.session).speech, /ótima selfie/i);
+});
+
 test("unknown-locale caller chooses Portuguese before describing the picture", async () => {
     const f = fixture({ locale: null });
     assert.match(f.agent.opening(f.session).speech, /English.*Português/i);
