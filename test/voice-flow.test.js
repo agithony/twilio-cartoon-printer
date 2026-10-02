@@ -159,13 +159,12 @@ test("SMS selfie, signed call, spoken approval, review, and delivery use one dur
     c.send({ type: "prompt", voicePrompt: "Watercolor spacesuit on Mars", last: true });
     const readback = await c.cycle();
     assert.match(readback.speech, /watercolor.*Mars/i);
-    c.send({ type: "prompt", voicePrompt: "yes", last: true });
-    const replay = await c.cycle();
-    assert.equal((await f.store.get(request.id)).status, "claimed");
     c.send({ type: "interrupt", utteranceUntilInterrupt: "I heard that" });
     c.send({ type: "prompt", voicePrompt: "Still watercolor on Mars", last: true });
     const revised = await c.cycle();
-    c.send({ type: "info", name: "agentSpeaking", value: "start" });
+    assert.match(revised.speech, /watercolor.*Mars/i);
+    assert.equal((await f.store.get(request.id)).status, "claimed");
+    c.send({ type: "info", name: "agentSpeaking", value: "true" });
     for (const token of revised.chunks) c.send({ type: "info", name: "tokensPlayed", value: token });
     c.send({ type: "prompt", voicePrompt: "yes, do it", last: true });
     assert.match((await c.cycle()).speech, /hang up/i);
