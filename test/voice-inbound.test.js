@@ -81,13 +81,17 @@ test("first WhatsApp selfie records its session before the invitation, and missi
         background: "#bbbbbb" } }).jpeg().toBuffer();
     let sessionOpen = false;
     const sent = [];
-    const send = async (_to, _key, _vars, opts) => {
+    const send = async (_to, key, _vars, opts) => {
         if (!sessionOpen) return { skipped: "out-of-session" };
-        sent.push(opts._body);
+        sent.push({ key, body: opts._body, contentSid: opts.contentSid });
         return { sid: `SMsent${sent.length}` };
     };
     const intake = createVoiceIntake({ store, mediaDir, send,
-        settings: { get: (key) => key === "eventName" ? "Expo" : VOICE_NUMBER },
+        settings: {
+            get: (key) => key === "eventName" ? "Expo" : VOICE_NUMBER,
+            getContentSid: (key, locale) => key === "voiceInvitation" && locale === "en" ? "HXinvite-en" : null,
+            getVoiceInvitationPhone: () => VOICE_NUMBER,
+        },
         downloadImage: async (_url, target) => fs.writeFile(target, jpeg),
         assessImage: async () => ({ flagged: false, hasFace: true,
             scene: { subjects: 1, pets: "none", positions: "centered" } }),
@@ -101,7 +105,9 @@ test("first WhatsApp selfie records its session before the invitation, and missi
     await intake.recover();
     assert.deepEqual(first, { handled: true, status: 204 });
     assert.equal((await store.list())[0].status, "awaiting_call");
-    assert.match(sent[0], /call/i);
+    assert.equal(sent[0].key, "voiceInvitation");
+    assert.equal(sent[0].contentSid, "HXinvite-en");
+    assert.equal(sent[0].body, undefined);
     sessionOpen = false;
     const missing = await routeVoiceInbound({ ...common, body: { NumMedia: "1", MessageSid: "SMmissingWa",
         MediaContentType0: "image/jpeg" } });
@@ -110,7 +116,7 @@ test("first WhatsApp selfie records its session before the invitation, and missi
     const records = await store.list();
     assert.equal(records.find((r) => r.messageSid === "SMmissingWa").status, "rejected");
     assert.equal(sent.length, 2);
-    assert.doesNotMatch(sent[1], /call/i);
+    assert.doesNotMatch(sent[1].body, /call/i);
 });
 
 test("newer selfie supersedes unclaimed earlier selfie", async (t) => {

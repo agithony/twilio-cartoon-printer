@@ -5,7 +5,7 @@ const crypto = require("crypto");
 const { getTwilioClient } = require("../lib/helpers");
 const settings = require("../lib/settings");
 
-function buildDefinitions(baseUrl, samplePortraitPath, locale = "en") {
+function buildDefinitions(baseUrl, samplePortraitPath, locale = "en", voiceNumber = "") {
     if (!samplePortraitPath) throw new Error("TWILIO_TEMPLATE_SAMPLE_PORTRAIT_PATH is required");
     const pt = locale === "pt_BR";
     const localeSlug = locale.toLowerCase();
@@ -73,6 +73,19 @@ function buildDefinitions(baseUrl, samplePortraitPath, locale = "en") {
             types: { "twilio/text": { body: pt ? "Ainda quer seu retrato com IA do evento {{1}}? Responda com uma selfie para começar. Responda STOP para cancelar." : "Still want your AI portrait from {{1}}? Reply with a selfie to get started. Reply STOP to opt out." } },
         },
     };
+    if (/^\+[1-9]\d{7,14}$/.test(voiceNumber)) {
+        definitions.voiceInvitation = {
+            friendlyName: `pb_voice_invitation_${localeSlug}`, language: locale,
+            types: {
+                "twilio/call-to-action": {
+                    body: pt
+                        ? "Ótima selfie! Toque em Ligar por telefone abaixo para fazer uma ligação normal do mesmo celular que enviou a foto em até 30 minutos. Conte ao nosso agente como quer que sua foto fique, por exemplo, como aquarela, no espaço ou com roupa vintage."
+                        : "Great selfie! Tap Call by phone below to place a regular phone call from the same phone you used to send your photo within 30 minutes. Tell our agent how you want your photo to look, such as a watercolor portrait, a space setting, or a vintage outfit.",
+                    actions: [{ type: "PHONE_NUMBER", title: pt ? "Ligar por telefone" : "Call by phone", phone: voiceNumber }],
+                },
+            },
+        };
+    }
     for (const definition of Object.values(definitions)) {
         const baseName = definition.friendlyName;
         const version = crypto.createHash("sha256")
@@ -84,7 +97,7 @@ function buildDefinitions(baseUrl, samplePortraitPath, locale = "en") {
 }
 
 const approvalCategories = {
-    voiceDelivery: "UTILITY", voiceFailure: "UTILITY",
+    voiceDelivery: "UTILITY", voiceFailure: "UTILITY", voiceInvitation: "UTILITY",
     delivery: "UTILITY", rating: "UTILITY", promo: "MARKETING", nudgeDropoff: "MARKETING",
 };
 
@@ -102,15 +115,18 @@ async function getContentName(client, content) {
 async function main({ client, settingsModule = settings, baseUrl = process.env.BASE_URL, samplePortraitPath = process.env.TWILIO_TEMPLATE_SAMPLE_PORTRAIT_PATH, printOnly = process.argv.includes("--print-only") } = {}) {
     baseUrl = String(baseUrl || "").replace(/\/$/, "");
     if (!/^https:\/\//.test(baseUrl)) throw new Error("BASE_URL must be the public HTTPS app URL");
+    settingsModule.load();
+    const configuredVoiceNumber = String(settingsModule.get("twilioVoiceNumber") || "").trim();
+    const voiceNumber = /^\+[1-9]\d{7,14}$/.test(configuredVoiceNumber) ? configuredVoiceNumber : "";
+    if (!voiceNumber) console.warn("Voice invitation template skipped: configure a valid E.164 Twilio Voice number.");
     if (printOnly) {
         const definitions = {};
-        for (const locale of ["en", "pt_BR"]) definitions[locale] = buildDefinitions(baseUrl, samplePortraitPath, locale);
+        for (const locale of ["en", "pt_BR"]) definitions[locale] = buildDefinitions(baseUrl, samplePortraitPath, locale, voiceNumber);
         console.log(JSON.stringify(definitions, null, 2));
         return { definitions };
     }
 
     client = client || getTwilioClient();
-    settingsModule.load();
     const existing = await client.content.v1.contents.list({ limit: 1000 });
     const existingByName = new Map();
     for (const content of existing) {
@@ -121,7 +137,7 @@ async function main({ client, settingsModule = settings, baseUrl = process.env.B
     const approvedSids = { en: {}, pt_BR: {} };
 
     for (const locale of ["en", "pt_BR"]) {
-      const definitions = buildDefinitions(baseUrl, samplePortraitPath, locale);
+      const definitions = buildDefinitions(baseUrl, samplePortraitPath, locale, voiceNumber);
       for (const [key, definition] of Object.entries(definitions)) {
         const found = existingByName.get(definition.friendlyName);
         const content = found || await client.content.v1.contents.create(definition);
@@ -136,7 +152,10 @@ async function main({ client, settingsModule = settings, baseUrl = process.env.B
         }
         if (status && status.toLowerCase() !== "unsubmitted") {
             console.log(`${key}: WhatsApp approval status is ${status}`);
-            if (status.toLowerCase() === "approved") approvedSids[locale][key] = content.sid;
+            if (status.toLowerCase() === "approved") {
+                approvedSids[locale][key] = content.sid;
+                if (key === "voiceInvitation") approvedSids[locale].voiceInvitationPhone = voiceNumber;
+            }
         } else {
             await client.content.v1.contents(content.sid).approvalCreate.create({
                 name: definition.friendlyName,
@@ -148,17 +167,23 @@ async function main({ client, settingsModule = settings, baseUrl = process.env.B
     }
 
     const current = settingsModule.get("contentTemplates") || {};
+    const currentByLocale = { en: current.en || current, pt_BR: current.pt_BR || {} };
     const active = {
-        en: { ...(current.en || current), ...approvedSids.en },
-        pt_BR: { ...(current.pt_BR || {}), ...approvedSids.pt_BR },
+        en: { ...currentByLocale.en, ...approvedSids.en },
+        pt_BR: { ...currentByLocale.pt_BR, ...approvedSids.pt_BR },
     };
+    let savedCount = 0;
+    let hasUpdates = false;
     for (const locale of ["en", "pt_BR"]) {
-        for (const key of ["voiceDelivery", "voiceFailure"]) {
-            if (!approvedSids[locale][key]) delete active[locale][key];
+        for (const [key, sid] of Object.entries(approvedSids[locale])) {
+            if (currentByLocale[locale][key] !== sid) {
+                hasUpdates = true;
+                if (key !== "voiceInvitationPhone") savedCount++;
+            }
         }
     }
-    settingsModule.update({ contentTemplates: active });
-    console.log(`Saved ${Object.keys(approvedSids.en).length + Object.keys(approvedSids.pt_BR).length} approved template SID(s).`);
+    if (hasUpdates) settingsModule.update({ contentTemplates: active });
+    console.log(`Saved ${savedCount} newly approved template SID(s).`);
     return { allSids, approvedSids };
 }
 

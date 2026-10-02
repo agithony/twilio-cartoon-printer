@@ -62,19 +62,48 @@ test("Voice readiness accepts a configured SMS-only booth and rejects missing lo
     assert.match(readinessIssues({ ...ready, openaiApiKey: "" }, "https://booth.example").join(" "), /OpenAI/);
 });
 
-test("WhatsApp Voice readiness needs result and failure templates in both languages", () => {
+test("WhatsApp Voice readiness needs invitation, result, and failure templates in both languages", () => {
     const issues = readinessIssues({ ...ready, twilioWhatsappNumber: "+14155550101" }, "https://booth.example");
-    assert.equal(issues.length, 4);
+    assert.equal(issues.length, 6);
+    assert.match(issues.join(" "), /en voiceInvitation/);
     assert.match(issues.join(" "), /en voiceDelivery/);
     assert.match(issues.join(" "), /pt_BR voiceFailure/);
     assert.deepEqual(readinessIssues({
         ...ready,
         twilioWhatsappNumber: "+14155550101",
         contentTemplates: {
-            en: { voiceDelivery: "HXenResult", voiceFailure: "HXenFail" },
-            pt_BR: { voiceDelivery: "HXptResult", voiceFailure: "HXptFail" },
+            en: { voiceInvitation: "HXenInvite", voiceInvitationPhone: ready.twilioVoiceNumber,
+                voiceDelivery: "HXenResult", voiceFailure: "HXenFail" },
+            pt_BR: { voiceInvitation: "HXptInvite", voiceInvitationPhone: ready.twilioVoiceNumber,
+                voiceDelivery: "HXptResult", voiceFailure: "HXptFail" },
         },
     }, "https://booth.example"), []);
+    const staleButton = {
+        ...ready, twilioWhatsappNumber: "+14155550101",
+        contentTemplates: {
+            en: { voiceInvitation: "HXenInvite", voiceInvitationPhone: "+14155550999",
+                voiceDelivery: "HXenResult", voiceFailure: "HXenFail" },
+            pt_BR: { voiceInvitation: "HXptInvite", voiceInvitationPhone: ready.twilioVoiceNumber,
+                voiceDelivery: "HXptResult", voiceFailure: "HXptFail" },
+        },
+    };
+    assert.match(readinessIssues(staleButton, "https://booth.example").join(" "),
+        /en voiceInvitation.*phone.*Voice number/i);
+});
+
+test("changing the Voice number retains its old invitation binding until the approved SIDs change", () => {
+    settings.update({ ...ready, enableVoice: false });
+    const templates = {
+        en: { voiceInvitation: "HXenInvite", voiceDelivery: "HXenResult", voiceFailure: "HXenFail" },
+        pt_BR: { voiceInvitation: "HXptInvite", voiceDelivery: "HXptResult", voiceFailure: "HXptFail" },
+    };
+    settings.update({ twilioWhatsappNumber: "+14155550101", contentTemplates: templates, enableVoice: true });
+    assert.equal(settings.get("contentTemplates").en.voiceInvitationPhone, ready.twilioVoiceNumber);
+    assert.equal(settings.get("contentTemplates").pt_BR.voiceInvitationPhone, ready.twilioVoiceNumber);
+    assert.throws(() => settings.update({ twilioVoiceNumber: "+14155550222", contentTemplates: templates }),
+        /voiceInvitation.*phone.*Voice number/i);
+    assert.throws(() => settings.update({ twilioVoiceNumber: "" }), /Voice number must be E\.164/);
+    assert.equal(settings.get("twilioVoiceNumber"), ready.twilioVoiceNumber);
 });
 
 test("settings rejects Voice plus before-survey atomically and keeps Voice event-scoped", () => {
@@ -115,10 +144,12 @@ test("settings API returns 400 and reasons for Voice plus before-survey", async 
     }
 });
 
-test("operator settings expose the Voice switch, number, and readiness note", () => {
+test("operator settings expose the Voice switch, number, invitation templates, and readiness note", () => {
     const html = buildHomeHtml();
     assert.match(html, /id="sEnableVoice"/);
     assert.match(html, /id="sTwilioVoiceNumber"/);
+    assert.match(html, /id="sCtVoiceInvitationEn"/);
+    assert.match(html, /id="sCtVoiceInvitationPt"/);
     assert.match(html, /id="voiceReadiness"/);
     assert.match(html, /test call/i);
 });
