@@ -116,3 +116,30 @@ test("active sockets extend claims and queued requests cannot be unqueued", asyn
     await store.release("CAguard");
     assert.equal((await store.get(request.id)).status, "queued");
 });
+
+test("selfie and call lookups do not rescan old request files after loading", async (t) => {
+    const { dir, store } = fixture(t);
+    const first = await pending(store, "SMindexed-first", "+14155550100", 8_000);
+    assert.equal((await store.findLatest({ phone: first.phone, eventName: "Expo" })).id, first.id);
+
+    const originalReaddir = fsp.readdir;
+    let directoryScans = 0;
+    fsp.readdir = async function (...args) {
+        if (args[0] === dir) directoryScans++;
+        return originalReaddir.apply(this, args);
+    };
+    try {
+        const newer = await pending(store, "SMindexed-newer", first.phone, 9_000);
+        assert.deepEqual(await store.supersedeOlder(newer.id), [first.id]);
+        assert.equal((await store.claimLatest({ phone: first.phone, eventName: "Expo", callSid: "CAindexed" })).id, newer.id);
+        assert.equal((await store.touchCall("CAindexed")).id, newer.id);
+        assert.equal((await store.release("CAindexed")).status, "awaiting_call");
+        assert.deepEqual(await store.reconcileClaims(), []);
+        assert.deepEqual(await store.expire({ activeEventName: "Expo" }), []);
+        assert.equal((await store.findLatest({ phone: first.phone, eventName: "Expo" })).id, newer.id);
+        assert.equal((await store.list()).length, 2);
+        assert.equal(directoryScans, 0);
+    } finally {
+        fsp.readdir = originalReaddir;
+    }
+});
