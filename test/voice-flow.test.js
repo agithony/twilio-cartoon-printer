@@ -51,7 +51,7 @@ async function createVoiceFlowHarness({ channel = "sms", locale = "en", reviewMo
     leads.startSurvey = async () => { events.push("survey"); return { status: "started" }; };
     const config = { eventName, twilioAccountSid: ACCOUNT, twilioAuthToken: TOKEN, twilioVoiceNumber: VOICE };
     const voiceSettings = { get: (key) => config[key], getForEvent: (key) => rules[key],
-        getContentSid: settings.getContentSid };
+        getContentSid: settings.getContentSid, getVoiceInvitationPhone: () => VOICE };
     const rules = { maxPrints: 2, adminPhones: [], multiSubjectMode: "reject", reviewMode,
         variantsPerReview: 1, enablePrinting, leadCaptureMode, enableNps: false,
         immediateDigitalDelivery: false, outputProfile: settings.getOutputProfile(eventName),
@@ -221,7 +221,9 @@ test("a delayed WhatsApp template failure stays pending and retries without a ra
     assert.equal(stored.voiceDeliveryState, "pending");
     assert.equal(stored.smsSentAt, undefined);
     assert.equal(f.sent.filter((item) => item[1] === "voiceDelivery").length, 1);
-    assert.equal(f.sent.filter((item) => item[1] === "_raw").length, 1, "only the invitation may be freeform");
+    assert.equal(f.sent.filter((item) => item[1] === "voiceInvitation").length, 1);
+    assert.equal(f.sent.filter((item) => item[1] === "_raw").length, 0,
+        "the invitation and delayed result use approved templates");
     await queue.retryVoiceDelivery(`${job.filePrefix}.json`);
     stored = JSON.parse(await fs.readFile(path.join(READY_DIR, `${job.filePrefix}.json`), "utf8"));
     assert.equal(stored.voiceDeliveryState, "sent");

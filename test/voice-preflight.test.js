@@ -26,7 +26,15 @@ async function fixture(overrides = {}) {
     const store = createVoiceStore({ dir: path.join(dir, "requests"), mediaDir, now: () => time });
     const settings = {
         get(key) { return key === "eventName" ? activeEvent : key === "twilioVoiceNumber" ? "+12065550100" : null; },
-        getContentSid(key, locale) { return key === "voiceFailure" ? `HXfailure-${locale}` : null; },
+        getContentSid(key, locale) {
+            if (key === "voiceFailure") return `HXfailure-${locale}`;
+            if (key === "voiceInvitation") return overrides.voiceInvitationSid === undefined
+                ? `HXinvite-${locale}` : overrides.voiceInvitationSid;
+            return null;
+        },
+        getVoiceInvitationPhone() {
+            return overrides.voiceInvitationPhone === undefined ? "+12065550100" : overrides.voiceInvitationPhone;
+        },
     };
     const bytes = overrides.bytes || await image(overrides.format || "jpeg");
     const downloadImage = overrides.downloadImage || (async (_url, target) => fs.writeFile(target, bytes));
@@ -89,6 +97,84 @@ test("recovered WhatsApp selfie restores the original inbound window before invi
     await f.intake.recover();
     assert.equal(sessionAt, NOW);
     assert.equal((await f.store.get(record.id)).status, "awaiting_call");
+});
+
+test("WhatsApp invitation uses a phone-call Content template instead of a linked number", async (t) => {
+    const f = await fixture(); t.after(f.cleanup);
+    const record = await f.intake.acceptSelfie({ ...f.selfie, channel: "whatsapp", locale: "en" });
+    await f.intake.recover();
+    assert.equal((await f.store.get(record.id)).status, "awaiting_call");
+    assert.equal(f.sent.length, 1);
+    assert.equal(f.sent[0][1], "voiceInvitation");
+    assert.equal(f.sent[0][3].contentSid, "HXinvite-en");
+    assert.equal(f.sent[0][3].adapter.name, "whatsapp");
+    assert.equal(f.sent[0][3].fromPhone, f.selfie.appPhone);
+    assert.equal(f.sent[0][3]._body, undefined);
+});
+
+test("WhatsApp never falls back to a plain-number invitation when its call-button template is missing", async (t) => {
+    const f = await fixture({ voiceInvitationSid: null }); t.after(f.cleanup);
+    const record = await f.intake.acceptSelfie({ ...f.selfie, channel: "whatsapp", locale: "en" });
+    await f.intake.recover();
+    const stored = await f.store.get(record.id);
+    assert.equal(stored.status, "inviting");
+    assert.equal(f.sent.length, 0);
+    assert.match(stored.lastInvitationError, /voiceInvitation WhatsApp template is required/);
+});
+
+test("WhatsApp invitation waits when its call button points to another Voice number", async (t) => {
+    const f = await fixture({ voiceInvitationPhone: "+12065550999" }); t.after(f.cleanup);
+    const record = await f.intake.acceptSelfie({ ...f.selfie, channel: "whatsapp", locale: "en" });
+    await f.intake.recover();
+    const stored = await f.store.get(record.id);
+    assert.equal(stored.status, "inviting");
+    assert.equal(f.sent.length, 0);
+    assert.match(stored.lastInvitationError, /voiceInvitation.*phone.*Voice number/i);
+});
+
+test("unknown-language WhatsApp invitation explains the call in both languages before its phone button", async (t) => {
+    const f = await fixture(); t.after(f.cleanup);
+    const record = await f.intake.acceptSelfie({ ...f.selfie, channel: "whatsapp", locale: null });
+    await f.intake.recover();
+    const stored = await f.store.get(record.id);
+    assert.equal(stored.status, "awaiting_call");
+    assert.equal(f.sent.length, 2);
+    assert.equal(f.sent[0][1], "_raw");
+    assert.match(f.sent[0][3]._body, /call/i);
+    assert.match(f.sent[0][3]._body, /ligar|ligue|ligação/i);
+    assert.match(f.sent[0][3]._body, /Use o botão "Call by phone"/);
+    assert.match(f.sent[0][3]._body, /como quer que sua foto fique.*aquarela/i);
+    assert.doesNotMatch(f.sent[0][3]._body, /\+\d{8,15}/);
+    assert.equal(stored.bilingualIntroSid, "SMout1");
+    assert.equal(f.sent[1][1], "voiceInvitation");
+    assert.equal(f.sent[1][3].contentSid, "HXinvite-en");
+    assert.equal(stored.invitationSid, "SMout2");
+    await f.intake.recover();
+    assert.equal(f.sent.length, 2);
+});
+
+test("unknown-language WhatsApp invitation retries a failed bilingual intro before sending its phone button", async (t) => {
+    const attempts = [];
+    const f = await fixture({ send: async (...args) => {
+        attempts.push(args);
+        if (attempts.length === 1) return { error: "Twilio unavailable" };
+        return { sid: `SMsent${attempts.length}` };
+    } });
+    t.after(f.cleanup);
+    const record = await f.intake.acceptSelfie({ ...f.selfie, channel: "whatsapp", locale: null });
+    await f.intake.recover();
+    let stored = await f.store.get(record.id);
+    assert.equal(stored.status, "inviting");
+    assert.equal(stored.invitationSid, undefined);
+    assert.match(stored.lastInvitationIntroError, /Twilio unavailable/);
+    assert.deepEqual(attempts.map((item) => item[1]), ["_raw"]);
+
+    await f.intake.recover();
+    stored = await f.store.get(record.id);
+    assert.equal(stored.status, "awaiting_call");
+    assert.equal(stored.bilingualIntroSid, "SMsent2");
+    assert.equal(stored.invitationSid, "SMsent3");
+    assert.deepEqual(attempts.map((item) => item[1]), ["_raw", "_raw", "voiceInvitation"]);
 });
 
 test("group selfie is rejected before invitation with localized notice", async (t) => {
